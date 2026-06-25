@@ -403,7 +403,7 @@ const subscriptionId =
       ?.subscription_item_details
       ?.subscription ||
 
-    invoice.subscription ||
+    (invoice as any).subscription ||
 
     ""
 
