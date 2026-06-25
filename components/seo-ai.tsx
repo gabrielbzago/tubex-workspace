@@ -71,11 +71,25 @@ relatedKeywords:string[];
 recommendations:string[];
 
 }
+
+interface UserData {
+  id?: string;
+  email?: string;
+  name?: string;
+  youtube_channel_id?: string | null;
+}
+
+interface SeoAIProps {
+  userData?: UserData | null;
+}
+
 /* ======================================================
    COMPONENT
 ====================================================== */
 
-export default function SeoAI() {
+export default function SeoAI({
+  userData,
+}: SeoAIProps) {
 
   const [keyword, setKeyword] =
     useState("");
@@ -221,9 +235,13 @@ console.log("YOUTUBE SEO", ytData);
 
     youtube:ytData,
 
-    userId:"workspace",
+userId:
+  userData?.id ??
+  "workspace",
 
-    channelId:"workspace"
+channelId:
+  userData?.youtube_channel_id ??
+  "workspace"
 
 })
       }
