@@ -462,10 +462,11 @@ if (!subscriptionId) {
 
       }
 
-      const stripePriceId =
-        String(
-          line.price?.id || ""
-        ).trim();
+const stripePriceId = String(
+  (line as any).price?.id ||
+  (line as any).pricing?.price_details?.price ||
+  ""
+).trim();
 
       console.log(
         "💳 PRICE ID:",
