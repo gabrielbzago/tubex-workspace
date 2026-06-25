@@ -291,44 +291,32 @@ await supabase.auth.signInWithOAuth({
           "
         >
 
-          {/* LOGO */}
+ {/* ======================================================
+    LOGO
+====================================================== */}
 
-          <div
-            className="
-            flex
-            items-center
-            gap-4
-            "
-          >
+<div
+  className="
+    flex
+    items-center
+  "
+>
 
-            <div
-              className="
-              w-12
-              h-12
-              rounded-2xl
-              bg-yellow-400
-              flex
-              items-center
-              justify-center
-              text-black
-              text-2xl
-              font-bold
-              "
-            >
-              ⚡
-            </div>
+  <img
+    src="/logo.png"
+    alt="TubeX"
+    className="
+      h-16
+      w-auto
+      object-contain
+      transition-all
+      duration-300
+      hover:scale-105
+    "
+    draggable={false}
+  />
 
-            <h1
-              className="
-              text-5xl
-              font-bold
-              text-yellow-400
-              "
-            >
-              TubeX
-            </h1>
-
-          </div>
+</div>
 
           {/* MENU */}
 
@@ -410,59 +398,74 @@ await supabase.auth.signInWithOAuth({
 
       </header>
 
-      {/* HERO */}
+    {/* HERO */}
 
-      <section
+<section
+  className="
+    pt-48
+    pb-28
+    px-6
+  "
+>
+
+  <div
+    className="
+      max-w-6xl
+      mx-auto
+      text-center
+    "
+  >
+
+    {/* LOGO */}
+
+    <div className="mb-10 flex justify-center">
+
+      <img
+        src="/logo.png"
+        alt="TubeX"
         className="
-        pt-48
-        pb-28
-        px-6
+          w-full
+          max-w-[340px]
+          h-auto
+          object-contain
         "
-      >
+      />
 
-        <div
-          className="
-          max-w-6xl
-          mx-auto
-          text-center
-          "
-        >
+    </div>
 
-          <h2
-            className="
-            text-5xl
-            md:text-7xl
-            font-bold
-            leading-tight
-            "
-          >
+    <h2
+      className="
+        text-5xl
+        md:text-7xl
+        font-bold
+        leading-tight
+      "
+    >
 
-            O Workspace definitivo
-            para criadores de conteúdo
+      O Workspace definitivo
+      para criadores de conteúdo
 
-          </h2>
+    </h2>
 
-          <p
-            className="
-            text-zinc-400
-            text-xl
-            md:text-2xl
-            mt-10
-            max-w-4xl
-            mx-auto
-            "
-          >
+ <p
+      className="
+        text-zinc-400
+        text-xl
+        md:text-2xl
+        mt-10
+        max-w-4xl
+        mx-auto
+      "
+    >
+      SEO, IA, analytics, thumbnails,
+      afiliados e automações
+      em um só lugar.
+    </p>
 
-            SEO, IA, analytics,
-            thumbnails,
-            afiliados e automações
-            em um só lugar.
+  </div>
 
-          </p>
+</section>
 
-        </div>
-
-      </section>
 
       {/* PLANOS */}
 
