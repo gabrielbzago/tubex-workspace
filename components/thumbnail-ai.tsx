@@ -71,29 +71,21 @@ const isExpert =
 
 async function improvePrompt() {
 
+  if (!isExpert) {
 
-
-  if (!prompt.trim()) {
-
-if (!isExpert) {
-
-  setError(
-    "Thumbnail AI é exclusivo do plano Expert."
-  );
-
-  return;
-
-}
-
-  if (!prompt.trim()) {
-
-    setError("Digite um prompt primeiro.");
+    setError(
+      "Thumbnail AI é exclusivo do plano Expert."
+    );
 
     return;
 
   }
 
-    setError("Digite um prompt primeiro.");
+  if (!prompt.trim()) {
+
+    setError(
+      "Digite um prompt primeiro."
+    );
 
     return;
 
@@ -105,28 +97,32 @@ if (!isExpert) {
 
   try {
 
-const response = await fetch(AI_API, {
+    const response = await fetch(AI_API, {
 
-  method: "POST",
+      method: "POST",
 
-  headers: {
-    "Content-Type": "application/json",
-    "x-client": "tubex-workspace"
-  },
+      headers: {
 
-  body: JSON.stringify({
+        "Content-Type": "application/json",
 
-    tipo: "thumbnail_prompt",
+        "x-client": "tubex-workspace",
 
-    prompt,
+      },
 
-    userId: "workspace",
+      body: JSON.stringify({
 
-    channelId: "workspace"
+        tipo: "thumbnail_prompt",
 
-  })
+        prompt: prompt.trim(),
 
-});
+        userId: "workspace",
+
+        channelId: "workspace",
+
+      }),
+
+    });
+
     const json = await response.json();
 
     if (!response.ok) {
@@ -163,9 +159,7 @@ const response = await fetch(AI_API, {
 
     );
 
-  }
-
-  catch(err:any){
+  } catch (err: any) {
 
     console.error(err);
 
@@ -177,15 +171,14 @@ const response = await fetch(AI_API, {
 
     );
 
-  }
-
-  finally{
+  } finally {
 
     setImprovingPrompt(false);
 
   }
 
 }
+
 /* ======================================================
    GERAR THUMBNAIL
 ====================================================== */
