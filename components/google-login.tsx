@@ -6,12 +6,12 @@ export default function GoogleLogin() {
 
   async function loginGoogle() {
 
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: "http://localhost:3000"
-      }
-    });
+   await supabase.auth.signInWithOAuth({
+  provider: "google",
+  options: {
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`
+  }
+});
 
   }
 
