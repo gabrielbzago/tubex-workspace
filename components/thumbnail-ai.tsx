@@ -1078,29 +1078,7 @@ a.download = `TubeX-Thumbnail-${index + 1}.png`;
 a.href = canvas.toDataURL("image/png");
 a.click();
 
-      // Calcula crop central mantendo proporção
-      const scale = Math.max(
-        1280 / img.width,
-        720 / img.height
-      );
-
-      const w = img.width * scale;
-      const h = img.height * scale;
-
-      const x = (1280 - w) / 2;
-      const y = (720 - h) / 2;
-
-      ctx.drawImage(img, x, y, w, h);
-
-      const a = document.createElement("a");
-
-      a.download = `TubeX-Thumbnail-${index+1}.png`;
-
-      a.href = canvas.toDataURL("image/png");
-
-      a.click();
-
-    };
+       };
 
     img.src = image.url;
 
