@@ -418,48 +418,49 @@ alert(
 
         <div>
 
-          {/* LOGO */}
-          <div className="
-            flex
-            items-center
-            gap-4
-            mb-14
-          ">
+         {/* LOGO */}
+<div
+  className="
+    flex
+    items-center
+    gap-4
+    mb-14
+  "
+>
 
-            <div className="
-              w-14
-              h-14
-              rounded-3xl
-              bg-yellow-400
-              flex
-              items-center
-              justify-center
-              text-black
-              text-2xl
-              shadow-lg
-            ">
-              ⚡
-            </div>
+  <img
+    src="/logo.png"
+    alt="TubeX"
+    className="
+      h-14
+      w-auto
+      object-contain
+    "
+  />
 
-            <div>
+  <div>
 
-              <h1 className="
-                text-3xl
-                font-black
-              ">
-                TubeX
-              </h1>
+    <h1
+      className="
+        text-3xl
+        font-black
+      "
+    >
+    
+    </h1>
 
-              <p className="
-                text-muted-foreground
-                text-sm
-              ">
-                Creator Workspace
-              </p>
+    <p
+      className="
+        text-muted-foreground
+        text-sm
+      "
+    >
+      
+    </p>
 
-            </div>
+  </div>
 
-          </div>
+</div>
 
           {/* MENU */}
           <nav className="space-y-2">
