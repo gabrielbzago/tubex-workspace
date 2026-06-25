@@ -10,29 +10,49 @@ from "@/lib/supabase";
 
 type UserData = {
 
-id?: string;
+  id?: string;
 
-email: string;
+  email: string;
 
-name?: string;
+  name?: string;
 
-plan?: string;
+  plan?: string;
 
-status?: string;
+  status?: string;
 
-affiliate_code?: string;
+  affiliate_code?: string;
 
-total_sales?: number;
+  affiliate_balance?: number;
 
-total_clicks?: number;
+  stripe_customer_id?: string;
 
-total_commission?: number;
+  stripe_subscription_id?: string;
 
-conversion_rate?: number;
+  youtube_connected?: boolean;
 
-referrals?: any[];
+  youtube_channel_id?: string;
 
-sales?: any[];
+  youtube_channel_name?: string;
+
+  youtube_subscribers?: number;
+
+  youtube_views30?: number;
+
+  youtube_uploads30?: number;
+
+  youtube_avg_views?: number;
+
+  total_sales?: number;
+
+  total_clicks?: number;
+
+  total_commission?: number;
+
+  conversion_rate?: number;
+
+  referrals?: any[];
+
+  sales?: any[];
 
 };
 
