@@ -487,8 +487,10 @@ const stripePriceId = String(
       // BUSCA USER
       // =====================================================
 
-      let {
-        data: existingUser,
+      let existingUser: any = null;
+
+      const {
+        data,
         error: userError,
       } =
         await supabaseAdmin
@@ -508,6 +510,8 @@ const stripePriceId = String(
           )
           .maybeSingle();
 
+      existingUser = data;
+
       if (userError) {
 
         console.error(
@@ -517,7 +521,7 @@ const stripePriceId = String(
 
       }
 
-      // =====================================================
+           // =====================================================
       // FALLBACK EMAIL
       // =====================================================
 
@@ -527,7 +531,7 @@ const stripePriceId = String(
 
           invoice.customer_email ||
 
-          invoice.lines?.data?.[0]
+          (invoice.lines?.data?.[0] as any)
             ?.metadata?.email ||
 
           "";
@@ -536,6 +540,7 @@ const stripePriceId = String(
 
           const {
             data: fallbackUser,
+            error: fallbackError,
           } =
             await supabaseAdmin
               .from("users")
@@ -543,7 +548,10 @@ const stripePriceId = String(
                 id,
                 email,
                 name,
-                stripe_customer_id
+                plan,
+                status,
+                stripe_customer_id,
+                stripe_subscription_id
               `)
               .eq(
                 "email",
@@ -553,10 +561,19 @@ const stripePriceId = String(
               )
               .maybeSingle();
 
+          if (fallbackError) {
+
+            console.error(
+              "❌ FALLBACK USER ERROR:",
+              fallbackError
+            );
+
+          }
+
           if (fallbackUser) {
 
             existingUser =
-              fallbackUser;
+              fallbackUser as any;
 
             await supabaseAdmin
               .from("users")
@@ -601,9 +618,9 @@ const stripePriceId = String(
 
         name:
 
-          existingUser.name ||
+          existingUser?.name ||
 
-          existingUser.email ||
+          existingUser?.email ||
 
           "Cliente",
 
@@ -614,16 +631,18 @@ const stripePriceId = String(
           "active",
 
         stripe_customer_id:
+
           stripeCustomerId ||
 
-          existingUser.stripe_customer_id ||
+          existingUser?.stripe_customer_id ||
 
           null,
 
         stripe_subscription_id:
+
           subscriptionId ||
 
-          existingUser.stripe_subscription_id ||
+          existingUser?.stripe_subscription_id ||
 
           null,
 
@@ -638,17 +657,13 @@ const stripePriceId = String(
       } =
         await supabaseAdmin
           .from("users")
-          .update(
-            updatePayload
-          )
+          .update(updatePayload)
           .eq(
             "id",
             existingUser.id
           );
 
-      if (
-        updateUserError
-      ) {
+      if (updateUserError) {
 
         console.error(
           "❌ UPDATE USER ERROR:",
@@ -657,6 +672,7 @@ const stripePriceId = String(
 
       }
 
+    
       // =====================================================
       // BUSCA SUBSCRIPTION
       // =====================================================
@@ -668,21 +684,33 @@ const stripePriceId = String(
 
       const {
         data: referral,
-      } = await supabaseAdmin
-        .from("affiliate_referrals")
-        .select("*")
-        .eq(
-          "stripe_subscription_id",
-          subscriptionId
-        )
-        .maybeSingle();
+        error: referralLookupError,
+      } =
+        await supabaseAdmin
+          .from("affiliate_referrals")
+          .select("*")
+          .eq(
+            "stripe_subscription_id",
+            subscriptionId
+          )
+          .maybeSingle();
+
+      if (referralLookupError) {
+
+        console.error(
+          "❌ REFERRAL LOOKUP ERROR:",
+          referralLookupError
+        );
+
+      }
 
       const affiliateCode = String(
 
-        subscription.metadata
+        (subscription as any)
+          ?.metadata
           ?.affiliate_code ||
 
-        referral
+        (referral as any)
           ?.affiliate_code ||
 
         ""
@@ -724,13 +752,13 @@ const stripePriceId = String(
           affiliateCode,
 
         referred_email:
-          existingUser.email,
+          existingUser?.email,
 
         referred_name:
 
-          existingUser.name ||
+          existingUser?.name ||
 
-          existingUser.email ||
+          existingUser?.email ||
 
           "Cliente",
 
@@ -759,9 +787,7 @@ const stripePriceId = String(
         error: referralError,
       } =
         await supabaseAdmin
-          .from(
-            "affiliate_referrals"
-          )
+          .from("affiliate_referrals")
           .upsert(
             referralPayload,
             {
@@ -789,6 +815,7 @@ const stripePriceId = String(
 
       const {
         data: existingSale,
+        error: existingSaleError,
       } =
         await supabaseAdmin
           .from("affiliate_sales")
@@ -801,6 +828,15 @@ const stripePriceId = String(
             invoice.id
           )
           .maybeSingle();
+
+      if (existingSaleError) {
+
+        console.error(
+          "❌ EXISTING SALE ERROR:",
+          existingSaleError
+        );
+
+      }
 
       if (existingSale) {
 
@@ -815,25 +851,37 @@ const stripePriceId = String(
 
       }
 
+
       // =====================================================
       // BUSCA AFILIADO
       // =====================================================
 
       const {
         data: existingAffiliate,
-      } = await supabaseAdmin
-        .from("users")
-        .select(`
-          id,
-          email,
-          affiliate_code,
-          affiliate_balance
-        `)
-        .eq(
-          "affiliate_code",
-          affiliateCode
-        )
-        .maybeSingle();
+        error: affiliateLookupError,
+      } =
+        await supabaseAdmin
+          .from("users")
+          .select(`
+            id,
+            email,
+            affiliate_code,
+            affiliate_balance
+          `)
+          .eq(
+            "affiliate_code",
+            affiliateCode
+          )
+          .maybeSingle();
+
+      if (affiliateLookupError) {
+
+        console.error(
+          "❌ AFFILIATE LOOKUP ERROR:",
+          affiliateLookupError
+        );
+
+      }
 
       if (!existingAffiliate) {
 
@@ -858,11 +906,15 @@ const stripePriceId = String(
           affiliateCode,
 
         customer_email:
-          existingUser.email,
+          existingUser?.email,
 
         customer_name:
-          existingUser.name ||
-          existingUser.email,
+
+          existingUser?.name ||
+
+          existingUser?.email ||
+
+          "Cliente",
 
         plan:
           userPlan,
@@ -881,7 +933,7 @@ const stripePriceId = String(
 
         stripe_payment_intent:
           String(
-            invoice.payment_intent || ""
+            (invoice as any).payment_intent || ""
           ),
 
         stripe_customer_id:
@@ -904,9 +956,7 @@ const stripePriceId = String(
       } =
         await supabaseAdmin
           .from("affiliate_sales")
-          .insert(
-            salePayload
-          );
+          .insert(salePayload);
 
       if (saleError) {
 
@@ -927,8 +977,7 @@ const stripePriceId = String(
 
       const currentBalance =
         Number(
-          existingAffiliate
-            .affiliate_balance || 0
+          existingAffiliate?.affiliate_balance || 0
         );
 
       const newBalance =
@@ -941,22 +990,23 @@ const stripePriceId = String(
 
       const {
         error: updateBalanceError,
-      } = await supabaseAdmin
-        .from("users")
-        .update({
+      } =
+        await supabaseAdmin
+          .from("users")
+          .update({
 
-          affiliate_balance:
-            newBalance,
+            affiliate_balance:
+              newBalance,
 
-          updated_at:
-            new Date()
-              .toISOString(),
+            updated_at:
+              new Date()
+                .toISOString(),
 
-        })
-        .eq(
-          "id",
-          existingAffiliate.id
-        );
+          })
+          .eq(
+            "id",
+            existingAffiliate.id
+          );
 
       if (updateBalanceError) {
 
@@ -975,8 +1025,11 @@ const stripePriceId = String(
       }
 
     }
+   
 
-    // =====================================================
+
+
+       // =====================================================
     // SUB CANCELADA
     // =====================================================
 
@@ -1026,34 +1079,56 @@ const stripePriceId = String(
         );
 
       const {
-        data: canceledSale
-      } = await supabaseAdmin
-        .from("affiliate_sales")
-        .select(`
-          affiliate_code,
-          commission_amount
-        `)
-        .eq(
-          "stripe_subscription_id",
-          subscription.id
-        )
-        .maybeSingle();
+        data: canceledSale,
+        error: canceledSaleError,
+      } =
+        await supabaseAdmin
+          .from("affiliate_sales")
+          .select(`
+            affiliate_code,
+            commission_amount
+          `)
+          .eq(
+            "stripe_subscription_id",
+            subscription.id
+          )
+          .maybeSingle();
+
+      if (canceledSaleError) {
+
+        console.error(
+          "❌ CANCELED SALE ERROR:",
+          canceledSaleError
+        );
+
+      }
 
       if (canceledSale) {
 
         const {
-          data: affiliateUser
-        } = await supabaseAdmin
-          .from("users")
-          .select(`
-            id,
-            affiliate_balance
-          `)
-          .eq(
-            "affiliate_code",
-            canceledSale.affiliate_code
-          )
-          .maybeSingle();
+          data: affiliateUser,
+          error: affiliateUserError,
+        } =
+          await supabaseAdmin
+            .from("users")
+            .select(`
+              id,
+              affiliate_balance
+            `)
+            .eq(
+              "affiliate_code",
+              canceledSale.affiliate_code
+            )
+            .maybeSingle();
+
+        if (affiliateUserError) {
+
+          console.error(
+            "❌ AFFILIATE USER ERROR:",
+            affiliateUserError
+          );
+
+        }
 
         if (affiliateUser) {
 
@@ -1061,10 +1136,10 @@ const stripePriceId = String(
             Math.max(
               0,
               Number(
-                affiliateUser.affiliate_balance || 0
+                affiliateUser?.affiliate_balance || 0
               ) -
               Number(
-                canceledSale.commission_amount || 0
+                canceledSale?.commission_amount || 0
               )
             );
 
@@ -1099,6 +1174,10 @@ const stripePriceId = String(
                 Number(
                   newBalance.toFixed(2)
                 ),
+
+              updated_at:
+                new Date()
+                  .toISOString(),
 
             })
             .eq(
@@ -1149,9 +1228,7 @@ const stripePriceId = String(
       );
 
       await supabaseAdmin
-        .from(
-          "affiliate_sales"
-        )
+        .from("affiliate_sales")
         .update({
 
           status:
@@ -1181,7 +1258,9 @@ const stripePriceId = String(
         })
         .eq(
           "stripe_customer_id",
-          String(invoice.customer)
+          String(
+            (invoice as any).customer || ""
+          )
         );
 
       await supabaseAdmin
@@ -1198,10 +1277,13 @@ const stripePriceId = String(
         })
         .eq(
           "stripe_customer_id",
-          String(invoice.customer)
+          String(
+            (invoice as any).customer || ""
+          )
         );
 
     }
+
 
     // =====================================================
     // CHARGEBACK
@@ -1217,7 +1299,7 @@ const stripePriceId = String(
 
       const paymentIntent =
         String(
-          dispute.payment_intent || ""
+          (dispute as any).payment_intent || ""
         );
 
       console.log(
@@ -1228,20 +1310,21 @@ const stripePriceId = String(
       const {
         data: disputedSale,
         error: disputedSaleError,
-      } = await supabaseAdmin
-        .from("affiliate_sales")
-        .select(`
-          id,
-          affiliate_code,
-          commission,
-          commission_amount,
-          stripe_payment_intent
-        `)
-        .eq(
-          "stripe_payment_intent",
-          paymentIntent
-        )
-        .maybeSingle();
+      } =
+        await supabaseAdmin
+          .from("affiliate_sales")
+          .select(`
+            id,
+            affiliate_code,
+            commission,
+            commission_amount,
+            stripe_payment_intent
+          `)
+          .eq(
+            "stripe_payment_intent",
+            paymentIntent
+          )
+          .maybeSingle();
 
       if (disputedSaleError) {
 
@@ -1266,30 +1349,39 @@ const stripePriceId = String(
 
       const {
         data: affiliateUser,
-      } = await supabaseAdmin
-        .from("users")
-        .select(`
-          id,
-          affiliate_balance
-        `)
-        .eq(
-          "affiliate_code",
-          disputedSale.affiliate_code
-        )
-        .maybeSingle();
+        error: affiliateUserError,
+      } =
+        await supabaseAdmin
+          .from("users")
+          .select(`
+            id,
+            affiliate_balance
+          `)
+          .eq(
+            "affiliate_code",
+            disputedSale.affiliate_code
+          )
+          .maybeSingle();
+
+      if (affiliateUserError) {
+
+        console.error(
+          "❌ AFFILIATE USER ERROR:",
+          affiliateUserError
+        );
+
+      }
 
       if (affiliateUser) {
 
         const currentBalance =
           Number(
-            affiliateUser
-              .affiliate_balance || 0
+            affiliateUser?.affiliate_balance || 0
           );
 
         const commissionToRemove =
           Number(
-            disputedSale
-              .commission_amount || 0
+            disputedSale?.commission_amount || 0
           );
 
         const newBalance =
@@ -1324,28 +1416,29 @@ const stripePriceId = String(
 
       const {
         error: chargebackError,
-      } = await supabaseAdmin
-        .from("affiliate_sales")
-        .update({
+      } =
+        await supabaseAdmin
+          .from("affiliate_sales")
+          .update({
 
-          status:
-            "chargeback",
+            status:
+              "chargeback",
 
-          commission:
-            0,
+            commission:
+              0,
 
-          commission_amount:
-            0,
+            commission_amount:
+              0,
 
-          updated_at:
-            new Date()
-              .toISOString(),
+            updated_at:
+              new Date()
+                .toISOString(),
 
-        })
-        .eq(
-          "stripe_payment_intent",
-          paymentIntent
-        );
+          })
+          .eq(
+            "stripe_payment_intent",
+            paymentIntent
+          );
 
       if (chargebackError) {
 
@@ -1382,8 +1475,7 @@ const stripePriceId = String(
 
     return NextResponse.json(
       {
-        error:
-          "Webhook error",
+        error: "Webhook error",
       },
       {
         status: 400,
@@ -1393,3 +1485,5 @@ const stripePriceId = String(
   }
 
 }
+
+ 
