@@ -56,11 +56,25 @@ reason:string;
 
 }
 
+
+interface UserData {
+  id?: string;
+  email?: string;
+  name?: string;
+  youtube_channel_id?: string | null;
+}
+
+interface ViralContentProps {
+  userData?: UserData | null;
+}
+
 /* ======================================================
    COMPONENT
 ====================================================== */
 
-export default function ViralContent() {
+export default function ViralContent({
+  userData,
+}: ViralContentProps) {
 
   const [keyword, setKeyword] =
     useState("");
@@ -213,11 +227,13 @@ sessionStorage.removeItem(
               prompt:
                 keyword.trim(),
 
-              userId:
-                "workspace",
+          userId:
+  userData?.id ??
+  "workspace",
 
-              channelId:
-                "workspace"
+channelId:
+  userData?.youtube_channel_id ??
+  "workspace"
 
             })
 
