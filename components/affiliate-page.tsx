@@ -37,7 +37,7 @@ const [userState, setUserData] =
   useState(userData);
 
   const affiliateLink =
-    `https://tubex.app/?ref=${userData?.affiliate_code}`;
+    `https://tubex.app.br/?ref=${userData?.affiliate_code}`;
 
   async function copyLink() {
 
