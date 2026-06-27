@@ -6,27 +6,24 @@ export default function RefTracker() {
 
   useEffect(() => {
 
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
+    const params = new URLSearchParams(
+      window.location.search
+    );
 
-    const ref =
-      params.get("ref");
+    const ref = params.get("ref");
 
-    if (ref) {
+    if (!ref) return;
 
-      localStorage.setItem(
-        "tubex_ref",
-        ref
-      );
+    // Salva o código do afiliado para ser utilizado no checkout
+    localStorage.setItem(
+      "affiliate_ref",
+      ref
+    );
 
-      console.log(
-        "🎯 Afiliado detectado:",
-        ref
-      );
-
-    }
+    console.log(
+      "🎯 Afiliado detectado:",
+      ref
+    );
 
   }, []);
 
