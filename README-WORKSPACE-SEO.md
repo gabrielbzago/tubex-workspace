@@ -103,3 +103,13 @@ Consulte `PRODUCTION-MESSAGE-AUDIT.md` para a matriz Free/Pro/Expert, textos de 
 ### Gerador de palavras-chave no Creator Workspace
 
 O Creator Workspace inclui agora pesquisa de palavras-chave por nicho e por título do vídeo, utilizando o mesmo `mode: "tag_suggestions"` do backend da extensão TubeX Analyzer. A lista é classificada por relevância com base em tags públicas de vídeos e autocomplete do YouTube, sem IA. Free visualiza três sugestões e uma prévia bloqueada; Pro/Expert visualizam até 120. A rota autenticada `/api/seo/tags` aplica a cota diária e estorna tentativas sem resultados ou com falha.
+
+
+## Dashboard principal e responsividade mobile (05/11/2026)
+
+- O login agora abre diretamente em Visão Geral (`dashboard`).
+- A navegação prioriza Visão Geral, seguida dos espaços web complementares.
+- Visão Geral apresenta um alerta de destaque informando que a extensão TubeX é a ferramenta principal de uso no YouTube, com link oficial da Chrome Web Store e instruções rápidas de instalação/fixação.
+- O painel web é descrito como complemento para análise, planejamento e gestão da conta.
+- Menu mobile em duas colunas, com altura limitada e rolagem própria; conteúdo com largura fluida, controles adaptados e proteção contra overflow horizontal.
+- Campos de seleção e botões que tinham largura mínima fixa passam a ocupar 100% da tela em smartphones.

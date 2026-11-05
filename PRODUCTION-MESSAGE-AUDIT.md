@@ -35,3 +35,13 @@ A revisão estática de mensagens e sintaxe foi realizada. O build completo não
 - Free: três sugestões utilizáveis e prévia limitada das demais; Pro e Expert: lista completa de até 120 sugestões.
 - Cada geração utiliza a cota diária do plano. Falhas ou pesquisas sem resultados estornam a reserva.
 - As palavras-chave podem ser copiadas individualmente ou em conjunto.
+
+
+## Dashboard principal e responsividade mobile (05/11/2026)
+
+- O login agora abre diretamente em Visão Geral (`dashboard`).
+- A navegação prioriza Visão Geral, seguida dos espaços web complementares.
+- Visão Geral apresenta um alerta de destaque informando que a extensão TubeX é a ferramenta principal de uso no YouTube, com link oficial da Chrome Web Store e instruções rápidas de instalação/fixação.
+- O painel web é descrito como complemento para análise, planejamento e gestão da conta.
+- Menu mobile em duas colunas, com altura limitada e rolagem própria; conteúdo com largura fluida, controles adaptados e proteção contra overflow horizontal.
+- Campos de seleção e botões que tinham largura mínima fixa passam a ocupar 100% da tela em smartphones.

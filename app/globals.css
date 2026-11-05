@@ -99,3 +99,21 @@ a{text-decoration:none}
 .tx-faq summary{padding:16px;font-size:12px;font-weight:800;cursor:pointer;list-style:none}
 .tx-faq summary::-webkit-details-marker{display:none}
 .tx-faq p{padding:0 16px 16px;margin:0;color:var(--tx-muted);font-size:12px;line-height:1.7}
+
+
+/* TubeX dashboard: responsive safeguards for narrow screens. */
+html,body{max-width:100%;overflow-x:hidden}
+.tx-app-main,.tx-dashboard-content,.tx-mobile-menu{min-width:0;max-width:100%}
+.tx-dashboard-content>*{min-width:0;max-width:100%}
+.tx-surface{min-width:0}
+@media(max-width:640px){
+  .tx-dashboard-content{padding-left:12px;padding-right:12px;padding-top:14px;padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  .tx-btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25;padding-left:12px;padding-right:12px}
+  .tx-mobile-menu nav button{min-width:0;overflow-wrap:anywhere}
+  input,select,textarea{max-width:100%;min-width:0}
+  .tx-surface{border-radius:16px}
+  table{font-size:11px}
+}
+@media(min-width:641px) and (max-width:1023px){
+  .tx-dashboard-content{padding-left:18px;padding-right:18px}
+}
