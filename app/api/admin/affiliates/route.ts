@@ -8,48 +8,40 @@ const FALLBACK_OWNER_EMAIL = "gabrielbzago@gmail.com";
 
 async function getOwner(request: Request) {
   const authorization = request.headers.get("authorization") || "";
-  const token = authorization.startsWith("Bearer ")
-    ? authorization.slice(7).trim()
-    : "";
-
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   if (!token) return null;
 
-  const { data: authData, error: authError } =
-    await supabaseAdmin.auth.getUser(token);
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+  const authUser = authData?.user;
+  if (authError || !authUser?.id || !authUser.email) return null;
 
-  if (authError || !authData.user?.email) return null;
+  const email = authUser.email.trim().toLowerCase();
+  const configuredOwners = [
+    process.env.OWNER_EMAILS || "",
+    process.env.NEXT_PUBLIC_OWNER_EMAIL || "",
+    FALLBACK_OWNER_EMAIL,
+  ].join(",").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+  if (configuredOwners.includes(email)) return authUser;
 
-  const email = authData.user.email.trim().toLowerCase();
+  const appRole = String(authUser.app_metadata?.role || authUser.app_metadata?.user_role || "").toLowerCase();
+  if (["owner", "admin", "administrator"].includes(appRole)) return authUser;
 
-  const configuredOwners = String(
-    process.env.OWNER_EMAILS ||
-      process.env.NEXT_PUBLIC_OWNER_EMAIL ||
-      FALLBACK_OWNER_EMAIL
-  )
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
+  // O cadastro do TubeX pode ter a role vinculada pelo ID ou apenas pelo e-mail.
+  // Consultamos ambos, sem confiar em user_metadata enviado pelo próprio cliente.
+  let row: any = null;
+  const byId = await supabaseAdmin.from("users").select("*").eq("id", authUser.id).maybeSingle();
+  if (byId.error) console.warn("OWNER LOOKUP BY ID:", byId.error.message);
+  row = byId.data || null;
+  const roleOf = (value: any) => [value?.plan, value?.role, value?.user_role, value?.account_role]
+    .map(item => String(item || "").trim().toLowerCase());
+  const isOwnerRow = (value: any) => !!value && (roleOf(value).some(role => ["owner", "admin", "administrator"].includes(role)) || value.is_owner === true || value.is_admin === true);
+  if (isOwnerRow(row)) return authUser;
 
-  if (configuredOwners.includes(email)) {
-    return authData.user;
-  }
+  const byEmail = await supabaseAdmin.from("users").select("*").ilike("email", email).maybeSingle();
+  if (byEmail.error) console.warn("OWNER LOOKUP BY EMAIL:", byEmail.error.message);
+  if (isOwnerRow(byEmail.data)) return authUser;
 
-  const { data: row, error } = await supabaseAdmin
-    .from("users")
-    .select("id, email, plan")
-    .eq("email", email)
-    .maybeSingle();
-
-  if (error) {
-    console.error("❌ OWNER LOOKUP ERROR:", error);
-    return null;
-  }
-
-  const role = String(row?.plan || "").trim().toLowerCase();
-
-  return role === "owner" || role === "admin"
-    ? authData.user
-    : null;
+  return null;
 }
 
 function money(value: unknown) {

@@ -102,8 +102,13 @@ export default function AdminAffiliates() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Erro ao carregar painel.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 403) setMessage("Acesso Owner não confirmado pelo servidor. Confirme se o e-mail de login está em OWNER_EMAILS ou se sua conta possui role Owner na tabela users.");
+        else if (response.status === 401) setMessage("Sua sessão expirou. Saia e entre novamente no TubeX.");
+        else setMessage(payload?.error || t.error);
+        return;
+      }
 
       setData({
         summary: payload.summary || {},
@@ -113,9 +118,15 @@ export default function AdminAffiliates() {
         payouts: payload.payouts || [],
         monthly: payload.monthly || [],
       });
-    } catch (error) {
-      console.error("Admin affiliate load error:", error);
-      setMessage(t.error);
+    } catch (error: any) {
+      // A 401/403 é um estado de autorização, não uma falha de compilação.
+      // Mostrar a orientação dentro do painel evita o overlay vermelho do Next.
+      if (error?.status === 403) setMessage("Acesso Owner não confirmado pelo servidor. Verifique OWNER_EMAILS ou o plano/role Owner na tabela users.");
+      else if (error?.status === 401) setMessage("Sua sessão expirou. Saia e entre novamente no TubeX.");
+      else {
+        console.error("Admin affiliate load error:", error);
+        setMessage(t.error);
+      }
     } finally {
       setLoading(false);
     }
@@ -138,14 +149,17 @@ export default function AdminAffiliates() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: "mark_paid", affiliate_id: affiliate.id }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "Erro no pagamento.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(response.status === 403 ? "Acesso Owner não confirmado pelo servidor." : response.status === 401 ? "Sua sessão expirou. Entre novamente." : (payload?.error || "Erro no pagamento."));
+        return;
+      }
 
       setMessage(t.success);
       await fetchData();
-    } catch (error) {
-      console.error("Admin payout error:", error);
-      setMessage(t.error);
+    } catch (error: any) {
+      if (error?.status === 401) setMessage("Sua sessão expirou. Entre novamente.");
+      else { console.error("Admin payout error:", error); setMessage(t.error); }
     } finally {
       setPayingId(null);
     }

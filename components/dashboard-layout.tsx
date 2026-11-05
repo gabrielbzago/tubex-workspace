@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X } from "lucide-react";
+import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "./theme-toggle";
 import AffiliatePage from "./affiliate-page";
 import AdminAffiliates from "./admin-affiliates";
+import SeoWorkspace from "./seo-workspace";
+import CreatorWorkspace from "./creator-workspace";
 
 type Lang="pt-br"|"pt-pt"|"es"|"en";
 const languages=[
@@ -13,25 +15,26 @@ const languages=[
 ] as const;
 
 const i18n={
- "pt-br":{dashboard:"Visão geral",affiliate:"Afiliados",account:"Conta",billing:"Assinatura",support:"Suporte",welcome:"Seu espaço TubeX",overview:"A extensão continua sendo seu centro de trabalho no YouTube.",connected:"Canal conectado",notConnected:"Nenhum canal conectado",plan:"Plano atual",status:"Status",active:"Ativo",free:"Free",openExtension:"Abrir extensão",manage:"Gerenciar conta",logout:"Sair",affiliateTitle:"Programa de Afiliados",affiliateText:"Compartilhe o TubeX e acompanhe suas vendas e comissões.",supportText:"Precisa de ajuda? Fale com o suporte.",contact:"Falar com suporte",subscription:"Sua assinatura",upgrade:"Ver planos",security:"Sessão protegida",language:"Idioma",admin:"Admin / Afiliados"},
- "pt-pt":{dashboard:"Visão geral",affiliate:"Afiliados",account:"Conta",billing:"Subscrição",support:"Suporte",welcome:"O seu espaço TubeX",overview:"A extensão continua a ser o seu centro de trabalho no YouTube.",connected:"Canal ligado",notConnected:"Nenhum canal ligado",plan:"Plano atual",status:"Estado",active:"Ativo",free:"Free",openExtension:"Abrir extensão",manage:"Gerir conta",logout:"Sair",affiliateTitle:"Programa de Afiliados",affiliateText:"Partilhe o TubeX e acompanhe vendas e comissões.",supportText:"Precisa de ajuda? Fale com o suporte.",contact:"Falar com suporte",subscription:"A sua subscrição",upgrade:"Ver planos",security:"Sessão protegida",language:"Idioma",admin:"Admin / Afiliados"},
- "es":{dashboard:"Resumen",affiliate:"Afiliados",account:"Cuenta",billing:"Suscripción",support:"Soporte",welcome:"Tu espacio TubeX",overview:"La extensión sigue siendo tu centro de trabajo en YouTube.",connected:"Canal conectado",notConnected:"Ningún canal conectado",plan:"Plan actual",status:"Estado",active:"Activo",free:"Free",openExtension:"Abrir extensión",manage:"Gestionar cuenta",logout:"Cerrar sesión",affiliateTitle:"Programa de Afiliados",affiliateText:"Comparte TubeX y controla ventas y comisiones.",supportText:"¿Necesitas ayuda? Habla con soporte.",contact:"Hablar con soporte",subscription:"Tu suscripción",upgrade:"Ver planes",security:"Sesión protegida",language:"Idioma",admin:"Admin / Afiliados"},
- "en":{dashboard:"Overview",affiliate:"Affiliates",account:"Account",billing:"Subscription",support:"Support",welcome:"Your TubeX workspace",overview:"The extension remains your main workspace inside YouTube.",connected:"Channel connected",notConnected:"No channel connected",plan:"Current plan",status:"Status",active:"Active",free:"Free",openExtension:"Open extension",manage:"Manage account",logout:"Sign out",affiliateTitle:"Affiliate Program",affiliateText:"Share TubeX and track sales and commissions.",supportText:"Need help? Contact support.",contact:"Contact support",subscription:"Your subscription",upgrade:"View plans",security:"Protected session",language:"Language",admin:"Admin / Affiliates"}
+ "pt-br":{dashboard:"Visão geral",affiliate:"Afiliados",account:"Conta",billing:"Assinatura",support:"Suporte",welcome:"Seu espaço TubeX",overview:"Pesquise palavras-chave, compare concorrentes e analise oportunidades para seus próximos vídeos.",connected:"Canal conectado",notConnected:"Nenhum canal conectado",plan:"Plano atual",status:"Status",active:"Ativo",free:"Free",openExtension:"Abrir extensão",manage:"Gerenciar conta",logout:"Sair",affiliateTitle:"Programa de Afiliados",affiliateText:"Compartilhe o TubeX e acompanhe suas vendas e comissões.",supportText:"Precisa de ajuda? Fale com o suporte.",contact:"Falar com suporte",subscription:"Sua assinatura",upgrade:"Ver planos",security:"Sessão protegida",language:"Idioma",admin:"Admin / Afiliados"},
+ "pt-pt":{dashboard:"Visão geral",affiliate:"Afiliados",account:"Conta",billing:"Subscrição",support:"Suporte",welcome:"O seu espaço TubeX",overview:"Pesquise palavras-chave, compare concorrentes e analise oportunidades para os seus próximos vídeos.",connected:"Canal ligado",notConnected:"Nenhum canal ligado",plan:"Plano atual",status:"Estado",active:"Ativo",free:"Free",openExtension:"Abrir extensão",manage:"Gerir conta",logout:"Sair",affiliateTitle:"Programa de Afiliados",affiliateText:"Partilhe o TubeX e acompanhe vendas e comissões.",supportText:"Precisa de ajuda? Fale com o suporte.",contact:"Falar com suporte",subscription:"A sua subscrição",upgrade:"Ver planos",security:"Sessão protegida",language:"Idioma",admin:"Admin / Afiliados"},
+ "es":{dashboard:"Resumen",affiliate:"Afiliados",account:"Cuenta",billing:"Suscripción",support:"Soporte",welcome:"Tu espacio TubeX",overview:"Investiga palabras clave, compara competidores y analiza oportunidades para tus próximos vídeos.",connected:"Canal conectado",notConnected:"Ningún canal conectado",plan:"Plan actual",status:"Estado",active:"Activo",free:"Free",openExtension:"Abrir extensión",manage:"Gestionar cuenta",logout:"Cerrar sesión",affiliateTitle:"Programa de Afiliados",affiliateText:"Comparte TubeX y controla ventas y comisiones.",supportText:"¿Necesitas ayuda? Habla con soporte.",contact:"Hablar con soporte",subscription:"Tu suscripción",upgrade:"Ver planes",security:"Sesión protegida",language:"Idioma",admin:"Admin / Afiliados"},
+ "en":{dashboard:"Overview",affiliate:"Affiliates",account:"Account",billing:"Subscription",support:"Support",welcome:"Your TubeX workspace",overview:"Research keywords, compare competing videos and uncover opportunities for your next uploads.",connected:"Channel connected",notConnected:"No channel connected",plan:"Current plan",status:"Status",active:"Active",free:"Free",openExtension:"Open extension",manage:"Manage account",logout:"Sign out",affiliateTitle:"Affiliate Program",affiliateText:"Share TubeX and track sales and commissions.",supportText:"Need help? Contact support.",contact:"Contact support",subscription:"Your subscription",upgrade:"View plans",security:"Protected session",language:"Language",admin:"Admin / Affiliates"}
 } as const;
 
 function Logo(){return <a href="/dashboard" className="flex items-center gap-2 font-black tracking-[-.06em] text-[22px] text-[var(--tx-text)]"><span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--tx-accent)] text-[10px] text-[#11151a]">TX</span>Tube<span className="text-[var(--tx-accent)]">X</span></a>}
 
 export default function DashboardLayout({user}:{user:any}){
- const [tab,setTab]=useState<"dashboard"|"affiliate"|"admin"|"account"|"billing"|"support">("dashboard");
+ const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"account"|"billing"|"support">("workspace");
  const [mobileOpen,setMobileOpen]=useState(false);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
- const ownerEmail = (process.env.NEXT_PUBLIC_OWNER_EMAIL || "").trim().toLowerCase();
+ const ownerEmails = [process.env.NEXT_PUBLIC_OWNER_EMAIL || "", "gabrielbzago@gmail.com"].map(v => v.trim().toLowerCase()).filter(Boolean);
  const userEmail = String(user?.email || "").trim().toLowerCase();
- const role = String(userData?.role || userData?.user_role || user?.user_metadata?.role || "").toLowerCase();
- const planRaw = String(userData?.plan || user?.user_metadata?.plan || "").toLowerCase();
- const isOwner = role==="owner" || role==="admin" || role==="administrator" || planRaw==="owner" || planRaw==="admin" ||
-   (!!ownerEmail && userEmail===ownerEmail) || String(userData?.name || "").trim().toLowerCase()==="gabriel zago";
+ // A navegação espelha apenas os sinais de autorização persistidos/allowlist.
+ // O backend continua sendo a autoridade final em qualquer ação administrativa.
+ const role = String(userData?.role || userData?.user_role || "").toLowerCase();
+ const planRaw = String(userData?.plan || "").toLowerCase();
+ const isOwner = role==="owner" || role==="admin" || role==="administrator" || planRaw==="owner" || planRaw==="admin" || userData?.is_owner === true || ownerEmails.includes(userEmail);
 
  useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;
   (async()=>{if(!user?.email)return;const {data}=await supabase.from("users").select("*").eq("email",user.email).maybeSingle();setUserData(data)})();
@@ -41,11 +44,19 @@ export default function DashboardLayout({user}:{user:any}){
   document.documentElement.lang=l;
   window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
 }
- async function logout(){await supabase.auth.signOut();window.location.href="/"}
- const plan=String(userData?.plan||"free").toLowerCase();
+ async function logout(){
+  // Limpa o cache de pesquisa somente quando o usuário encerra a sessão.
+  try {
+   const ownerKey=String(user?.id||user?.email||"user");
+   localStorage.removeItem(`tubex-keyword-active-v1:${ownerKey}`);
+   for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i)||"";if(key.startsWith("tubex-keyword-cache-v3:"))localStorage.removeItem(key);}
+  } catch {}
+  await supabase.auth.signOut();window.location.href="/";
+ }
+ const plan=String(isOwner ? "expert" : (userData?.plan||"free")).toLowerCase();
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
  const navItems:any[]=[
-  ["dashboard",Home,t.dashboard],["affiliate",Users,t.affiliate],
+  ["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["dashboard",Home,t.dashboard],["affiliate",Users,t.affiliate],
   ...(isOwner?[["admin",ShieldCheck,t.admin]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
@@ -65,7 +76,7 @@ export default function DashboardLayout({user}:{user:any}){
   <main className="min-h-screen lg:pl-[232px]">
    <header className="sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
     <div className="mx-auto flex h-[66px] w-[min(1180px,calc(100%-28px))] items-center gap-2">
-     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
+     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
@@ -75,6 +86,8 @@ export default function DashboardLayout({user}:{user:any}){
    </header>
   {mobileOpen&&<div className="lg:hidden border-b border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-3"><nav className="grid gap-1">{navItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)]"}`}><Icon size={15}/><span>{label}</span>{id==="admin"&&<span className="ml-auto rounded-md bg-[var(--tx-accent)] px-1.5 py-0.5 text-[8px] font-black text-[#11151a]">OWNER</span>}</button>)}</nav></div>}
    <div className="mx-auto w-[min(1180px,calc(100%-28px))] py-8">
+    {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
+    {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}
     {tab==="dashboard"&&<Overview user={user} userData={userData} t={t} onTab={setTab} isOwner={isOwner}/>}
     {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="admin"&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
     {tab==="account"&&<Account user={user} userData={userData} t={t} isOwner={isOwner}/>}
