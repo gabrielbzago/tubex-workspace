@@ -8,6 +8,7 @@ import AffiliatePage from "./affiliate-page";
 import AdminAffiliates from "./admin-affiliates";
 import SeoWorkspace from "./seo-workspace";
 import CreatorWorkspace from "./creator-workspace";
+import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
 
 type Lang="pt-br"|"pt-pt"|"es"|"en";
 const languages=[
@@ -36,9 +37,47 @@ export default function DashboardLayout({user}:{user:any}){
  const planRaw = String(userData?.plan || "").toLowerCase();
  const isOwner = role==="owner" || role==="admin" || role==="administrator" || planRaw==="owner" || planRaw==="admin" || userData?.is_owner === true || ownerEmails.includes(userEmail);
 
- useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;
+ useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
   (async()=>{if(!user?.email)return;const {data}=await supabase.from("users").select("*").eq("email",user.email).maybeSingle();setUserData(data)})();
  },[user?.email]);
+ // Apply the selected language to all UI text nodes, including the independently
+ // rendered Keyword Explorer and Workspace SEO, and keep newly rendered UI in sync.
+ useEffect(()=>{
+  const originals = new WeakMap<Text,string>();
+  const originalAttributes = new WeakMap<Element,Record<string,string>>();
+  const detectedLang = document.documentElement.lang.toLowerCase();
+  let activeLang = ((["pt-br","pt-pt","es","en"].includes(detectedLang) ? detectedLang : localStorage.getItem("tubex-language")) as TubeXLang|null) || lang;
+  const translateNode = (node: Node) => {
+   if(node.nodeType===Node.TEXT_NODE){
+    const text=node as Text;
+    const parent=text.parentElement;
+    if(!parent || parent.closest("script,style,textarea,input,[contenteditable='true']")) return;
+    if(!originals.has(text)) originals.set(text,text.nodeValue || "");
+    const original=originals.get(text) || "";
+    const translated=translateUiText(original,activeLang);
+    if(text.nodeValue!==translated) text.nodeValue=translated;
+    return;
+   }
+   const element=node as Element;
+   let baseAttributes=originalAttributes.get(element);
+   if(!baseAttributes){baseAttributes={};for(const attr of ["placeholder","title","aria-label"]){const value=element.getAttribute(attr);if(value)baseAttributes[attr]=value;}originalAttributes.set(element,baseAttributes);}
+   for(const attr of ["placeholder","title","aria-label"]){
+    const value=baseAttributes[attr];
+    if(value){const translated=translateUiText(value,activeLang);if(element.getAttribute(attr)!==translated)element.setAttribute(attr,translated);}
+   }
+   node.childNodes.forEach(translateNode);
+  };
+  const apply=(next:TubeXLang)=>{activeLang=next;document.documentElement.lang=next; if(document.body) translateNode(document.body);};
+  apply(activeLang);
+  const observer=new MutationObserver(records=>records.forEach(record=>{
+   record.addedNodes.forEach(translateNode);
+   if(record.type==="characterData" && record.target.nodeType===Node.TEXT_NODE) translateNode(record.target);
+  }));
+  observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["placeholder","title","aria-label"]});
+  const onLanguage=(event:Event)=>apply((event as CustomEvent<TubeXLang>).detail || activeLang);
+  window.addEventListener("tubex-language-change",onLanguage);
+  return()=>{observer.disconnect();window.removeEventListener("tubex-language-change",onLanguage)};
+ },[]);
  function changeLang(l:Lang){
   setLang(l);setOpenLang(false);localStorage.setItem("tubex-language",l);
   document.documentElement.lang=l;

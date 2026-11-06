@@ -113,3 +113,9 @@ O Creator Workspace inclui agora pesquisa de palavras-chave por nicho e por tít
 - O painel web é descrito como complemento para análise, planejamento e gestão da conta.
 - Menu mobile em duas colunas, com altura limitada e rolagem própria; conteúdo com largura fluida, controles adaptados e proteção contra overflow horizontal.
 - Campos de seleção e botões que tinham largura mínima fixa passam a ocupar 100% da tela em smartphones.
+
+## Temas e idiomas globais (nov/2026)
+- Alternância de tema claro/escuro persistida em `tubex-theme`; a preferência explícita não é sobrescrita pela preferência de tema do sistema operacional.
+- Paleta centralizada em variáveis CSS para superfícies, textos, bordas, campos e elementos de gráficos, com suporte explícito a `html.dark` e `html[data-theme="light"]`.
+- Dicionário compartilhado `lib/ui-i18n.ts` aplicado ao texto e aos atributos de interface dos componentes autenticados. O evento `tubex-language-change` sincroniza menus, Keyword Explorer, Workspace SEO e formatação regional.
+- Idiomas suportados: Português (Brasil), Português (Portugal), Espanhol e Inglês.

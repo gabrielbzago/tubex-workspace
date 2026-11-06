@@ -45,3 +45,9 @@ A revisão estática de mensagens e sintaxe foi realizada. O build completo não
 - O painel web é descrito como complemento para análise, planejamento e gestão da conta.
 - Menu mobile em duas colunas, com altura limitada e rolagem própria; conteúdo com largura fluida, controles adaptados e proteção contra overflow horizontal.
 - Campos de seleção e botões que tinham largura mínima fixa passam a ocupar 100% da tela em smartphones.
+
+## Revisão de tema e localização (06/11/2026)
+- Corrigida a precedência do tema claro quando o sistema operacional está em modo escuro; a escolha manual agora prevalece e alterna diretamente entre claro/escuro.
+- Incluída camada compartilhada de tradução para os textos dos módulos Keyword Explorer e Workspace SEO, incluindo textos dinâmicos conhecidos, placeholders, títulos e aria-labels.
+- A troca de idioma notifica os módulos para atualizar a interface e a formatação de números/datas.
+- Verificação de sintaxe TypeScript/TSX via transpileModule sem diagnósticos. Build completo não executado: o ZIP não contém `node_modules` e as dependências não foram instaladas neste ambiente.

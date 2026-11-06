@@ -14,11 +14,16 @@ type Outlier = VideoItem & { subscribers: number | null; ratio: number; multiple
 type Idea = { title: string; angle: string; trendEvidence: string };
 type Trend = { keyword: string; average: number | null; change: number | null; points: { label: string; value: number }[] };
 
+const getUiLocale = () => {
+  if (typeof window === "undefined") return "pt-BR";
+  const lang = localStorage.getItem("tubex-language") || "pt-br";
+  return lang === "en" ? "en-US" : lang === "es" ? "es-ES" : lang === "pt-pt" ? "pt-PT" : "pt-BR";
+};
 const YT_API = "https://www.googleapis.com/youtube/v3";
 const STOP = new Set("como para voce vocês seu sua seus suas canal canais video videos youtube sobre dicas melhor melhores muito mais menos com sem uma uns umas dos das que por pelo pela de da do no na nos nas em um uma e o a os as ser ter fazer seu meu minha hoje guia tutorial passo erros vale funciona usar usando aumentar crescer ganhar inscritos visualizacoes views shorts oficial parte tudo".split(" "));
 const norm = (s: string) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-const fmt = (n: number | null | undefined) => new Intl.NumberFormat("pt-BR", { notation: Number(n || 0) > 99999 ? "compact" : "standard", maximumFractionDigits: 1 }).format(Number(n || 0));
-const dateLabel = (date: string) => { const d = new Date(date); return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(d); };
+const fmt = (n: number | null | undefined) => new Intl.NumberFormat(getUiLocale(), { notation: Number(n || 0) > 99999 ? "compact" : "standard", maximumFractionDigits: 1 }).format(Number(n || 0));
+const dateLabel = (date: string) => { const d = new Date(date); return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat(getUiLocale(), { day: "2-digit", month: "short", year: "numeric" }).format(d); };
 
 async function googleGet(path: string, token: string) {
   const response = await fetch(`${YT_API}/${path}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
@@ -115,7 +120,7 @@ function normaliseTrend(raw: any): { label: string; value: number }[] {
     if (/^\d{9,13}$/.test(label)) {
       const timestamp = Number(label);
       const date = new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
-      if (!Number.isNaN(date.getTime())) label = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date);
+      if (!Number.isNaN(date.getTime())) label = new Intl.DateTimeFormat(getUiLocale(), { day: "2-digit", month: "short" }).format(date);
     }
     return { label, value: Number(rawValue) };
   }).filter(p => Number.isFinite(p.value)).map(p => ({ ...p, value: Math.max(0, Math.min(100, p.value)) }));
@@ -140,6 +145,12 @@ function MiniTrend({ points }: { points: { label: string; value: number }[] }) {
 }
 
 export default function CreatorWorkspace({ user, plan: initialPlan = "free" }: { user: any; plan?: string }) {
+  const [, setLocaleTick] = useState(0);
+  useEffect(() => {
+    const refreshLocale = () => setLocaleTick(value => value + 1);
+    window.addEventListener("tubex-language-change", refreshLocale);
+    return () => window.removeEventListener("tubex-language-change", refreshLocale);
+  }, []);
   const [sessionToken, setSessionToken] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -558,7 +569,7 @@ export default function CreatorWorkspace({ user, plan: initialPlan = "free" }: {
           <p className="mt-2 text-[10px] leading-5 text-[var(--tx-muted)]">Acompanhe tendências no YouTube em 7 dias, 30 dias e 12 meses. Identifique picos de interesse e escolha o melhor momento para publicar.</p>
           <button onClick={()=>setUpgradeReason("trends")} className="tx-btn tx-btn-primary mt-4">Desbloquear Google Trends</button>
         </div>}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[9px] text-[var(--tx-muted)]"><span>{pulseData.analyzed} vídeos · {fmt(pulseData.totalResults)} resultados · dados públicos do YouTube</span><span>Atualizado {new Date().toLocaleTimeString("pt-BR")}</span></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[9px] text-[var(--tx-muted)]"><span>{pulseData.analyzed} vídeos · {fmt(pulseData.totalResults)} resultados · dados públicos do YouTube</span><span>Atualizado {new Date().toLocaleTimeString(getUiLocale())}</span></div>
       </div>}
     </section>
 

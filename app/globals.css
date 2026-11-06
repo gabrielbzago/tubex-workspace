@@ -17,23 +17,6 @@
   --foreground:var(--tx-text);
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){
-  :root:not(.dark){
-    --tx-bg:#070b0e;
-    --tx-surface:#0d1317;
-    --tx-surface-2:#11191e;
-    --tx-border:#243139;
-    --tx-text:#f5f7f8;
-    --tx-muted:#819095;
-    --tx-accent:#f2c94c;
-    --tx-accent-strong:#ffe58a;
-    --tx-accent-soft:rgba(242,201,76,.09);
-    --tx-shadow:0 24px 70px rgba(0,0,0,.35);
-    --background:var(--tx-bg);
-    --foreground:var(--tx-text);
-    color-scheme:dark;
-  }
-}
 html.dark{
   --tx-bg:#070b0e;
   --tx-surface:#0d1317;
@@ -48,6 +31,10 @@ html.dark{
   --background:var(--tx-bg);
   --foreground:var(--tx-text);
   color-scheme:dark;
+}
+
+html.light,html[data-theme="light"]{
+  --tx-bg:#f6f8fb;--tx-surface:#ffffff;--tx-surface-2:#f0f3f7;--tx-border:#e2e7ee;--tx-text:#10151d;--tx-muted:#697586;--tx-accent:#f2c94c;--tx-accent-strong:#dcae18;--tx-accent-soft:rgba(242,201,76,.14);--tx-shadow:0 18px 50px rgba(16,21,29,.08);--background:var(--tx-bg);--foreground:var(--tx-text);color-scheme:light;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -117,3 +104,11 @@ html,body{max-width:100%;overflow-x:hidden}
 @media(min-width:641px) and (max-width:1023px){
   .tx-dashboard-content{padding-left:18px;padding-right:18px}
 }
+
+/* Consistent desktop theme surfaces and native controls. */
+html,body{background:var(--tx-bg);color:var(--tx-text);transition:background-color .18s ease,color .18s ease}
+input,select,textarea{background-color:var(--tx-surface-2);color:var(--tx-text);border-color:var(--tx-border)}
+input::placeholder,textarea::placeholder{color:var(--tx-muted)}
+select option{background:var(--tx-surface);color:var(--tx-text)}
+.tx-surface, .tx-feature, .tx-plan, .tx-faq, .tx-login-card{color:var(--tx-text)}
+html.dark :is(.recharts-cartesian-axis-tick-value,.recharts-legend-item-text){fill:var(--tx-muted)!important;color:var(--tx-muted)!important}

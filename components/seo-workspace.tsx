@@ -8,6 +8,11 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+const getUiLocale = () => {
+  if (typeof window === "undefined") return "pt-BR";
+  const lang = localStorage.getItem("tubex-language") || "pt-br";
+  return lang === "en" ? "en-US" : lang === "es" ? "es-ES" : lang === "pt-pt" ? "pt-PT" : "pt-BR";
+};
 type YTChannel = {
   id: string;
   title: string;
@@ -62,7 +67,7 @@ const STOPWORDS = new Set([
 
 function fmt(value: number | undefined | null) {
   const n = Number(value || 0);
-  return new Intl.NumberFormat("pt-BR", { notation: n >= 100000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(n);
+  return new Intl.NumberFormat(getUiLocale(), { notation: n >= 100000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(n);
 }
 function pct(value: number) { return `${Math.round(value)}%`; }
 function normalize(text: string) {
@@ -82,7 +87,7 @@ function normaliseTrend(raw: any): { label: string; value: number }[] {
     if (/^\d{9,13}$/.test(label)) {
       const timestamp = Number(label);
       const date = new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
-      if (!Number.isNaN(date.getTime())) label = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date);
+      if (!Number.isNaN(date.getTime())) label = new Intl.DateTimeFormat(getUiLocale(), { day: "2-digit", month: "short" }).format(date);
     }
     return { label, value: Number(rawValue) };
   }).filter(point => Number.isFinite(point.value)).map(point => ({ ...point, value: Math.max(0, Math.min(100, point.value)) }));
@@ -150,6 +155,12 @@ async function googleGet(path: string, token: string) {
 }
 
 export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { user: any; plan?: string }) {
+  const [, setLocaleTick] = useState(0);
+  useEffect(() => {
+    const refreshLocale = () => setLocaleTick(value => value + 1);
+    window.addEventListener("tubex-language-change", refreshLocale);
+    return () => window.removeEventListener("tubex-language-change", refreshLocale);
+  }, []);
   const [accessToken, setAccessToken] = useState("");
   const [channels, setChannels] = useState<YTChannel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState("");
@@ -473,7 +484,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
     {searching && <div className="tx-surface flex items-center gap-3 rounded-[18px] p-5 text-xs text-[var(--tx-muted)]"><Loader2 size={17} className="animate-spin text-[var(--tx-accent)]"/> Analisando palavra-chave...</div>}
 
     {analysis && !searching && <>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="tx-kicker">ANÁLISE CONCLUÍDA</p><h2 className="mt-1 text-2xl font-black">{analysis.keyword}</h2><p className="mt-1 text-[10px] text-[var(--tx-muted)]">{fmt(analysis.totalResults)} resultados estimados · {analysis.analyzed} vídeos analisados · {new Date(analysis.analyzedAt).toLocaleString("pt-BR")}</p></div><button onClick={() => void analyzeKeyword(undefined, true)} className="tx-btn tx-btn-secondary"><RefreshCw size={13}/> Atualizar análise</button></div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="tx-kicker">ANÁLISE CONCLUÍDA</p><h2 className="mt-1 text-2xl font-black">{analysis.keyword}</h2><p className="mt-1 text-[10px] text-[var(--tx-muted)]">{fmt(analysis.totalResults)} resultados estimados · {analysis.analyzed} vídeos analisados · {new Date(analysis.analyzedAt).toLocaleString(getUiLocale())}</p></div><button onClick={() => void analyzeKeyword(undefined, true)} className="tx-btn tx-btn-secondary"><RefreshCw size={13}/> Atualizar análise</button></div>
 
       <TubeXScoreGauge
         score={analysis.tubeXScore}

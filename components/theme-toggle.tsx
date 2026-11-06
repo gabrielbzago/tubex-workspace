@@ -1,69 +1,37 @@
 "use client";
 
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type Mode = "system" | "light" | "dark";
+type Mode = "light" | "dark";
 const KEY = "tubex-theme";
-
 function applyTheme(mode: Mode) {
-  const dark =
-    mode === "dark" ||
-    (mode === "system" &&
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-
-  document.documentElement.classList.toggle("dark", dark);
-  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  const root = document.documentElement;
+  root.classList.toggle("dark", mode === "dark");
+  root.classList.toggle("light", mode === "light");
+  root.setAttribute("data-theme", mode);
+  root.style.colorScheme = mode;
 }
-
 export default function ThemeToggle() {
-  const [mode, setMode] = useState<Mode>("system");
-
+  const [mode, setMode] = useState<Mode>("light");
   useEffect(() => {
-    const saved = (localStorage.getItem(KEY) as Mode | null) || "system";
-    setMode(saved);
-    applyTheme(saved);
-
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      const current = (localStorage.getItem(KEY) as Mode | null) || "system";
-      if (current === "system") applyTheme("system");
+    const saved = localStorage.getItem(KEY);
+    const initial: Mode = saved === "dark" ? "dark" : "light";
+    setMode(initial);
+    applyTheme(initial);
+    const onSync = (event: Event) => {
+      const next = (event as CustomEvent<Mode>).detail;
+      if (next === "light" || next === "dark") { setMode(next); applyTheme(next); }
     };
-
-    media.addEventListener?.("change", onChange);
-    return () => media.removeEventListener?.("change", onChange);
+    window.addEventListener("tubex-theme-change", onSync);
+    return () => window.removeEventListener("tubex-theme-change", onSync);
   }, []);
-
-  function cycle() {
-    const next: Mode =
-      mode === "system" ? "light" : mode === "light" ? "dark" : "system";
-
-    setMode(next);
-    localStorage.setItem(KEY, next);
-    applyTheme(next);
-    window.dispatchEvent(
-      new CustomEvent("tubex-theme-change", { detail: next })
-    );
+  function toggle() {
+    const next: Mode = mode === "dark" ? "light" : "dark";
+    setMode(next); localStorage.setItem(KEY, next); applyTheme(next);
+    window.dispatchEvent(new CustomEvent("tubex-theme-change", { detail: next }));
   }
-
-  const Icon = mode === "system" ? Monitor : mode === "dark" ? Moon : Sun;
-  const title =
-    mode === "system"
-      ? "Tema automático"
-      : mode === "dark"
-        ? "Tema escuro"
-        : "Tema claro";
-
-  return (
-    <button
-      type="button"
-      onClick={cycle}
-      title={title}
-      aria-label={title}
-      className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)] transition hover:border-[var(--tx-accent)] hover:text-[var(--tx-text)]"
-    >
-      <Icon size={15} />
-    </button>
-  );
+  const title = mode === "dark" ? "Ativar tema claro" : "Ativar tema escuro";
+  const Icon = mode === "dark" ? Sun : Moon;
+  return <button type="button" onClick={toggle} title={title} aria-label={title} className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)] transition hover:border-[var(--tx-accent)] hover:text-[var(--tx-text)]"><Icon size={15}/></button>;
 }
