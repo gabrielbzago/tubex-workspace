@@ -58,6 +58,10 @@ export default function DashboardLayout({user}:{user:any}){
     if(text.nodeValue!==translated) text.nodeValue=translated;
     return;
    }
+   // MutationObserver também entrega nós de comentário (ex.: limites internos
+   // do React). Eles não possuem getAttribute/setAttribute; só elementos devem
+   // passar pelo processamento de atributos.
+   if(node.nodeType!==Node.ELEMENT_NODE) return;
    const element=node as Element;
    let baseAttributes=originalAttributes.get(element);
    if(!baseAttributes){baseAttributes={};for(const attr of ["placeholder","title","aria-label"]){const value=element.getAttribute(attr);if(value)baseAttributes[attr]=value;}originalAttributes.set(element,baseAttributes);}
