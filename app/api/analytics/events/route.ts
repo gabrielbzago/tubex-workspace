@@ -39,57 +39,31 @@ function cleanText(v: unknown, max=80) {
   return typeof v === "string" ? v.replace(/[^\w .:/-]/g, "").slice(0,max) : null;
 }
 
-type VerifiedGoogleProfile = {
-  sub: string;
-  email: string;
-  name: string | null;
-  picture: string | null;
-};
-
-async function resolveIdentity(request: Request): Promise<{ userId: string | null; google: VerifiedGoogleProfile | null }> {
-  const bearer = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (!bearer) return { userId: null, google: null };
-
-  // First accept a Supabase access token (web app session).
-  const { data: authData } = await supabaseAdmin.auth.getUser(bearer);
-  if (authData.user?.id) {
-    return { userId: authData.user.id, google: null };
-  }
-
-  // The extension uses Chrome Identity. Verify the bearer directly with Google;
-  // never trust an email or Google subject supplied in the JSON body.
+async function resolveUser(request: Request) {
+  const bearer = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i,"").trim();
+  if (!bearer) return null;
+  // First accept a Supabase access token.
+  const { data } = await supabaseAdmin.auth.getUser(bearer);
+  if (data.user?.id) return data.user.id;
+  // The Chrome extension authenticates with Google OAuth. Verify the token with Google,
+  // then map its verified email to the existing Supabase Auth user.
   try {
     const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${bearer}` }, cache: "no-store"
     });
-    if (!r.ok) return { userId: null, google: null };
+    if (!r.ok) return null;
     const profile = await r.json();
-    if (!profile?.sub || !profile?.email || profile.email_verified !== true) {
-      return { userId: null, google: null };
-    }
-    const email = String(profile.email).trim().toLowerCase();
-    const { data: profileRow } = await supabaseAdmin
-      .from("users").select("id").ilike("email", email).maybeSingle();
-    return {
-      userId: profileRow?.id || null,
-      google: {
-        sub: String(profile.sub),
-        email,
-        name: typeof profile.name === "string" ? profile.name.slice(0, 120) : null,
-        picture: typeof profile.picture === "string" ? profile.picture.slice(0, 500) : null,
-      }
-    };
-  } catch {
-    return { userId: null, google: null };
-  }
+    if (!profile?.email || profile.email_verified !== true) return null;
+    const { data: profileRow } = await supabaseAdmin.from("users").select("id").ilike("email",String(profile.email)).maybeSingle();
+    return profileRow?.id || null;
+  } catch { return null; }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const events = Array.isArray(body?.events) ? body.events.slice(0,50) : [body];
-    const identity = await resolveIdentity(request);
-    const userId = identity.userId;
+    const userId = await resolveUser(request);
     const rows = events.flatMap((e:any) => {
       const eventName = cleanText(e?.event_name,80);
       const installId = cleanText(e?.install_id,64);
@@ -121,32 +95,6 @@ export async function POST(request: Request) {
       }];
     });
     if (!rows.length) return NextResponse.json({ success:true, accepted:0 }, { headers: corsHeaders });
-
-    // Persist only Google identities verified server-side. Email is stored once per
-    // extension installation, not duplicated into every telemetry event.
-    if (identity.google) {
-      const installIds = [...new Set(rows.map((row: any) => row.install_id).filter(Boolean))];
-      if (installIds.length) {
-        const versions = [...new Set(rows.map((row: any) => (row.properties as any)?.version).filter(Boolean))];
-        const { error: installationError } = await supabaseAdmin
-          .from("tubex_installations")
-          .upsert(installIds.map((installId) => ({
-            install_id: installId,
-            google_sub: identity.google!.sub,
-            email: identity.google!.email,
-            name: identity.google!.name,
-            picture: identity.google!.picture,
-            user_id: userId,
-            extension_version: versions[0] || null,
-            last_seen: new Date().toISOString(),
-          })), { onConflict: "install_id" });
-        if (installationError) {
-          console.error("[TubeX analytics identity]", installationError.message);
-          return NextResponse.json({ error:"identity_storage_unavailable" }, { status:503, headers:corsHeaders });
-        }
-      }
-    }
-
     // Em upserts em lote, o PostgREST pode preencher colunas ausentes com NULL.
     // defaultToNull:false preserva o DEFAULT gen_random_uuid() do banco quando
     // eventos antigos da fila não possuem event_id.

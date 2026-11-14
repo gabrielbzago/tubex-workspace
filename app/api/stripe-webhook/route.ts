@@ -68,7 +68,7 @@ async function findUser(customerId: string, email: string) {
   if (customerId) {
     const { data } = await supabaseAdmin
       .from("users")
-      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id")
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
       .eq("stripe_customer_id", customerId)
       .maybeSingle();
     if (data) return data;
@@ -77,7 +77,7 @@ async function findUser(customerId: string, email: string) {
   if (email) {
     const { data } = await supabaseAdmin
       .from("users")
-      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id")
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
       .eq("email", email)
       .maybeSingle();
     if (data) return data;
@@ -124,11 +124,24 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     session.custom_fields?.find((field: any) => field.key === "nome")?.text?.value ||
     email;
 
-  const affiliateCode = normalizeCode(
-    session.metadata?.affiliate_code ||
-      session.client_reference_id ||
-      ""
+  let affiliateCode = normalizeCode(
+    session.metadata?.affiliate_code || session.client_reference_id || ""
   );
+  if (!affiliateCode && email) {
+    const { data: referredUser, error: referredUserError } = await supabaseAdmin
+      .from("users").select("referred_by").ilike("email", email).maybeSingle();
+    if (referredUserError) throw referredUserError;
+    affiliateCode = normalizeCode(referredUser?.referred_by || "");
+  }
+  if (affiliateCode) {
+    const { data: affiliateCheck, error: affiliateCheckError } = await supabaseAdmin
+      .from("users").select("email").eq("affiliate_code", affiliateCode).maybeSingle();
+    if (affiliateCheckError) throw affiliateCheckError;
+    if (!affiliateCheck || String(affiliateCheck.email || "").trim().toLowerCase() === email) {
+      console.warn("⚠️ CÓDIGO INVÁLIDO OU AUTOINDICAÇÃO BLOQUEADA:", affiliateCode);
+      affiliateCode = "";
+    }
+  }
 
   let plan = String(session.metadata?.plan || "free").toLowerCase();
 
@@ -187,26 +200,19 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (!affiliateCode || !subscriptionId) return;
 
-  const { data: existingReferral } = await supabaseAdmin
-    .from("affiliate_referrals")
-    .select("id")
-    .eq("stripe_subscription_id", subscriptionId)
-    .maybeSingle();
-
-  if (existingReferral) return;
-
-  const { data: affiliate } = await supabaseAdmin
-    .from("users")
-    .select("id,email,affiliate_code")
-    .eq("affiliate_code", affiliateCode)
-    .maybeSingle();
-
+  const { data: affiliate, error: affiliateLookupError } = await supabaseAdmin
+    .from("users").select("id,email,affiliate_code").eq("affiliate_code", affiliateCode).maybeSingle();
+  if (affiliateLookupError) throw affiliateLookupError;
   if (!affiliate) {
     console.warn("⚠️ AFILIADO NÃO ENCONTRADO NO CHECKOUT:", affiliateCode);
     return;
   }
+  if (String(affiliate.email || "").trim().toLowerCase() === email) {
+    console.warn("⚠️ AUTOINDICAÇÃO BLOQUEADA:", affiliateCode);
+    return;
+  }
 
-  const { error } = await supabaseAdmin.from("affiliate_referrals").insert({
+  const { error } = await supabaseAdmin.from("affiliate_referrals").upsert({
     affiliate_code: affiliateCode,
     referred_email: email,
     referred_name: customerName,
@@ -216,9 +222,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     stripe_subscription_id: subscriptionId,
     status: "active",
     updated_at: new Date().toISOString(),
-  });
-
-  if (error) console.error("❌ CHECKOUT REFERRAL ERROR:", error);
+  }, { onConflict: "stripe_subscription_id", ignoreDuplicates: true });
+  if (error) throw error;
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -230,10 +235,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const invoiceAny = invoice as any;
-  const rawAmountPaid =
-    Number(invoiceAny.amount_paid ?? 0) ||
-    Number(invoiceAny.total ?? 0) ||
-    Number(invoiceAny.subtotal ?? 0);
+  // Commission is based on money actually collected. A zero amount_paid
+  // (for example a 100% coupon or trial invoice) must never fall back to total.
+  const rawAmountPaid = invoiceAny.amount_paid !== null && invoiceAny.amount_paid !== undefined
+    ? Number(invoiceAny.amount_paid)
+    : Number(invoiceAny.total ?? invoiceAny.subtotal ?? 0);
 
   const amount = money(rawAmountPaid / 100);
   const priceId = getInvoicePriceId(invoice);
@@ -272,7 +278,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
         },
         { onConflict: "email" }
       )
-      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id")
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
       .single();
 
     if (error) throw error;
@@ -293,7 +299,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   if (referralLookupError) throw referralLookupError;
 
   const affiliateCode = normalizeCode(
-    metadata.affiliate_code || referral?.affiliate_code || ""
+    metadata.affiliate_code || referral?.affiliate_code || user.referred_by || ""
   );
 
   const userPlan = inferPlan(amount, priceId, metadata.plan || referral?.plan || user.plan);
@@ -330,6 +336,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     console.warn("⚠️ AFILIADO NÃO ENCONTRADO:", affiliateCode);
     return;
   }
+  if (String(affiliate.email || "").trim().toLowerCase() === String(user.email || email).trim().toLowerCase()) {
+    console.warn("⚠️ COMISSÃO DE AUTOINDICAÇÃO BLOQUEADA:", affiliateCode, invoice.id);
+    return;
+  }
 
   // The database function performs the invoice-level idempotency check,
   // inserts the commission and increments the affiliate balance in one
@@ -341,11 +351,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const commission = money(amount * COMMISSION_RATE);
-  const paymentIntent = String(
-    invoiceAny.payment_intent ||
-      invoiceAny.payments?.data?.[0]?.payment?.payment_intent ||
-      ""
-  );
+  const paymentIntentValue = invoiceAny.payment_intent || invoiceAny.payments?.data?.[0]?.payment?.payment_intent || "";
+  const paymentIntent = typeof paymentIntentValue === "string"
+    ? paymentIntentValue
+    : String(paymentIntentValue?.id || "");
 
   const { data: recorded, error: recordError } = await supabaseAdmin.rpc(
     "record_affiliate_sale",
@@ -435,71 +444,66 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
   const invoiceId = invoice.id;
   const customerId = String(invoice.customer || "").trim();
 
-  await supabaseAdmin
+  const { error: saleError } = await supabaseAdmin
     .from("affiliate_sales")
     .update({ status: "failed", updated_at: new Date().toISOString() })
     .eq("stripe_invoice_id", invoiceId);
+  if (saleError) throw saleError;
 
   if (customerId) {
-    await supabaseAdmin
-      .from("users")
-      .update({ status: "past_due", updated_at: new Date().toISOString() })
+    const { error: userError } = await supabaseAdmin
+      .from("users").update({ status: "past_due", updated_at: new Date().toISOString() })
       .eq("stripe_customer_id", customerId);
-
-    await supabaseAdmin
-      .from("affiliate_referrals")
-      .update({ status: "past_due", updated_at: new Date().toISOString() })
+    if (userError) throw userError;
+    const { error: referralError } = await supabaseAdmin
+      .from("affiliate_referrals").update({ status: "past_due", updated_at: new Date().toISOString() })
       .eq("stripe_customer_id", customerId);
+    if (referralError) throw referralError;
   }
 }
 
-async function handleChargeback(dispute: Stripe.Dispute) {
-  const paymentIntent = String((dispute as any).payment_intent || "").trim();
+async function reverseCommission(paymentIntentValue: unknown, reason: string, eventId: string) {
+  const paymentIntent = typeof paymentIntentValue === "string"
+    ? paymentIntentValue
+    : String((paymentIntentValue as any)?.id || "");
   if (!paymentIntent) return;
+  const { data, error } = await supabaseAdmin.rpc("reverse_affiliate_sale", {
+    p_payment_intent: paymentIntent,
+    p_reason: reason,
+    p_stripe_event_id: eventId,
+  });
+  if (error) throw error;
+  console.log(data ? "✅ COMISSÃO ESTORNADA:" : "ℹ️ ESTORNO JÁ PROCESSADO OU VENDA NÃO LOCALIZADA:", paymentIntent, reason);
+}
 
-  const { data: sale, error: saleError } = await supabaseAdmin
-    .from("affiliate_sales")
-    .select("id,affiliate_code,commission_amount,status")
-    .eq("stripe_payment_intent", paymentIntent)
-    .maybeSingle();
+async function handleChargeback(dispute: Stripe.Dispute, eventId: string) {
+  await reverseCommission((dispute as any).payment_intent, "chargeback", eventId);
+}
 
-  if (saleError) throw saleError;
-  if (!sale) return;
+async function handleDisputeClosed(dispute: Stripe.Dispute, eventId: string) {
+  if (String(dispute.status || "").toLowerCase() !== "won") return;
+  const paymentIntentValue = (dispute as any).payment_intent;
+  const paymentIntent = typeof paymentIntentValue === "string" ? paymentIntentValue : String(paymentIntentValue?.id || "");
+  if (!paymentIntent) return;
+  const { data, error } = await supabaseAdmin.rpc("restore_affiliate_sale", {
+    p_payment_intent: paymentIntent,
+    p_stripe_event_id: eventId,
+  });
+  if (error) throw error;
+  console.log(data ? "✅ COMISSÃO RESTAURADA APÓS DISPUTA GANHA:" : "ℹ️ DISPUTA SEM COMISSÃO A RESTAURAR:", paymentIntent);
+}
 
-  if (String(sale.status).toLowerCase() === "chargeback") return;
-
-  const commission = money(sale.commission_amount);
-
-  if (commission > 0) {
-    const { data: affiliate } = await supabaseAdmin
-      .from("users")
-      .select("id,affiliate_balance")
-      .eq("affiliate_code", sale.affiliate_code)
-      .maybeSingle();
-
-    if (affiliate) {
-      const newBalance = money(
-        Math.max(0, Number(affiliate.affiliate_balance || 0) - commission)
-      );
-
-      await supabaseAdmin
-        .from("users")
-        .update({
-          affiliate_balance: newBalance,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", affiliate.id);
-    }
-  }
-
-  // Preserve the original commission amount for financial history.
-  await supabaseAdmin
-    .from("affiliate_sales")
-    .update({
-      status: "chargeback",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", sale.id);
+async function handleRefund(refund: Stripe.Refund, eventId: string) {
+  const paymentIntent = (refund as any).payment_intent;
+  const paymentIntentId = typeof paymentIntent === "string" ? paymentIntent : String(paymentIntent?.id || "");
+  if (!paymentIntentId || Number(refund.amount || 0) <= 0) return;
+  const { data, error } = await supabaseAdmin.rpc("reverse_affiliate_refund", {
+    p_payment_intent: paymentIntentId,
+    p_refund_amount: Number(refund.amount) / 100,
+    p_stripe_event_id: eventId,
+  });
+  if (error) throw error;
+  console.log(data ? "✅ REEMBOLSO DE COMISSÃO REGISTRADO:" : "ℹ️ REEMBOLSO JÁ PROCESSADO OU VENDA NÃO LOCALIZADA:", refund.id);
 }
 
 export async function POST(req: Request) {
@@ -540,7 +544,14 @@ export async function POST(req: Request) {
         await handleSubscriptionCanceled(event.data.object as Stripe.Subscription);
         break;
       case "charge.dispute.created":
-        await handleChargeback(event.data.object as Stripe.Dispute);
+      case "charge.dispute.funds_withdrawn":
+        await handleChargeback(event.data.object as Stripe.Dispute, event.id);
+        break;
+      case "charge.dispute.closed":
+        await handleDisputeClosed(event.data.object as Stripe.Dispute, event.id);
+        break;
+      case "refund.created":
+        await handleRefund(event.data.object as Stripe.Refund, event.id);
         break;
       default:
         break;

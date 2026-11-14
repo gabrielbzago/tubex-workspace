@@ -21,7 +21,7 @@ const c = {
     kicker:"TUBEX / ADMIN", title:"Controle de Afiliados", desc:"Controle afiliados, vendas, renovações, comissões, pagamentos e desistências.",
     refresh:"Atualizar", affiliates:"Afiliados",sales:"Vendas / renovações",pending:"Comissões pendentes",paid:"Total pago",revenue:"Receita gerada",generated:"Comissão gerada",active:"Indicações ativas",canceled:"Desistências",
     accounts:"Contas e saldos",affiliate:"Afiliado",code:"Código",pix:"PIX",open:"Pendente",paidCol:"Pago",action:"Ação",pay:"Dar baixa",paying:"Registrando...",none:"Nenhum afiliado encontrado.",
-    monthly:"Resumo mensal",month:"Mês",commissions:"Comissões",failed:"Falhas",chargebacks:"Chargebacks",cancellations:"Desistências",
+    monthly:"Resumo mensal",month:"Mês",commissions:"Comissões",failed:"Falhas",chargebacks:"Chargebacks",refunds:"Reembolsos",cancellations:"Desistências",
     salesTitle:"Vendas e renovações",date:"Data",customer:"Cliente",plan:"Plano",amount:"Valor",commission:"Comissão",status:"Status",invoice:"Invoice",
     referrals:"Indicações",refStatus:"Estado",history:"Histórico de pagamentos",paymentDate:"Data",value:"Valor",
     noSales:"Nenhuma venda registrada ainda.",noReferrals:"Nenhuma indicação registrada.",noPayouts:"Nenhum pagamento registrado.",
@@ -31,7 +31,7 @@ const c = {
     kicker:"TUBEX / ADMIN", title:"Controlo de Afiliados", desc:"Controle afiliados, vendas, renovações, comissões, pagamentos e desistências.",
     refresh:"Atualizar", affiliates:"Afiliados",sales:"Vendas / renovações",pending:"Comissões pendentes",paid:"Total pago",revenue:"Receita gerada",generated:"Comissão gerada",active:"Indicações ativas",canceled:"Cancelamentos",
     accounts:"Contas e saldos",affiliate:"Afiliado",code:"Código",pix:"PIX",open:"Pendente",paidCol:"Pago",action:"Ação",pay:"Dar baixa",paying:"A registar...",none:"Nenhum afiliado encontrado.",
-    monthly:"Resumo mensal",month:"Mês",commissions:"Comissões",failed:"Falhas",chargebacks:"Chargebacks",cancellations:"Cancelamentos",
+    monthly:"Resumo mensal",month:"Mês",commissions:"Comissões",failed:"Falhas",chargebacks:"Chargebacks",refunds:"Reembolsos",cancellations:"Cancelamentos",
     salesTitle:"Vendas e renovações",date:"Data",customer:"Cliente",plan:"Plano",amount:"Valor",commission:"Comissão",status:"Estado",invoice:"Invoice",
     referrals:"Indicações",refStatus:"Estado",history:"Histórico de pagamentos",paymentDate:"Data",value:"Valor",
     noSales:"Nenhuma venda registada.",noReferrals:"Nenhuma indicação registada.",noPayouts:"Nenhum pagamento registado.",
@@ -41,7 +41,7 @@ const c = {
     kicker:"TUBEX / ADMIN", title:"Control de Afiliados", desc:"Controla afiliados, ventas, renovaciones, comisiones, pagos y cancelaciones.",
     refresh:"Actualizar", affiliates:"Afiliados",sales:"Ventas / renovaciones",pending:"Comisiones pendientes",paid:"Total pagado",revenue:"Ingresos generados",generated:"Comisión generada",active:"Referidos activos",canceled:"Cancelaciones",
     accounts:"Cuentas y saldos",affiliate:"Afiliado",code:"Código",pix:"PIX",open:"Pendiente",paidCol:"Pagado",action:"Acción",pay:"Marcar pagado",paying:"Registrando...",none:"No hay afiliados.",
-    monthly:"Resumen mensual",month:"Mes",commissions:"Comisiones",failed:"Fallos",chargebacks:"Chargebacks",cancellations:"Cancelaciones",
+    monthly:"Resumen mensual",month:"Mes",commissions:"Comisiones",failed:"Fallos",chargebacks:"Chargebacks",refunds:"Reembolsos",cancellations:"Cancelaciones",
     salesTitle:"Ventas y renovaciones",date:"Fecha",customer:"Cliente",plan:"Plan",amount:"Importe",commission:"Comisión",status:"Estado",invoice:"Invoice",
     referrals:"Referidos",refStatus:"Estado",history:"Historial de pagos",paymentDate:"Fecha",value:"Importe",
     noSales:"No hay ventas registradas.",noReferrals:"No hay referidos registrados.",noPayouts:"No hay pagos registrados.",
@@ -51,7 +51,7 @@ const c = {
     kicker:"TUBEX / ADMIN", title:"Affiliate Control", desc:"Control affiliates, sales, renewals, commissions, payouts and cancellations.",
     refresh:"Refresh", affiliates:"Affiliates",sales:"Sales / renewals",pending:"Pending commissions",paid:"Total paid",revenue:"Revenue generated",generated:"Commission generated",active:"Active referrals",canceled:"Cancellations",
     accounts:"Accounts & balances",affiliate:"Affiliate",code:"Code",pix:"PIX",open:"Pending",paidCol:"Paid",action:"Action",pay:"Mark paid",paying:"Registering...",none:"No affiliates found.",
-    monthly:"Monthly summary",month:"Month",commissions:"Commissions",failed:"Failures",chargebacks:"Chargebacks",cancellations:"Cancellations",
+    monthly:"Monthly summary",month:"Month",commissions:"Commissions",failed:"Failures",chargebacks:"Chargebacks",refunds:"Refunds",cancellations:"Cancellations",
     salesTitle:"Sales & renewals",date:"Date",customer:"Customer",plan:"Plan",amount:"Amount",commission:"Commission",status:"Status",invoice:"Invoice",
     referrals:"Referrals",refStatus:"Status",history:"Payout history",paymentDate:"Date",value:"Amount",
     noSales:"No sales registered.",noReferrals:"No referrals registered.",noPayouts:"No payouts registered.",
@@ -202,12 +202,13 @@ export default function AdminAffiliates() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left">
               <thead><tr className="border-b border-[var(--tx-border)] text-[9px] font-black uppercase tracking-[.12em] text-[var(--tx-muted)]">
-                <th className="px-3 py-3">{t.affiliate}</th><th className="px-3 py-3">{t.code}</th><th className="px-3 py-3">{t.pix}</th><th className="px-3 py-3">{t.open}</th><th className="px-3 py-3">{t.paidCol}</th><th className="px-3 py-3 text-right">{t.action}</th>
+                <th className="px-3 py-3">{t.affiliate}</th><th className="px-3 py-3">{t.code}</th><th className="px-3 py-3">{t.pix}</th><th className="px-3 py-3">Cliques</th><th className="px-3 py-3">{t.open}</th><th className="px-3 py-3">{t.paidCol}</th><th className="px-3 py-3 text-right">{t.action}</th>
               </tr></thead>
               <tbody>{data.affiliates.map((a:any)=><tr key={a.id} className="border-b border-[var(--tx-border)] last:border-0">
                 <td className="px-3 py-4"><p className="text-xs font-extrabold">{a.name || "—"}</p><p className="mt-1 text-[10px] text-[var(--tx-muted)]">{a.email || "—"}</p></td>
                 <td className="px-3 py-4 text-xs font-bold">{a.affiliate_code || "—"}</td>
                 <td className="px-3 py-4 text-xs text-[var(--tx-muted)]">{a.pix_key || "—"}</td>
+                <td className="px-3 py-4 text-xs font-bold">{Number(a.clicks || 0).toLocaleString()}</td>
                 <td className="px-3 py-4 text-xs font-black text-[var(--tx-accent)]">{money(a.affiliate_balance)}</td>
                 <td className="px-3 py-4 text-xs font-bold">{money(a.affiliate_paid)}</td>
                 <td className="px-3 py-4 text-right"><button onClick={()=>markAsPaid(a)} disabled={payingId===a.id || Number(a.affiliate_balance||0)<=0} className="tx-btn tx-btn-primary disabled:cursor-not-allowed disabled:opacity-40"><CheckCircle2 size={13}/>{payingId===a.id?t.paying:t.pay}</button></td>
@@ -219,12 +220,12 @@ export default function AdminAffiliates() {
 
       <section className="tx-surface rounded-[20px] p-5 md:p-6">
         <SectionTitle kicker={t.monthly} title={t.monthly}/>
-        {data.monthly.length===0 ? <Empty text={t.noSales}/> : <div className="overflow-x-auto"><table className="w-full min-w-[800px] text-left"><thead><tr className="border-b border-[var(--tx-border)] text-[9px] font-black uppercase tracking-[.12em] text-[var(--tx-muted)]"><th className="px-3 py-3">{t.month}</th><th className="px-3 py-3">{t.sales}</th><th className="px-3 py-3">{t.revenue}</th><th className="px-3 py-3">{t.commissions}</th><th className="px-3 py-3">{t.failed}</th><th className="px-3 py-3">{t.chargebacks}</th><th className="px-3 py-3">{t.cancellations}</th></tr></thead><tbody>{data.monthly.map((m:any)=><tr key={m.month} className="border-b border-[var(--tx-border)] last:border-0"><td className="px-3 py-4 text-xs font-bold">{m.month}</td><td className="px-3 py-4 text-xs">{m.sales}</td><td className="px-3 py-4 text-xs font-bold">{money(m.revenue)}</td><td className="px-3 py-4 text-xs font-black text-[var(--tx-accent)]">{money(m.commission)}</td><td className="px-3 py-4 text-xs">{m.failed}</td><td className="px-3 py-4 text-xs">{m.chargebacks}</td><td className="px-3 py-4 text-xs">{m.canceled}</td></tr>)}</tbody></table></div>}
+        {data.monthly.length===0 ? <Empty text={t.noSales}/> : <div className="overflow-x-auto"><table className="w-full min-w-[800px] text-left"><thead><tr className="border-b border-[var(--tx-border)] text-[9px] font-black uppercase tracking-[.12em] text-[var(--tx-muted)]"><th className="px-3 py-3">{t.month}</th><th className="px-3 py-3">{t.sales}</th><th className="px-3 py-3">{t.revenue}</th><th className="px-3 py-3">{t.commissions}</th><th className="px-3 py-3">{t.failed}</th><th className="px-3 py-3">{t.chargebacks}</th><th className="px-3 py-3">{t.refunds}</th><th className="px-3 py-3">{t.cancellations}</th></tr></thead><tbody>{data.monthly.map((m:any)=><tr key={m.month} className="border-b border-[var(--tx-border)] last:border-0"><td className="px-3 py-4 text-xs font-bold">{m.month}</td><td className="px-3 py-4 text-xs">{m.sales}</td><td className="px-3 py-4 text-xs font-bold">{money(m.revenue)}</td><td className="px-3 py-4 text-xs font-black text-[var(--tx-accent)]">{money(m.commission)}</td><td className="px-3 py-4 text-xs">{m.failed}</td><td className="px-3 py-4 text-xs">{m.chargebacks}</td><td className="px-3 py-4 text-xs">{m.refunds}</td><td className="px-3 py-4 text-xs">{m.canceled}</td></tr>)}</tbody></table></div>}
       </section>
 
       <section className="tx-surface rounded-[20px] p-5 md:p-6">
         <SectionTitle kicker={t.salesTitle} title={t.salesTitle}/>
-        {data.sales.length===0 ? <Empty text={t.noSales}/> : <div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left"><thead><tr className="border-b border-[var(--tx-border)] text-[9px] font-black uppercase tracking-[.12em] text-[var(--tx-muted)]"><th className="px-3 py-3">{t.date}</th><th className="px-3 py-3">{t.affiliate}</th><th className="px-3 py-3">{t.customer}</th><th className="px-3 py-3">{t.plan}</th><th className="px-3 py-3">{t.amount}</th><th className="px-3 py-3">{t.commission}</th><th className="px-3 py-3">{t.status}</th><th className="px-3 py-3">{t.invoice}</th></tr></thead><tbody>{data.sales.slice(0,200).map((x:any,i:number)=><tr key={x.id||i} className="border-b border-[var(--tx-border)] last:border-0"><td className="px-3 py-4 text-[10px] text-[var(--tx-muted)]">{x.last_payment_date?new Date(x.last_payment_date).toLocaleDateString():"—"}</td><td className="px-3 py-4 text-xs font-bold">{x.affiliate_code||"—"}</td><td className="px-3 py-4 text-xs">{x.customer_name||x.customer_email||"—"}</td><td className="px-3 py-4 text-xs">{String(x.plan||"—").toUpperCase()}</td><td className="px-3 py-4 text-xs font-bold">{money(x.amount)}</td><td className="px-3 py-4 text-xs font-black text-[var(--tx-accent)]">{money(x.commission_amount??x.commission)}</td><td className="px-3 py-4 text-xs font-semibold">{x.status||"—"}</td><td className="px-3 py-4 text-[10px] text-[var(--tx-muted)]">{x.stripe_invoice_id||"—"}</td></tr>)}</tbody></table></div>}
+        {data.sales.length===0 ? <Empty text={t.noSales}/> : <div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left"><thead><tr className="border-b border-[var(--tx-border)] text-[9px] font-black uppercase tracking-[.12em] text-[var(--tx-muted)]"><th className="px-3 py-3">{t.date}</th><th className="px-3 py-3">{t.affiliate}</th><th className="px-3 py-3">{t.customer}</th><th className="px-3 py-3">{t.plan}</th><th className="px-3 py-3">{t.amount}</th><th className="px-3 py-3">{t.commission}</th><th className="px-3 py-3">{t.status}</th><th className="px-3 py-3">{t.invoice}</th></tr></thead><tbody>{data.sales.slice(0,200).map((x:any,i:number)=><tr key={x.id||i} className="border-b border-[var(--tx-border)] last:border-0"><td className="px-3 py-4 text-[10px] text-[var(--tx-muted)]">{x.last_payment_date?new Date(x.last_payment_date).toLocaleDateString():"—"}</td><td className="px-3 py-4 text-xs font-bold">{x.affiliate_code||"—"}</td><td className="px-3 py-4 text-xs">{x.customer_name||x.customer_email||"—"}</td><td className="px-3 py-4 text-xs">{String(x.plan||"—").toUpperCase()}</td><td className="px-3 py-4 text-xs font-bold">{money(x.amount)}</td><td className="px-3 py-4 text-xs font-black text-[var(--tx-accent)]">{money(x.commission_amount||x.commission)}</td><td className="px-3 py-4 text-xs font-semibold">{x.status||"—"}</td><td className="px-3 py-4 text-[10px] text-[var(--tx-muted)]">{x.stripe_invoice_id||"—"}</td></tr>)}</tbody></table></div>}
       </section>
 
       <section className="tx-surface rounded-[20px] p-5 md:p-6">

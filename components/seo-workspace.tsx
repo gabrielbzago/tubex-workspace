@@ -541,9 +541,15 @@ export function UpgradeGate({ kind, plan }: { kind: "quota" | "trends" | "expert
   if (closed) return <div className="mt-4 flex justify-end"><button onClick={() => setClosed(false)} className="text-[10px] font-bold text-[var(--tx-accent)]">Ver opções de upgrade</button></div>;
   const target = plan === "pro" || kind === "expert" ? "expert" : "pro";
   const isExpertOffer = target === "expert";
-  const checkout = isExpertOffer
+  const checkoutBase = isExpertOffer
     ? "https://buy.stripe.com/dRmaEW98dggV3Z3d2mgjC02"
     : "https://buy.stripe.com/3cI7sK7058OtdzDaUegjC01";
+  const affiliateRef = typeof window !== "undefined"
+    ? (window.localStorage.getItem("affiliate_ref") || "").trim().toUpperCase()
+    : "";
+  const checkout = affiliateRef
+    ? `${checkoutBase}${checkoutBase.includes("?") ? "&" : "?"}client_reference_id=${encodeURIComponent(affiliateRef)}`
+    : checkoutBase;
   const title = isExpertOffer
     ? kind === "quota"
       ? "Continue pesquisando sem limites."

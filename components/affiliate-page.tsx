@@ -51,6 +51,7 @@ export default function AffiliatePage({ userData }: { userData: any }) {
   const [sales, setSales] = useState<any[]>([]);
   const [state, setState] = useState<any>(userData || {});
   const [paid, setPaid] = useState(0);
+  const [clicks, setClicks] = useState(0);
   const [open, setOpen] = useState(0);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -58,7 +59,7 @@ export default function AffiliatePage({ userData }: { userData: any }) {
 
   const t = copy[lang];
   const code = String(state?.affiliate_code || userData?.affiliate_code || "").trim().toUpperCase();
-  const link = code ? `https://tubex.app.br/?ref=${encodeURIComponent(code)}` : "";
+  const link = code ? `https://www.tubexai.com.br/r/${encodeURIComponent(code)}` : "";
 
   useEffect(() => {
     const saved = localStorage.getItem("tubex-language") as Lang | null;
@@ -79,31 +80,27 @@ export default function AffiliatePage({ userData }: { userData: any }) {
   async function load() {
     setLoading(true);
     setMessage("");
-    const [{ data: rows, error: salesError }, { data: affiliateUser, error: userError }] =
-      await Promise.all([
-        supabase
-          .from("affiliate_sales")
-          .select("id,commission_amount,commission,status,created_at,amount")
-          .eq("affiliate_code", code)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("users")
-          .select("affiliate_balance,affiliate_paid,cpf,pix_type,pix_key")
-          .eq("id", userData.id)
-          .maybeSingle(),
-      ]);
-
-    if (salesError || userError) {
-      console.error("Affiliate load error:", salesError || userError);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sessão expirada.");
+      const response = await fetch("/api/affiliate", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || t.loadError);
+      setSales(payload.sales || []);
+      setOpen(Number(payload.user?.affiliate_balance || 0));
+      setPaid(Number(payload.user?.affiliate_paid || 0));
+      setClicks(Number(payload.clicks || 0));
+      setState((prev: any) => ({ ...prev, ...(payload.user || {}) }));
+    } catch (error) {
+      console.error("Affiliate load error:", error);
       setMessage(t.loadError);
+    } finally {
+      setLoading(false);
     }
-
-    const rowsSafe = rows || [];
-    setSales(rowsSafe);
-    setOpen(Number(affiliateUser?.affiliate_balance || 0));
-    setPaid(Number(affiliateUser?.affiliate_paid || 0));
-    setState((prev: any) => ({ ...prev, ...(affiliateUser || {}) }));
-    setLoading(false);
   }
 
   const earned = useMemo(() => paid + open, [paid, open]);
@@ -113,39 +110,16 @@ export default function AffiliatePage({ userData }: { userData: any }) {
     setLoading(true);
     setMessage("");
     try {
-      const base = String(userData.name || userData.email || "TUBEX")
-        .replace(/[^a-zA-Z0-9]/g, "")
-        .toUpperCase()
-        .slice(0, 16) || "TUBEX";
-
-      let candidate = "";
-      for (let attempt = 0; attempt < 12; attempt++) {
-        const bytes = new Uint32Array(1);
-        crypto.getRandomValues(bytes);
-        const suffix = String(1000 + (bytes[0] % 9000));
-        const next = `${base}${suffix}`;
-        const { data: existing, error } = await supabase
-          .from("users")
-          .select("id")
-          .eq("affiliate_code", next)
-          .maybeSingle();
-        if (error) throw error;
-        if (!existing) {
-          candidate = next;
-          break;
-        }
-      }
-
-      if (!candidate) throw new Error("Não foi possível gerar um código único.");
-
-      const { error } = await supabase
-        .from("users")
-        .update({ affiliate_code: candidate })
-        .eq("id", userData.id)
-        .is("affiliate_code", null);
-
-      if (error) throw error;
-      setState((prev: any) => ({ ...prev, affiliate_code: candidate }));
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sessão expirada.");
+      const response = await fetch("/api/affiliate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || t.loadError);
+      setState((prev: any) => ({ ...prev, affiliate_code: payload.affiliate_code }));
       setMessage(t.codeCreated);
     } catch (error) {
       console.error("Affiliate code error:", error);
@@ -217,10 +191,10 @@ export default function AffiliatePage({ userData }: { userData: any }) {
         <Metric label={t.earned} value={`R$ ${earned.toFixed(2).replace(".", ",")}`} icon={<DollarSign size={16} />} />
         <Metric label={t.open} value={`R$ ${open.toFixed(2).replace(".", ",")}`} icon={<Wallet size={16} />} />
         <Metric label={t.sales} value={sales.filter((s) => String(s.status).toLowerCase() !== "failed").length} icon={<Users size={16} />} />
-        <Metric label={t.clicks} value="—" icon={<MousePointerClick size={16} />} />
-        <Metric label={t.conversion} value="—" icon={<TrendingUp size={16} />} />
+        <Metric label={t.clicks} value={clicks} icon={<MousePointerClick size={16} />} />
+        <Metric label={t.conversion} value={`${sales.length && clicks ? ((sales.length / clicks) * 100).toFixed(1).replace(".", ",") : "0,0"}%`} icon={<TrendingUp size={16} />} />
       </div>
-      <p className="text-[10px] text-[var(--tx-muted)]">{t.clickNote}</p>
+      <p className="text-[10px] text-[var(--tx-muted)]">Cliques únicos registrados por visitante/dia. A conversão considera assinaturas registradas divididas pelos cliques.</p>
 
       <section className="tx-surface rounded-[22px] p-7">
         <div className="flex items-start gap-3">
@@ -246,7 +220,7 @@ export default function AffiliatePage({ userData }: { userData: any }) {
             <tbody>{sales.length ? sales.map((s, i) => (
               <tr key={s.id || i} className="border-t border-[var(--tx-border)]">
                 <td className="px-6 py-4">{s.created_at ? new Date(s.created_at).toLocaleDateString() : "—"}</td>
-                <td className="px-6 py-4 font-bold">R$ {Number(s.commission_amount ?? s.commission ?? 0).toFixed(2).replace(".", ",")}</td>
+                <td className="px-6 py-4 font-bold">R$ {Number(s.commission_amount || s.commission || 0).toFixed(2).replace(".", ",")}</td>
                 <td className="px-6 py-4 font-semibold">{s.status || "pending"}</td>
               </tr>
             )) : <tr><td colSpan={3} className="px-6 py-12 text-center text-[var(--tx-muted)]">{t.empty}</td></tr>}</tbody>

@@ -34,11 +34,8 @@ export async function POST(req: Request) {
 
     const plan = String(body?.plan || "").trim().toLowerCase();
     const email = normalizeEmail(body?.email);
-    const affiliateCode = String(
-      body?.affiliateCode || ""
-    )
-      .trim()
-      .toUpperCase();
+    let affiliateCode = String(body?.affiliateCode || body?.affiliate_code || "")
+      .trim().toUpperCase();
 
     if (!plan) {
       return NextResponse.json(
@@ -70,20 +67,37 @@ export async function POST(req: Request) {
      * existentes na landing. Este endpoint continua responsável
      * pelos checkouts de assinatura que usam os Price IDs da API atual.
      */
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.APP_URL ||
-      (process.env.NODE_ENV === "development"
-        ? "http://localhost:3000"
-        : "https://tubex.app.br");
+    const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL ||
+      (process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://www.tubexai.com.br");
+    let appUrl = configuredAppUrl;
+    try {
+      const parsedAppUrl = new URL(configuredAppUrl);
+      if (["tubex.app.br", "tubexai.com.br"].includes(parsedAppUrl.hostname)) parsedAppUrl.hostname = "www.tubexai.com.br";
+      appUrl = parsedAppUrl.origin;
+    } catch { appUrl = "https://www.tubexai.com.br"; }
 
-    const metadata: Record<string, string> = {
-      plan,
-    };
-
-    if (affiliateCode) {
-      metadata.affiliate_code = affiliateCode;
+    // If a returning customer starts checkout from the extension/dashboard,
+    // recover the first-touch attribution stored on their TubeX profile.
+    if (!affiliateCode && email) {
+      const { data: referredUser, error: referredUserError } = await supabaseAdmin
+        .from("users").select("referred_by").ilike("email", email).maybeSingle();
+      if (referredUserError) throw referredUserError;
+      affiliateCode = String(referredUser?.referred_by || "").trim().toUpperCase();
     }
+
+    // Never trust a referral code supplied by the browser without resolving it.
+    if (affiliateCode) {
+      if (!/^[A-Z0-9_-]{4,40}$/.test(affiliateCode)) affiliateCode = "";
+      else {
+        const { data: affiliate, error: affiliateError } = await supabaseAdmin
+          .from("users").select("id,email").eq("affiliate_code", affiliateCode).maybeSingle();
+        if (affiliateError) throw affiliateError;
+        if (!affiliate || (email && String(affiliate.email || "").toLowerCase() === email)) affiliateCode = "";
+      }
+    }
+
+    const metadata: Record<string, string> = { plan };
+    if (affiliateCode) metadata.affiliate_code = affiliateCode;
 
     if (email) {
       metadata.email = email;
@@ -115,11 +129,9 @@ export async function POST(req: Request) {
           }
         : {}),
 
+      ...(affiliateCode ? { client_reference_id: affiliateCode } : {}),
       line_items: [
-        {
-          price: PRICE_IDS[plan],
-          quantity: 1,
-        },
+        { price: PRICE_IDS[plan], quantity: 1 },
       ],
 
       success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
