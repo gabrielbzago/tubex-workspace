@@ -4,6 +4,25 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Max-Age": "86400",
+  "Cache-Control": "no-store"
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
+
+export async function GET() {
+  return NextResponse.json(
+    { success: true, service: "tubex-analytics-ingestion", methods: ["POST", "OPTIONS"] },
+    { headers: corsHeaders }
+  );
+}
+
 const ALLOWED = new Set([
   "extension_installed","extension_updated","extension_started","welcome_opened","welcome_completed",
   "youtube_opened","login_started","login_success","login_failed","module_opened",
@@ -75,14 +94,14 @@ export async function POST(request: Request) {
         properties: safeProps
       }];
     });
-    if (!rows.length) return NextResponse.json({ success:true, accepted:0 });
+    if (!rows.length) return NextResponse.json({ success:true, accepted:0 }, { headers: corsHeaders });
     const { error } = await supabaseAdmin.from("tubex_events").upsert(rows,{onConflict:"id",ignoreDuplicates:true});
     if (error) {
       console.error("[TubeX analytics ingestion]",error.message);
-      return NextResponse.json({ error:"analytics_unavailable" },{status:503});
+      return NextResponse.json({ error:"analytics_unavailable" },{status:503, headers:corsHeaders});
     }
-    return NextResponse.json({ success:true, accepted:rows.length });
+    return NextResponse.json({ success:true, accepted:rows.length }, { headers: corsHeaders });
   } catch {
-    return NextResponse.json({ error:"invalid_event_payload" },{status:400});
+    return NextResponse.json({ error:"invalid_event_payload" },{status:400, headers:corsHeaders});
   }
 }
