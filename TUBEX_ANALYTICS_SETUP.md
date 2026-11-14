@@ -21,16 +21,8 @@ A extensão mantém uma fila limitada no `chrome.storage.local`, envia lotes de 
 5. No Chrome, abra o service worker da extensão e confirme que não há erros. Faça login, abra Keyword Explorer, execute uma pesquisa, conclua uma análise SEO e acione um limite de teste controlado.
 6. Confirme os eventos em `public.tubex_events` e no menu `TubeX Analytics` do painel web.
 
-## Analytics histórico — correção v4.3.6
-- O painel considera os nomes de eventos realmente presentes na tabela: `search_submitted`, `analysis_completed`, `extension_updated`, `youtube_opened`, `ui_action` e `extension_action`, além dos eventos padronizados.
-- Instalações históricas são identificadas pelo `install_id` persistente mesmo quando o evento `extension_installed` não foi enviado. No gráfico diário, a série representa instalações identificadas com atividade naquele dia, não novas instalações comprovadas.
-- Logins só são contabilizados quando existe `login_success` com identidade; `youtube_opened` não é tratado como login.
-- Assinaturas ativas são lidas de `public.users`, exigindo plano `start`, `pro` ou `expert`, `status = active` e `stripe_subscription_id` preenchido.
-- Visualização de planos e início de checkout só são contabilizados quando seus eventos existem; não são inventados a partir de outros cliques.
-- Não é necessário executar uma nova migration SQL para esta correção; ela altera as consultas e a apresentação do painel web.
-
 ## Limitações honestas
-- Só é possível reconstruir o histórico que ainda existe em `public.tubex_events` e `public.users`. Eventos que nunca foram enviados ou que foram apagados não podem ser recuperados retroativamente.
+- Eventos anteriores à implantação não são recuperados retroativamente.
 - A extensão não consegue garantir um evento de desinstalação: o Chrome pode encerrar o service worker sem permitir uma chamada de rede confiável.
 - Cliques e formulários são sinais de interação; eventos de conclusão são emitidos apenas nos fluxos explicitamente instrumentados ou quando uma chamada API TubeX permitida termina com sucesso.
 - Alguns módulos que executem operações exclusivamente via APIs Google/YouTube ainda precisam de eventos explícitos no respectivo handler para contabilizar conclusão com precisão.
@@ -49,10 +41,8 @@ A extensão mantém uma fila limitada no `chrome.storage.local`, envia lotes de 
 CORRECAO v4.3.3: URL canonica de ingestao atualizada para https://www.tubexai.com.br/api/analytics/events para evitar redirecionamento HTTP 308 do dominio sem www.
 
 
-CORREÇÃO v4.3.6 — Analytics histórico
-- Corrigido o mapeamento de eventos históricos para pesquisas/análises.
-- Instalações passam a usar o install_id persistente em vez de depender apenas de extension_installed.
-- Logins continuam exigindo evento login_success; não são inferidos de abertura do YouTube.
-- Assinaturas ativas são reconciliadas pela tabela users com plano pago, status active e stripe_subscription_id.
-- Gráfico diário mostra instalações identificadas com atividade por dia.
-- Nenhuma nova migration SQL é necessária para esta correção. Publicar a pasta web na Vercel.
+## Mapeamento de módulos (v4.3.6)
+O dashboard converte IDs internos em nomes amigáveis na resposta de `/api/admin/analytics`.
+O campo `module` no banco permanece inalterado. O SEO executado pelo `content.js`
+e enviado ao background por `fetchSeoData` é registrado como `seo_search` e exibido
+como "SEO de Pesquisa". Não há alteração de schema nem nova migration SQL.

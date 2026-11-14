@@ -4,10 +4,10 @@ import {supabase} from "@/lib/supabase";
 import {Activity,Users,Search,ShoppingCart,RefreshCw,AlertTriangle} from "lucide-react";
 
 type Daily={date:string;installs:number;searches:number;logins:number};
-type Payload={days:number;totals:Record<string,number>;funnel:{name:string;value:number}[];modules:{name:string;value:number}[];events:{name:string;value:number}[];daily:Daily[];recent:{user_id:string|null;install_id:string;event_name:string;module:string|null;created_at:string}[]};
+type Payload={days:number;totals:Record<string,number>;funnel:{name:string;value:number}[];modules:{name:string;label:string;value:number}[];events:{name:string;value:number}[];daily:Daily[];recent:{user_id:string|null;install_id:string;event_name:string;module:string|null;module_label:string|null;created_at:string}[]};
 const number=(v:number|undefined)=>new Intl.NumberFormat("pt-BR").format(v||0);
 const SERIES=[
- {key:"installs",label:"Instalações ativas",color:"#f59e0b"},
+ {key:"installs",label:"Instalações",color:"#f59e0b"},
  {key:"searches",label:"Pesquisas/análises",color:"#0ea5e9"},
  {key:"logins",label:"Logins",color:"#10b981"},
 ] as const;
@@ -38,26 +38,15 @@ function DailyActivityChart({daily,days}:{daily:Daily[];days:number}){
   </div>
   <div className="relative overflow-hidden rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] p-2 sm:p-3">
    {current&&<div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--tx-surface-2)] px-3 py-2 text-xs"><b>{new Date(`${current.date}T12:00:00`).toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"long",year:"numeric"})}</b><div className="flex flex-wrap gap-x-3 gap-y-1">{SERIES.map(s=><span key={s.key} style={{color:s.color}}>{s.label}: <b>{number(current[s.key])}</b></span>)}</div></div>}
-   <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Atividade diária dos últimos ${days} dias: instalações, pesquisas e logins`} className="block h-auto w-full touch-pan-y cursor-crosshair" onPointerMove={(event)=>{
-    if(!daily.length)return;
-    const bounds=event.currentTarget.getBoundingClientRect();
-    const localX=((event.clientX-bounds.left)/Math.max(bounds.width,1))*width;
-    const index=Math.round(Math.max(0,Math.min(plotW,(localX-left)))/Math.max(plotW,1)*(daily.length-1));
-    setHovered(index);
-   }} onPointerLeave={()=>setHovered(null)} onClick={(event)=>{
-    if(!daily.length)return;
-    const bounds=event.currentTarget.getBoundingClientRect();
-    const localX=((event.clientX-bounds.left)/Math.max(bounds.width,1))*width;
-    const index=Math.round(Math.max(0,Math.min(plotW,(localX-left)))/Math.max(plotW,1)*(daily.length-1));
-    setHovered(index);
-   }}>
+   <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Atividade diária dos últimos ${days} dias: instalações, pesquisas e logins`} className="block h-auto w-full" onMouseLeave={()=>setHovered(null)}>
     {Array.from({length:5},(_,i)=>{const value=yMax-(yMax/4)*i;const yy=top+(plotH/4)*i;return <g key={i}><line x1={left} x2={width-right} y1={yy} y2={yy} stroke="currentColor" opacity=".10" strokeDasharray="4 5"/><text x={left-10} y={yy+4} textAnchor="end" fill="currentColor" opacity=".58" fontSize="11">{Math.round(value)}</text></g>})}
     {tickIndices.map(i=><text key={i} x={x(i)} y={height-15} textAnchor="middle" fill="currentColor" opacity=".62" fontSize="11">{labelDate(daily[i].date)}</text>)}
     {hovered!==null&&<line x1={x(hovered)} x2={x(hovered)} y1={top} y2={top+plotH} stroke="currentColor" opacity=".25" strokeDasharray="3 4"/>}
     {SERIES.map(series=>visible[series.key]&&<g key={series.key}><path d={linePath(series.key)} fill="none" stroke={series.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>{daily.map((d,i)=><circle key={`${series.key}-${d.date}`} cx={x(i)} cy={y(d[series.key])} r={hovered===i?5:2.7} fill={series.color} stroke="var(--tx-surface)" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/> )}</g>)}
+    {daily.map((d,i)=><rect key={`hit-${d.date}`} x={x(i)-(plotW/Math.max(daily.length,1))/2} y={top} width={plotW/Math.max(daily.length,1)} height={plotH} fill="transparent" onMouseEnter={()=>setHovered(i)} onFocus={()=>setHovered(i)} tabIndex={0} role="button" aria-label={`${labelDate(d.date)}: ${d.installs} instalações, ${d.searches} pesquisas, ${d.logins} logins`}/>)}
    </svg>
   </div>
-  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Instalações únicas e quantidade de eventos por dia</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
+  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Quantidade de eventos por dia</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
  </div>;
 }
 export default function AdminAnalytics(){
@@ -91,11 +80,11 @@ export default function AdminAnalytics(){
     {data.daily.length?<DailyActivityChart daily={data.daily} days={days}/>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há atividade registrada no período.</p>}
    </section>
    <div className="grid gap-4 xl:grid-cols-2">
-    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Funil de ativação e conversão</h2><p className="mb-3 mt-1 text-xs text-[var(--tx-muted)]">Histórico reconstruído com os eventos existentes e assinaturas persistidas no banco.</p><div className="mb-5 rounded-lg border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-3 text-xs leading-5 text-[var(--tx-muted)]">Pesquisas incluem <b>search_submitted</b> e <b>analysis_completed</b>. Instalações usam o <b>install_id</b> mesmo quando o evento original de instalação não foi enviado. Logins e visualizações de planos só aparecem quando foram efetivamente registrados; não são inferidos a partir de uma visita ao YouTube. Assinaturas ativas são verificadas na tabela <b>users</b> por plano pago, status ativo e ID de assinatura Stripe.</div><div className="space-y-4">{data.funnel.map((x,i)=>{const max=Math.max(1,data.funnel[0]?.value||0);return <div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.name}</span><b>{number(x.value)} {i>0&&max?`· ${Math.round(x.value/max*100)}%`:''}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-[var(--tx-accent)]" style={{width:`${Math.min(100,x.value/max*100)}%`}}/></div></div>})}</div></section>
-    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Módulos mais utilizados</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Ações registradas pela extensão.</p>{data.modules.length?<div className="space-y-3">{data.modules.slice(0,12).map(x=><div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.name}</span><b>{number(x.value)}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-sky-500" style={{width:`${x.value/maxModule*100}%`}}/></div></div>)}</div>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há eventos de módulos.</p>}</section>
+    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Funil de ativação e conversão</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Usuários únicos por etapa, quando identificados.</p><div className="space-y-4">{data.funnel.map((x,i)=>{const max=Math.max(1,data.funnel[0]?.value||0);return <div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.name}</span><b>{number(x.value)} {i>0&&max?`· ${Math.round(x.value/max*100)}%`:''}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-[var(--tx-accent)]" style={{width:`${Math.min(100,x.value/max*100)}%`}}/></div></div>})}</div></section>
+    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Módulos mais utilizados</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Ações registradas pela extensão.</p>{data.modules.length?<div className="space-y-3">{data.modules.map(x=><div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.label||x.name}</span><b>{number(x.value)}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-sky-500" style={{width:`${x.value/maxModule*100}%`}}/></div></div>)}</div>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há eventos de módulos.</p>}</section>
    </div>
    <div className="grid gap-4 xl:grid-cols-2">
-    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Eventos recentes</h2><div className="mt-4 max-h-[420px] overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="text-[var(--tx-muted)]"><th className="py-2">Evento</th><th>Módulo</th><th>Data</th></tr></thead><tbody>{data.recent.slice(0,60).map((e,i)=><tr key={i} className="border-t border-[var(--tx-border)]"><td className="py-2 font-semibold">{e.event_name}</td><td>{e.module||"—"}</td><td>{new Date(e.created_at).toLocaleString("pt-BR")}</td></tr>)}</tbody></table></div></section>
+    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Eventos recentes</h2><div className="mt-4 max-h-[420px] overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="text-[var(--tx-muted)]"><th className="py-2">Evento</th><th>Módulo</th><th>Data</th></tr></thead><tbody>{data.recent.slice(0,60).map((e,i)=><tr key={i} className="border-t border-[var(--tx-border)]"><td className="py-2 font-semibold">{e.event_name}</td><td>{e.module_label||e.module||"—"}</td><td>{new Date(e.created_at).toLocaleString("pt-BR")}</td></tr>)}</tbody></table></div></section>
     <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Eventos por tipo</h2><div className="mt-4 max-h-[420px] overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="text-[var(--tx-muted)]"><th className="py-2">Evento</th><th className="text-right">Quantidade</th></tr></thead><tbody>{data.events.map(x=><tr key={x.name} className="border-t border-[var(--tx-border)]"><td className="py-2">{x.name}</td><td className="text-right font-bold">{number(x.value)}</td></tr>)}</tbody></table></div></section>
    </div>
   </>}
