@@ -38,15 +38,26 @@ function DailyActivityChart({daily,days}:{daily:Daily[];days:number}){
   </div>
   <div className="relative overflow-hidden rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] p-2 sm:p-3">
    {current&&<div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--tx-surface-2)] px-3 py-2 text-xs"><b>{new Date(`${current.date}T12:00:00`).toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"long",year:"numeric"})}</b><div className="flex flex-wrap gap-x-3 gap-y-1">{SERIES.map(s=><span key={s.key} style={{color:s.color}}>{s.label}: <b>{number(current[s.key])}</b></span>)}</div></div>}
-   <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Atividade diária dos últimos ${days} dias: instalações, pesquisas e logins`} className="block h-auto w-full" onMouseLeave={()=>setHovered(null)}>
+   <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Atividade diária dos últimos ${days} dias: instalações, pesquisas e logins`} className="block h-auto w-full touch-pan-y cursor-crosshair" onPointerMove={(event)=>{
+    if(!daily.length)return;
+    const bounds=event.currentTarget.getBoundingClientRect();
+    const localX=((event.clientX-bounds.left)/Math.max(bounds.width,1))*width;
+    const index=Math.round(Math.max(0,Math.min(plotW,(localX-left)))/Math.max(plotW,1)*(daily.length-1));
+    setHovered(index);
+   }} onPointerLeave={()=>setHovered(null)} onClick={(event)=>{
+    if(!daily.length)return;
+    const bounds=event.currentTarget.getBoundingClientRect();
+    const localX=((event.clientX-bounds.left)/Math.max(bounds.width,1))*width;
+    const index=Math.round(Math.max(0,Math.min(plotW,(localX-left)))/Math.max(plotW,1)*(daily.length-1));
+    setHovered(index);
+   }}>
     {Array.from({length:5},(_,i)=>{const value=yMax-(yMax/4)*i;const yy=top+(plotH/4)*i;return <g key={i}><line x1={left} x2={width-right} y1={yy} y2={yy} stroke="currentColor" opacity=".10" strokeDasharray="4 5"/><text x={left-10} y={yy+4} textAnchor="end" fill="currentColor" opacity=".58" fontSize="11">{Math.round(value)}</text></g>})}
     {tickIndices.map(i=><text key={i} x={x(i)} y={height-15} textAnchor="middle" fill="currentColor" opacity=".62" fontSize="11">{labelDate(daily[i].date)}</text>)}
     {hovered!==null&&<line x1={x(hovered)} x2={x(hovered)} y1={top} y2={top+plotH} stroke="currentColor" opacity=".25" strokeDasharray="3 4"/>}
     {SERIES.map(series=>visible[series.key]&&<g key={series.key}><path d={linePath(series.key)} fill="none" stroke={series.color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>{daily.map((d,i)=><circle key={`${series.key}-${d.date}`} cx={x(i)} cy={y(d[series.key])} r={hovered===i?5:2.7} fill={series.color} stroke="var(--tx-surface)" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/> )}</g>)}
-    {daily.map((d,i)=><rect key={`hit-${d.date}`} x={x(i)-(plotW/Math.max(daily.length,1))/2} y={top} width={plotW/Math.max(daily.length,1)} height={plotH} fill="transparent" onMouseEnter={()=>setHovered(i)} onFocus={()=>setHovered(i)} tabIndex={0} role="button" aria-label={`${labelDate(d.date)}: ${d.installs} instalações, ${d.searches} pesquisas, ${d.logins} logins`}/>)}
    </svg>
   </div>
-  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Quantidade de eventos por dia</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
+  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Instalações únicas e quantidade de eventos por dia</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
  </div>;
 }
 export default function AdminAnalytics(){

@@ -71,16 +71,18 @@ export async function GET(request: Request) {
 
   const byModule: Record<string, number> = {};
   const byEvent: Record<string, number> = {};
-  const dailySets: Record<string, { installs: Set<string>; searches: Set<string>; logins: Set<string> }> = {};
-  const ensureDay = (day: string) => dailySets[day] ||= { installs: new Set(), searches: new Set(), logins: new Set() };
+  const dailySets: Record<string, { installs: Set<string>; searches: number; logins: number }> = {};
+  const ensureDay = (day: string) => dailySets[day] ||= { installs: new Set(), searches: 0, logins: 0 };
 
   for (const e of list) {
     const day = String(e.created_at).slice(0, 10);
     const d = ensureDay(day);
     const who = identity(e);
     if (who && INSTALL_ACTIVITY_EVENTS.has(e.event_name)) d.installs.add(e.install_id || who);
-    if (who && SEARCH_EVENTS.has(e.event_name)) d.searches.add(who);
-    if (who && e.event_name === "login_success") d.logins.add(who);
+    // O gráfico diário representa volume de atividade (eventos), não usuários únicos.
+    // A deduplicação por identidade escondia dezenas de pesquisas feitas na mesma instalação.
+    if (SEARCH_EVENTS.has(e.event_name)) d.searches += 1;
+    if (e.event_name === "login_success") d.logins += 1;
     byEvent[e.event_name] = (byEvent[e.event_name] || 0) + 1;
     if (e.module) byModule[e.module] = (byModule[e.module] || 0) + 1;
   }
@@ -111,7 +113,7 @@ export async function GET(request: Request) {
   const subscriptionCount = new Set(activePaidSubscriptions.map((u) => u.stripe_subscription_id)).size;
 
   const daily = Object.entries(dailySets).sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({
-    date, installs: v.installs.size, searches: v.searches.size, logins: v.logins.size,
+    date, installs: v.installs.size, searches: v.searches, logins: v.logins,
   }));
 
   return NextResponse.json({
