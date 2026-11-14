@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone } from "lucide-react";
+import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "./theme-toggle";
 import AffiliatePage from "./affiliate-page";
 import AdminAffiliates from "./admin-affiliates";
+import AdminAnalytics from "./admin-analytics";
 import SeoWorkspace from "./seo-workspace";
 import CreatorWorkspace from "./creator-workspace";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
@@ -25,7 +26,7 @@ const i18n={
 function Logo(){return <a href="/dashboard" className="flex items-center gap-2 font-black tracking-[-.06em] text-[22px] text-[var(--tx-text)]"><span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--tx-accent)] text-[10px] text-[#11151a]">TX</span>Tube<span className="text-[var(--tx-accent)]">X</span></a>}
 
 export default function DashboardLayout({user}:{user:any}){
- const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"account"|"billing"|"support">("dashboard");
+ const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"account"|"billing"|"support">("dashboard");
  const [mobileOpen,setMobileOpen]=useState(false);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
@@ -33,9 +34,9 @@ export default function DashboardLayout({user}:{user:any}){
  const userEmail = String(user?.email || "").trim().toLowerCase();
  // A navegação espelha apenas os sinais de autorização persistidos/allowlist.
  // O backend continua sendo a autoridade final em qualquer ação administrativa.
- const role = String(userData?.role || userData?.user_role || "").toLowerCase();
- const planRaw = String(userData?.plan || "").toLowerCase();
- const isOwner = role==="owner" || role==="admin" || role==="administrator" || planRaw==="owner" || planRaw==="admin" || userData?.is_owner === true || ownerEmails.includes(userEmail);
+ // Somente a allowlist do proprietário libera a navegação administrativa.
+ // O endpoint de Analytics repete a validação no servidor; a UI não é a barreira de segurança.
+ const isOwner = ownerEmails.includes(userEmail);
 
  useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
   (async()=>{if(!user?.email)return;const {data}=await supabase.from("users").select("*").eq("email",user.email).maybeSingle();setUserData(data)})();
@@ -58,9 +59,8 @@ export default function DashboardLayout({user}:{user:any}){
     if(text.nodeValue!==translated) text.nodeValue=translated;
     return;
    }
-   // MutationObserver também entrega nós de comentário (ex.: limites internos
-   // do React). Eles não possuem getAttribute/setAttribute; só elementos devem
-   // passar pelo processamento de atributos.
+   // childNodes também contém comentários e outros tipos de Node.
+   // getAttribute/setAttribute existem somente em Element.
    if(node.nodeType!==Node.ELEMENT_NODE) return;
    const element=node as Element;
    let baseAttributes=originalAttributes.get(element);
@@ -100,7 +100,7 @@ export default function DashboardLayout({user}:{user:any}){
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
  const navItems:any[]=[
   ["dashboard",Home,t.dashboard],["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["affiliate",Users,t.affiliate],
-  ...(isOwner?[["admin",ShieldCheck,t.admin]]:[]),
+  ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
  function selectTab(next:any){setTab(next);setMobileOpen(false)}
@@ -120,7 +120,7 @@ export default function DashboardLayout({user}:{user:any}){
   <main className="tx-app-main min-h-screen min-w-0 w-full lg:pl-[232px]">
    <header className="sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
     <div className="mx-auto flex h-[60px] w-full max-w-[1180px] min-w-0 items-center gap-2 px-3 sm:h-[66px] sm:px-4">
-     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
+     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
@@ -133,7 +133,7 @@ export default function DashboardLayout({user}:{user:any}){
     {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
     {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}
     {tab==="dashboard"&&<Overview user={user} userData={userData} t={t} onTab={setTab} isOwner={isOwner}/>}
-    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="admin"&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
+    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{(tab==="admin"||tab==="analytics")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
     {tab==="account"&&<Account user={user} userData={userData} t={t} isOwner={isOwner}/>}
     {tab==="billing"&&<Billing userData={userData} t={t}/>}
     {tab==="support"&&<Support t={t}/>}

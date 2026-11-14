@@ -56,9 +56,30 @@ export async function POST(request: Request) {
       usageReservationId = null;
       return NextResponse.json({ code: "NO_RESULTS", error: "Não encontramos vídeos suficientes para analisar essa expressão. Experimente uma palavra-chave mais específica ou uma variação." }, { status: 404 });
     }
+    // Free public Google Trends signals, split by Google Web Search and YouTube Search.
+    // Do not label either series as absolute search volume.
+    const trendsPayload = await Promise.allSettled([
+      callTubeXBackend("/trends", { keyword, geo: "", property: "", range: "30d" }),
+      callTubeXBackend("/trends", { keyword, geo: "", property: "youtube", range: "30d" }),
+    ]);
+    const pickTrend = (entry: PromiseSettledResult<any>) => {
+      if (entry.status !== "fulfilled") return null;
+      const value = entry.value;
+      const series = value?.trend || value?.trend30d || value?.data?.trend || [];
+      return Array.isArray(series) && series.length ? series : null;
+    };
+    const searchInterest = {
+      metric: "relative_interest_index_0_100",
+      isSearchCount: false,
+      google: pickTrend(trendsPayload[0]),
+      youtube: pickTrend(trendsPayload[1]),
+      source: "Google Trends",
+      note: "Índice relativo de interesse de 0 a 100; não representa quantidade absoluta de pesquisas.",
+    };
     return NextResponse.json({
       success: true,
       keyword,
+      searchInterest,
       analysis,
       usage: { used: quota.used, limit: dailyLimit, remaining: dailyLimit === 0 ? 0 : Math.max(0, dailyLimit - quota.used), plan },
       source: "tubex-backend-youtube",

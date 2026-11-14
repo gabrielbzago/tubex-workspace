@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -132,6 +133,23 @@ export async function POST(req: Request) {
         metadata,
       },
     });
+
+    // Record checkout creation only after Stripe successfully creates the session.
+    try {
+      if (email) {
+        const { data: user } = await supabaseAdmin.from("users").select("id").ilike("email", email).maybeSingle();
+        await supabaseAdmin.from("tubex_events").insert({
+          user_id: user?.id || null,
+          install_id: `web-${email.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0,40) || "anonymous"}`,
+          session_id: null,
+          event_name: "checkout_started",
+          module: "billing",
+          properties: { plan, source: "web_checkout", stripe_session_id: session.id }
+        });
+      }
+    } catch (analyticsError) {
+      console.warn("[TubeX analytics] checkout event not recorded", analyticsError);
+    }
 
     return NextResponse.json({
       url: session.url,

@@ -86,6 +86,24 @@ async function findUser(customerId: string, email: string) {
   return null;
 }
 
+async function writeProductAnalytics(emailValue: string, eventName: string, module = "billing", properties: Record<string, unknown> = {}) {
+  const email = String(emailValue || "").trim().toLowerCase();
+  if (!email) return;
+  try {
+    const { data: user } = await supabaseAdmin.from("users").select("id").ilike("email", email).maybeSingle();
+    await supabaseAdmin.from("tubex_events").insert({
+      user_id: user?.id || null,
+      install_id: `web-${email.replace(/[^a-z0-9]/g, "").slice(0,40) || "anonymous"}`,
+      session_id: null,
+      event_name: eventName,
+      module,
+      properties
+    });
+  } catch (error) {
+    console.warn("[TubeX analytics] billing event not recorded", eventName, error);
+  }
+}
+
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const subscriptionId = String(session.subscription || "").trim();
   const customerId = String(session.customer || "").trim();
@@ -155,6 +173,16 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   if (userError) {
     console.error("❌ CHECKOUT USER UPSERT ERROR:", userError);
     return;
+  }
+
+  try {
+    const { data: authUser } = await supabaseAdmin.from("users").select("id").ilike("email", email).maybeSingle();
+    const { data: alreadyTracked } = await supabaseAdmin.from("tubex_events")
+      .select("id").eq("event_name", "subscription_activated")
+      .contains("properties", { stripe_session_id: session.id }).maybeSingle();
+    if (!alreadyTracked) await writeProductAnalytics(email, "subscription_activated", "billing", { plan, source: "stripe_webhook", stripe_session_id: session.id });
+  } catch (analyticsError) {
+    console.warn("[TubeX analytics] subscription activation not recorded", analyticsError);
   }
 
   if (!affiliateCode || !subscriptionId) return;
@@ -365,6 +393,8 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
 
   if (referralError) throw referralError;
 
+  const { data: canceledUser } = await supabaseAdmin
+    .from("users").select("id").eq("stripe_subscription_id",subscriptionId).maybeSingle();
   const { error: userError } = await supabaseAdmin
     .from("users")
     .update({
@@ -375,6 +405,7 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
     .eq("stripe_subscription_id", subscriptionId);
 
   if (userError) throw userError;
+  if (canceledUser?.id) await recordAnalyticsEvent(canceledUser.id,"subscription_cancelled","billing");
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {

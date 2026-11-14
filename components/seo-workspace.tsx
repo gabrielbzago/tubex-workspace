@@ -174,7 +174,8 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
   const [history, setHistory] = useState<string[]>([]);
   const [showDefinitions, setShowDefinitions] = useState(false);
   const [trendPoints, setTrendPoints] = useState<{ label: string; value: number }[]>([]);
-  const [trendRange, setTrendRange] = useState<"7d" | "30d" | "12m">("30d");
+  const [googleTrendPoints, setGoogleTrendPoints] = useState<{ label: string; value: number }[]>([]);
+  const [trendRange, setTrendRange] = useState<"7d" | "30d" | "60d" | "90d">("30d");
   const [trendLoading, setTrendLoading] = useState(false);
   const [trendError, setTrendError] = useState("");
   const [usage, setUsage] = useState<{ used: number; limit: number; remaining: number; plan: string } | null>(null);
@@ -246,7 +247,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
         if (active?.result && Array.isArray(active.result.videos) && active.result.keyword) {
           setKeyword(active.result.keyword);
           setAnalysis(active.result);
-          if (isPro) void loadKeywordTrends(active.result.keyword, "30d");
+          void loadKeywordTrends(active.result.keyword, "30d");
         } else localStorage.removeItem(activeAnalysisCacheKey);
       }
     } catch { localStorage.removeItem(activeAnalysisCacheKey); }
@@ -283,16 +284,9 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
     }
   }
 
-  async function loadKeywordTrends(value: string, range: "7d" | "30d" | "12m" = trendRange) {
+  async function loadKeywordTrends(value: string, range: "7d" | "30d" | "60d" | "90d" = trendRange) {
     const term = String(value || "").trim();
     if (!term) return;
-    if (!isPro) {
-      setTrendPoints([]);
-      setTrendLoading(false);
-      setTrendError("");
-      setUpgradeReason("trends");
-      return;
-    }
     const requestId = ++trendRequestId.current;
     const cacheKey = `tubex-google-trends-v2:${normalize(term)}:${range}`;
     setTrendRange(range);
@@ -302,7 +296,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
       try {
         const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
         if (cached?.points?.length >= 2 && Date.now() - Number(cached.savedAt || 0) < 6 * 3600000) {
-          if (requestId === trendRequestId.current) setTrendPoints(cached.points);
+          if (requestId === trendRequestId.current) { setTrendPoints(cached.points); setGoogleTrendPoints(cached.googlePoints || []); }
           return;
         }
       } catch { localStorage.removeItem(cacheKey); }
@@ -310,26 +304,27 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
       const { data: sessionData } = await supabase.auth.getSession();
       const bearer = sessionData.session?.access_token;
       if (!bearer) throw new Error("Sua sessão expirou. Entre novamente para continuar usando o TubeX.");
-      const response = await fetch("/api/seo/trends", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
-        body: JSON.stringify({ keyword: term, range, geo: "", property: "youtube" }),
-        cache: "no-store",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (response.status === 429) throw new Error("O Google Trends está recebendo muitas consultas neste momento. Sua análise de palavras-chave continua disponível. Aguarde alguns minutos e tente novamente.");
-        throw new Error("Não foi possível atualizar as tendências neste momento. Sua análise de palavras-chave continua disponível.");
-      }
-      const raw = payload?.trend ?? payload?.data?.trend ?? payload?.result?.trend ?? payload?.timelineData ?? payload?.data?.default?.timelineData ?? payload?.history ?? payload?.data?.history;
-      const points = normaliseTrend(raw);
+      const requestTrend = async (property: "google" | "youtube") => {
+        const response = await fetch("/api/seo/trends", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
+          body: JSON.stringify({ keyword: term, range, geo: "", property }),
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.message || "Não foi possível consultar o Google Trends.");
+        return normaliseTrend(payload?.trend ?? payload?.data?.trend ?? payload?.result?.trend ?? payload?.timelineData ?? payload?.data?.default?.timelineData ?? payload?.history ?? payload?.data?.history);
+      };
+      const [googlePoints, youtubePoints] = await Promise.all([requestTrend("google"), requestTrend("youtube")]);
       if (requestId !== trendRequestId.current) return;
-      if (points.length < 2) throw new Error("Ainda não há dados de tendência suficientes para este termo. Experimente novamente mais tarde.");
-      setTrendPoints(points);
-      try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), points })); } catch { /* cache opcional */ }
+      setGoogleTrendPoints(googlePoints);
+      setTrendPoints(youtubePoints);
+      if (googlePoints.length < 2 && youtubePoints.length < 2) throw new Error("Ainda não há dados de tendência suficientes para este termo. Experimente novamente mais tarde.");
+      try { localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), points: youtubePoints, googlePoints })); } catch { /* cache opcional */ }
     } catch (error: any) {
       if (requestId !== trendRequestId.current) return;
       setTrendPoints([]);
+      setGoogleTrendPoints([]);
       setTrendError(["Sua sessão expirou. Entre novamente para continuar usando o TubeX.", "O Google Trends está recebendo muitas consultas neste momento. Sua análise de palavras-chave continua disponível. Aguarde alguns minutos e tente novamente.", "Não foi possível atualizar as tendências neste momento. Sua análise de palavras-chave continua disponível.", "Ainda não há dados de tendência suficientes para este termo. Experimente novamente mais tarde."].includes(error?.message) ? error.message : "As tendências estão temporariamente indisponíveis. Sua análise de palavras-chave continua disponível.");
     } finally {
       if (requestId === trendRequestId.current) setTrendLoading(false);
@@ -339,7 +334,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
   async function analyzeKeyword(value?: string, force = false) {
     const q = String(value ?? keyword).trim();
     if (!q) { setSearchError("Digite uma palavra-chave para começar a pesquisa."); return; }
-    setKeyword(q); setSearching(true); setSearchError(""); setUpgradeReason(null); setAnalysis(null); setTrendPoints([]); setTrendError("");
+    setKeyword(q); setSearching(true); setSearchError(""); setUpgradeReason(null); setAnalysis(null); setTrendPoints([]); setGoogleTrendPoints([]); setTrendError("");
     const cacheKey = activeAnalysisCacheKey;
     try {
       // Reutiliza a análise atual para a mesma palavra, exceto quando solicitar atualização.
@@ -351,7 +346,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
             if (normalize(cached.keyword || "") === normalize(q) && cached.result && Array.isArray(cached.result.videos)) {
               setAnalysis(cached.result);
               setSearching(false);
-              if (isPro) void loadKeywordTrends(q, trendRange);
+              void loadKeywordTrends(q, trendRange);
               return;
             }
             // A pesquisa de outra palavra descarta imediatamente o resultado anterior.
@@ -424,7 +419,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
       const nextHistory = [q, ...history.filter(x => normalize(x) !== normalize(q))].slice(0, 8);
       setHistory(nextHistory);
       localStorage.setItem(`tubex-keyword-history:${user?.email || "user"}`, JSON.stringify(nextHistory));
-      if (isPro) void loadKeywordTrends(q, trendRange);
+      void loadKeywordTrends(q, trendRange);
     } catch (error: any) {
       setSearchError(error?.message === "Sua sessão expirou. Entre novamente para continuar usando o TubeX." ? error.message : "Não foi possível concluir esta análise agora. Tente novamente em alguns instantes.");
     } finally { setSearching(false); }
@@ -502,35 +497,15 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
         <MetricCard icon={<Target size={15}/>} label="Presença no título" value={pct(analysis.titleAdoption)} sub={`${analysis.titleMatches} vídeos contêm os termos pesquisados`}/>
       </div>
 
-      {isPro ? (
       <section className="tx-surface rounded-[20px] p-5 md:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="tx-kicker">GOOGLE TRENDS · YOUTUBE SEARCH</p><h3 className="mt-1 text-base font-black">Interesse da palavra-chave ao longo do tempo</h3><p className="mt-1 text-[10px] text-[var(--tx-muted)]">Acompanhe a evolução do interesse e identifique os melhores momentos para publicar. Escala relativa de 0 a 100.</p></div>
-          <div className="flex gap-1 rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-1">{(["7d", "30d", "12m"] as const).map(range => <button key={range} onClick={() => void loadKeywordTrends(analysis.keyword, range)} className={`rounded-lg px-3 py-2 text-[9px] font-black ${trendRange === range ? "bg-[var(--tx-accent)] text-[#11151a]" : "text-[var(--tx-muted)] hover:text-[var(--tx-text)]"}`}>{range === "12m" ? "12 meses" : range}</button>)}</div>
+          <div><p className="tx-kicker">GOOGLE TRENDS · GOOGLE + YOUTUBE</p><h3 className="mt-1 text-base font-black">Interesse da palavra-chave ao longo do tempo</h3><p className="mt-1 text-[10px] text-[var(--tx-muted)]">Índice relativo de 0 a 100. Não é quantidade absoluta de pesquisas.</p></div>
+          <div className="flex gap-1 rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-1">{(["7d", "30d", "60d", "90d"] as const).map(range => <button key={range} onClick={() => void loadKeywordTrends(analysis.keyword, range)} className={`rounded-lg px-3 py-2 text-[9px] font-black ${trendRange === range ? "bg-[var(--tx-accent)] text-[#11151a]" : "text-[var(--tx-muted)] hover:text-[var(--tx-text)]"}`}>{range}</button>)}</div>
         </div>
-        {trendLoading ? <div className="mt-4 flex h-36 items-center justify-center gap-2 text-xs text-[var(--tx-muted)]"><Loader2 size={15} className="animate-spin text-[var(--tx-accent)]"/> Analisando tendências…</div> : trendPoints.length >= 2 ? <TrendChart points={trendPoints}/> : <div className="mt-4 grid h-36 place-items-center rounded-xl border border-dashed border-[var(--tx-border)] px-4 text-center"><div><p className="text-xs font-bold">{trendError || "Ainda não há uma série disponível para esta palavra-chave."}</p><button onClick={() => void loadKeywordTrends(analysis.keyword, trendRange)} className="mt-3 text-[10px] font-black text-[var(--tx-accent)]">Tentar novamente</button></div></div>}
+        {trendLoading ? <div className="mt-4 flex h-36 items-center justify-center gap-2 text-xs text-[var(--tx-muted)]"><Loader2 size={15} className="animate-spin text-[var(--tx-accent)]"/> Consultando Google Trends…</div> : <div className="mt-4 grid gap-4 lg:grid-cols-2"><div className="min-w-0"><p className="mb-2 text-[10px] font-black text-[var(--tx-muted)]">GOOGLE · PESQUISA WEB</p>{googleTrendPoints.length >= 2 ? <TrendChart points={googleTrendPoints}/> : <p className="py-10 text-center text-[10px] text-[var(--tx-muted)]">Sem série disponível neste período.</p>}</div><div className="min-w-0"><p className="mb-2 text-[10px] font-black text-[var(--tx-muted)]">YOUTUBE · PESQUISA</p>{trendPoints.length >= 2 ? <TrendChart points={trendPoints}/> : <p className="py-10 text-center text-[10px] text-[var(--tx-muted)]">Sem série disponível neste período.</p>}</div></div>}
+        {trendError && <p className="mt-2 text-[10px] text-amber-500">{trendError}</p>}
+        <p className="mt-3 text-[9px] leading-4 text-[var(--tx-muted)]">Fonte: Google Trends público. A escala é normalizada por período e região; valores de janelas diferentes não equivalem a contagens de pesquisas e não devem ser somados.</p>
       </section>
-      ) : (
-        <section className="tx-surface relative overflow-hidden rounded-[20px] border border-[var(--tx-border)] p-5 md:p-6">
-          <div className="pointer-events-none absolute inset-0 opacity-20 blur-sm" aria-hidden="true">
-            <div className="mt-16 flex h-28 items-end gap-2 px-8">{[35,62,48,82,55,94,70,45,76,60,88,52].map((h,i)=><span key={i} className="flex-1 rounded-t-md bg-[var(--tx-accent)]" style={{height:`${h}%`}}/>)}</div>
-          </div>
-          <div className="relative flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="max-w-xl">
-              <p className="tx-kicker">GOOGLE TRENDS · RECURSO PRO</p>
-              <h3 className="mt-1 text-lg font-black">Descubra se o interesse está crescendo</h3>
-              <p className="mt-1 text-xs leading-5 text-[var(--tx-muted)]">Compare a evolução da procura no YouTube, identifique sazonalidade e escolha o melhor momento para publicar.</p>
-              <ul className="mt-3 grid gap-1 text-[11px] text-[var(--tx-muted)]">
-                <li>✓ Histórico de interesse em 7 dias, 30 dias e 12 meses</li>
-                <li>✓ Identificação de picos e oportunidades de conteúdo</li>
-                <li>✓ Dados de tendência para apoiar seu calendário editorial</li>
-              </ul>
-            </div>
-            <button onClick={() => setUpgradeReason("trends")} className="tx-btn tx-btn-primary shrink-0">Desbloquear Trends <ArrowUpRight size={14}/></button>
-          </div>
-        </section>
-      )}
-
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <section className="tx-surface rounded-[20px] p-5"><div className="flex items-center justify-between"><div><p className="tx-kicker">COMPETIÇÃO NA SERP</p><h3 className="mt-1 text-base font-black">Distribuição de publicações recentes</h3></div><span className="text-[10px] text-[var(--tx-muted)]">Top {analysis.analyzed}</span></div><div className="mt-6 grid h-36 grid-cols-8 items-end gap-2">{analysis.weekly.map((w, i) => <div key={w.label} className="flex h-full flex-col items-center justify-end gap-2"><div className="flex w-full flex-1 items-end"><div className="w-full rounded-t-md bg-[linear-gradient(180deg,var(--tx-accent),color-mix(in_srgb,var(--tx-accent)_36%,transparent))] transition-all" style={{ height: `${Math.max(w.count ? 8 : 2, (w.count / maxWeekly) * 100)}%`, opacity: w.count ? 0.65 + (i / 7) * 0.35 : 0.2 }} title={`${w.count} vídeos`}/></div><span className="text-[9px] text-[var(--tx-muted)]">{w.label}</span></div>)}</div><p className="mt-3 text-[10px] leading-5 text-[var(--tx-muted)]">Quantidade de vídeos do conjunto analisado publicados em cada semana recente. Não representa histórico de volume de buscas.</p></section>

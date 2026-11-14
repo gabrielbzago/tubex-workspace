@@ -53,12 +53,16 @@ export async function callTubeXBackend(path: "/youtube" | "/youtube-channel" | "
   }
 }
 
-export function getTrendSeries(payload: any, range: "7d" | "30d" | "12m") {
+export function getTrendSeries(payload: any, range: "7d" | "30d" | "60d" | "90d" | "12m") {
   const rangeKeys = range === "7d"
     ? ["trend7d", "last7Days", "week"]
     : range === "30d"
       ? ["trend30d", "last30Days", "month"]
-      : ["trend12m", "last12Months", "year"];
+      : range === "60d"
+        ? ["trend60d", "last60Days"]
+        : range === "90d"
+          ? ["trend90d", "last90Days"]
+          : ["trend12m", "last12Months", "year"];
   const containers = [payload, payload?.data, payload?.result, payload?.results, payload?.response, payload?.default, payload?.data?.default, payload?.result?.default];
   const candidates: any[] = [];
   for (const container of containers) {
