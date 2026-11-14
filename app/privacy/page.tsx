@@ -23,7 +23,7 @@ export default function PrivacyPage() {
 
           <p className="text-zinc-500 text-sm mt-2">
 
-            Última atualização: 07/05/2026
+            Última atualização: 14/11/2026
 
           </p>
 
@@ -68,8 +68,7 @@ export default function PrivacyPage() {
 
             <p className="text-zinc-400 leading-8 mt-4">
 
-              Esses dados são usados exclusivamente para identificação,
-              autenticação e controle de acesso.
+              Esses dados são usados para identificação, autenticação e controle de acesso. Quando o login é realizado pela extensão Chrome, o TubeX também registra no Analytics administrativo o e-mail Google verificado, o nome e a foto de perfil (quando fornecidos pelo Google), um identificador da conta Google, o identificador daquela instalação, a versão da extensão e a data da última atividade. Essa associação permite ao proprietário identificar contas que utilizam a extensão mesmo quando não fizeram login no site. O token OAuth não é armazenado na tabela de Analytics.
 
             </p>
 
@@ -120,6 +119,8 @@ export default function PrivacyPage() {
               <li>Dados da conta Google (OAuth)</li>
               <li>Dados públicos do YouTube</li>
               <li>Dados técnicos (cache, tokens e armazenamento local)</li>
+              <li>Identificadores de instalação, versão da extensão e eventos de uso</li>
+              <li>E-mail e identificador Google verificados para associar a conta à instalação da extensão</li>
 
             </ul>
 
@@ -140,6 +141,7 @@ export default function PrivacyPage() {
               <li>Gerar análises com Inteligência Artificial</li>
               <li>Validar planos e acessos</li>
               <li>Melhorar a experiência do usuário</li>
+              <li>Medir utilização dos módulos e identificar contas que utilizam a extensão para suporte e administração do produto</li>
 
             </ul>
 

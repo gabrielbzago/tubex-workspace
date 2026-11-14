@@ -15,6 +15,8 @@ type EventRow = {
 
 type UserRow = {
   id: string;
+  email?: string | null;
+  name?: string | null;
   plan: string | null;
   status: string | null;
   stripe_customer_id: string | null;
@@ -203,12 +205,19 @@ export async function GET(request: Request) {
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days") || 30)));
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
-  const [{ data: events, error: queryError }, { data: users, error: usersError }] = await Promise.all([
+  const [
+    { data: events, error: queryError },
+    { data: users, error: usersError },
+    { data: installations, error: installationsError },
+  ] = await Promise.all([
     supabaseAdmin.from("tubex_events")
       .select("user_id,install_id,event_name,module,created_at,properties")
       .gte("created_at", since).order("created_at", { ascending: false }).limit(20000),
     supabaseAdmin.from("users")
-      .select("id,plan,status,stripe_customer_id,stripe_subscription_id"),
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id"),
+    supabaseAdmin.from("tubex_installations")
+      .select("install_id,email,name,picture,user_id,extension_version,first_seen,last_seen")
+      .order("last_seen", { ascending: false }).limit(1000),
   ]);
 
   if (queryError) {
@@ -269,6 +278,22 @@ export async function GET(request: Request) {
     Boolean(user.stripe_subscription_id)
   );
   const subscriptionCount = new Set(activePaidSubscriptions.map((user) => user.stripe_subscription_id)).size;
+  const userById = new Map(userRows.map((user) => [user.id, user]));
+  const extensionUsers = (installations || []).map((installation: any) => {
+    const linkedUser = installation.user_id ? userById.get(installation.user_id) : null;
+    return {
+      install_id: installation.install_id,
+      email: installation.email,
+      name: installation.name || linkedUser?.name || null,
+      picture: installation.picture || null,
+      user_id: installation.user_id || null,
+      plan: linkedUser?.plan || "não vinculado",
+      account_status: linkedUser?.status || null,
+      extension_version: installation.extension_version || null,
+      first_seen: installation.first_seen,
+      last_seen: installation.last_seen,
+    };
+  });
 
   const daily = Object.entries(dailySets)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -298,6 +323,7 @@ export async function GET(request: Request) {
     },
     dataQuality: {
       subscriptionsAvailable: !usersError,
+      extensionIdentityAvailable: !installationsError,
       historicalIdentity: "user_id ou install_id",
       notes: [
         "Pesquisas incluem search_submitted, search_performed e analysis_completed.",
@@ -305,6 +331,8 @@ export async function GET(request: Request) {
         "Atividade diária de instalações conta install_id distintos com atividade naquele dia.",
         "Logins só são contabilizados quando existe login_success; abertura do YouTube não é tratada como login.",
         "Assinaturas confirmadas vêm de users: plano pago, status active e stripe_subscription_id preenchido.",
+        "E-mails da extensão vêm exclusivamente do endpoint Google userinfo validado no servidor.",
+        ...(installationsError ? ["Tabela tubex_installations indisponível; execute a migration 20261114_tubex_installations.sql."] : []),
         ...(usersError ? ["Não foi possível consultar users; assinaturas não foram contabilizadas."] : []),
       ],
     },
@@ -320,6 +348,7 @@ export async function GET(request: Request) {
       .map((name) => ({ name, label: moduleLabel(name), value: byModule[name] || 0 }))
       .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR")),
     events: Object.entries(byEvent).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+    extensionUsers,
     daily,
     recent: list.slice(0, 100).map((event) => ({
       user_id: event.user_id,
