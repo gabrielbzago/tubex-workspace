@@ -135,6 +135,13 @@ const ACTION_MODULES: Record<string, string> = {
   tubexChatConnect: "chat_ai",
   tubexChatAsk: "chat_ai",
   getOAuthDiagnostics: "diagnostics",
+  checkSubscription: "billing",
+  verificarPlano: "billing",
+  fetchChannelVideos: "intelligence",
+  getRealChannelData: "intelligence",
+  getMyChannelIdentity: "intelligence",
+  executarIA: "intelligence",
+  alt_text_tooltip: "thumbnail_ai",
 };
 
 function canonicalModule(value: unknown): string {
@@ -148,6 +155,7 @@ function inferModuleFromAction(value: unknown): string | null {
   if (ACTION_MODULES[action]) return ACTION_MODULES[action];
   const a = action.toLowerCase();
   if (/checkout|upgrade|subscription|payment|plan/.test(a)) return "billing";
+  if (/seo.?search|fetchseodata/.test(a)) return "seo_search";
   if (/keyword|suggestion|searchyoutube|searchkeyword/.test(a)) return "keyword_explorer";
   if (/trend/.test(a)) return "keyword_trends";
   if (/competitor|radar|outlier/.test(a)) return /outlier/.test(a) ? "outliers" : "competitor_radar";
@@ -162,6 +170,9 @@ function inferModuleFromAction(value: unknown): string | null {
   if (/revenue|receipt/.test(a)) return "revenue_insights";
   if (/summary/.test(a)) return "summary";
   if (/seo/.test(a)) return "seo_explorer";
+  if (/revenue|receipt|faturamento/.test(a)) return "revenue_insights";
+  if (/insight|executaria|getrealchanneldata|getmychannelidentity|channelvideos/.test(a)) return "intelligence";
+  if (/subscription|checkout|payment|billing|verificarplano|checksubscription/.test(a)) return "billing";
   return null;
 }
 
