@@ -26,15 +26,23 @@ export async function GET(request: Request) {
     new Set(list.filter(e=>(!filter||filter(e))&&e[key]).map(e=>e[key])).size;
   const byModule:Record<string,number> = {};
   const byEvent:Record<string,number> = {};
-  const daily:Record<string,{installs:number;active:number;searches:number;signups:number}> = {};
+  const daily:Record<string,{installs:number;searches:number;logins:number}> = {};
   for (const e of list) {
     const day=String(e.created_at).slice(0,10);
-    daily[day] ||= {installs:0,active:0,searches:0,signups:0};
+    daily[day] ||= {installs:0,searches:0,logins:0};
     if(e.event_name==="extension_installed") daily[day].installs++;
     if(e.event_name==="search_performed"||e.event_name==="analysis_completed") daily[day].searches++;
-    if(e.event_name==="login_success") daily[day].signups++;
+    if(e.event_name==="login_success") daily[day].logins++;
     byEvent[e.event_name]=(byEvent[e.event_name]||0)+1;
     if(e.module) byModule[e.module]=(byModule[e.module]||0)+1;
+  }
+  // Completa o período com dias sem eventos para o histórico não ficar irregular.
+  for (let offset=days-1; offset>=0; offset--) {
+    const date=new Date();
+    date.setUTCHours(0,0,0,0);
+    date.setUTCDate(date.getUTCDate()-offset);
+    const key=date.toISOString().slice(0,10);
+    daily[key] ||= {installs:0,searches:0,logins:0};
   }
   const moduleOpens=list.filter(e=>e.event_name==="module_opened");
   const usersInstalled=unique("install_id",e=>e.event_name==="extension_installed");
