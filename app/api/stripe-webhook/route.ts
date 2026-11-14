@@ -382,6 +382,29 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   });
 }
 
+async function recordAnalyticsEvent(
+  userId: string,
+  eventName: string,
+  module = "billing",
+  properties: Record<string, unknown> = {}
+) {
+  if (!userId) return;
+  try {
+    const { error } = await supabaseAdmin.from("tubex_events").insert({
+      user_id: userId,
+      install_id: null,
+      session_id: null,
+      event_name: eventName,
+      module,
+      properties,
+    });
+    if (error) console.warn("[TubeX analytics] event not recorded", eventName, error);
+  } catch (error) {
+    // Analytics must never cause Stripe webhook delivery to fail.
+    console.warn("[TubeX analytics] event not recorded", eventName, error);
+  }
+}
+
 async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
   const subscriptionId = subscription.id;
   const now = new Date().toISOString();

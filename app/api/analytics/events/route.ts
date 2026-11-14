@@ -12,7 +12,7 @@ const ALLOWED = new Set([
   "subscription_cancelled","subscription_expired","quota_warning","quota_exhausted",
   "upgrade_prompt_viewed","upgrade_prompt_clicked","ui_action","api_error","api_request_succeeded",
   "search_failed","analysis_failed","extension_uninstalled","module_closed","welcome_skipped",
-  "session_started","trend_search_completed","trend_search_failed","summary_viewed",
+  "session_started","extension_action","trend_search_completed","trend_search_failed","summary_viewed",
   "creator_workspace_opened","competitor_analysis_started","competitor_analysis_failed"
 ]);
 
