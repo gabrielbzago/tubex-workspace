@@ -15,6 +15,8 @@ type EventRow = {
 
 type UserRow = {
   id: string;
+  email?: string | null;
+  name?: string | null;
   plan: string | null;
   status: string | null;
   stripe_customer_id: string | null;
@@ -27,16 +29,167 @@ const INSTALL_ACTIVITY_EVENTS = new Set([
   "welcome_completed", "youtube_opened", "module_opened", "search_submitted",
   "search_performed", "analysis_completed", "extension_action", "ui_action",
 ]);
+const MODULE_ACTIVITY_EVENTS = new Set([
+  "module_opened", "extension_action", "ui_action", "search_submitted", "search_performed",
+  "search_failed", "analysis_completed", "analysis_failed", "ai_generation_completed",
+  "quota_exhausted", "competitor_analysis", "competitor_analysis_started",
+  "competitor_analysis_failed", "trend_search_completed", "trend_search_failed",
+  "summary_viewed", "creator_workspace_opened", "api_request_succeeded",
+  "pricing_viewed", "upgrade_clicked", "checkout_started", "subscription_activated",
+  "subscription_cancelled", "subscription_expired",
+]);
 const PAID_PLANS = new Set(["start", "pro", "expert"]);
 
-function identity(e: EventRow): string | null {
-  // Eventos antigos da extensão não tinham user_id. install_id é o identificador
-  // persistente disponível e permite contar a instalação sem inventar um login.
-  return e.user_id || e.install_id || null;
+const MODULE_LABELS: Record<string, string> = {
+  seo_search: "SEO de Pesquisa",
+  seo_explorer: "SEO Explorer",
+  keyword_explorer: "Keyword Explorer",
+  keyword_trends: "Tendências de Palavras-chave",
+  competitor_radar: "Radar de Concorrentes",
+  creator_workspace: "Creator Workspace",
+  outliers: "Detector de Outliers",
+  summary: "Resumo do Canal",
+  video_optimizer: "Otimizador de Vídeos",
+  video_ai: "IA para Vídeos",
+  video_list_ai: "IA de Lista de Vídeos",
+  title_ai: "IA de Títulos",
+  description_ai: "IA de Descrições",
+  thumbnail_ai: "IA de Thumbnails",
+  tags_editor: "Editor de Tags",
+  intelligence: "Inteligência TubeX",
+  ai_legacy: "IA (histórico sem módulo específico)",
+  diagnostics: "Diagnóstico",
+  chat_ai: "Chat com IA",
+  engaged_views: "Visualizações Engajadas",
+  revenue_insights: "Análise de Receita",
+  billing: "Assinaturas e Pagamentos",
+  extension: "Extensão TubeX",
+  system: "Sistema",
+  javascript: "Erros JavaScript",
+  youtube: "YouTube",
+};
+
+const TRACKED_MODULE_KEYS = [
+  "seo_search", "seo_explorer", "keyword_explorer", "keyword_trends", "competitor_radar",
+  "creator_workspace", "outliers", "summary", "video_optimizer", "video_ai", "video_list_ai",
+  "title_ai", "description_ai", "thumbnail_ai", "tags_editor", "intelligence", "ai_legacy",
+  "diagnostics", "chat_ai", "engaged_views", "revenue_insights", "billing",
+];
+
+const MODULE_ALIASES: Record<string, string> = {
+  trends: "keyword_trends",
+  ai: "ai_legacy",
+  keyword_labs: "keyword_explorer",
+  video_optimizer_module: "video_optimizer",
+  seo_research: "seo_search",
+  content_seo: "seo_search",
+  revenue: "revenue_insights",
+  diagnosis: "diagnostics",
+  diagnostic: "diagnostics",
+  video: "video_ai",
+  extension_module: "extension",
+};
+
+const ACTION_MODULES: Record<string, string> = {
+  fetchSeoData: "seo_search",
+  youtubeKeywordSuggestions: "keyword_explorer",
+  fetchRelatedKeywordSuggestions: "keyword_explorer",
+  fetchKeywordSearchInsights: "keyword_explorer",
+  fetchKeywordVolume: "keyword_explorer",
+  fetchGoogleAdsKeywordMetrics: "keyword_explorer",
+  generateAdvancedRelatedKeywords: "keyword_explorer",
+  searchYoutubeVideos: "keyword_explorer",
+  googleTrends: "keyword_trends",
+  generateAdvancedTags: "tags_editor",
+  runVideoOptimizer: "video_optimizer",
+  video_ai_chat: "video_ai",
+  generateViralScoreAI: "video_ai",
+  generateThumbnail: "thumbnail_ai",
+  gerarDescricaoPorTitulo: "description_ai",
+  gerarTextoIA: "title_ai",
+  gerarTextoIAPainel: "intelligence",
+  generateAIVideoIdeas: "intelligence",
+  generateVideoOpportunityAI: "intelligence",
+  generateChannelStrategyAI: "intelligence",
+  generateChannelOpportunities: "intelligence",
+  generateTubeXInsight: "intelligence",
+  generateChannelDiagnosisAI: "diagnostics",
+  detectChannelNicheAI: "competitor_radar",
+  generateNicheCompetitorRadar: "competitor_radar",
+  fetchChannelSummary: "summary",
+  fetchQuickStatsChannel: "creator_workspace",
+  fetchQuickStatsVisitedHistory: "creator_workspace",
+  fetchQuickStatsOwnChannel: "creator_workspace",
+  fetchOwnChannelViewsHistory: "creator_workspace",
+  fetchOwnVideoEngagedViews: "engaged_views",
+  fetchOwnChannelEngagedViews: "engaged_views",
+  fetchOwnChannelEngagedViews30d: "engaged_views",
+  fetchLast7DaysVideos: "creator_workspace",
+  fetchLast30DaysViews: "creator_workspace",
+  fetchSubsLast7Days: "creator_workspace",
+  fetchTopVideo: "creator_workspace",
+  fetchChannelStats: "creator_workspace",
+  fetchChannelStatsFromVideos: "creator_workspace",
+  fetchRevenueProgress: "revenue_insights",
+  tubexChatGetContext: "chat_ai",
+  tubexChatConnect: "chat_ai",
+  tubexChatAsk: "chat_ai",
+  getOAuthDiagnostics: "diagnostics",
+};
+
+function canonicalModule(value: unknown): string {
+  const raw = String(value || "").trim().toLowerCase();
+  return MODULE_ALIASES[raw] || raw;
 }
 
-function uniqueCount(rows: EventRow[], predicate: (e: EventRow) => boolean): number {
-  return new Set(rows.filter(predicate).map(identity).filter((v): v is string => Boolean(v))).size;
+function inferModuleFromAction(value: unknown): string | null {
+  const action = String(value || "").trim();
+  if (!action) return null;
+  if (ACTION_MODULES[action]) return ACTION_MODULES[action];
+  const a = action.toLowerCase();
+  if (/checkout|upgrade|subscription|payment|plan/.test(a)) return "billing";
+  if (/keyword|suggestion|searchyoutube|searchkeyword/.test(a)) return "keyword_explorer";
+  if (/trend/.test(a)) return "keyword_trends";
+  if (/competitor|radar|outlier/.test(a)) return /outlier/.test(a) ? "outliers" : "competitor_radar";
+  if (/creator|calendar|workspace/.test(a)) return "creator_workspace";
+  if (/diagnostic/.test(a)) return "diagnostics";
+  if (/chat/.test(a)) return "chat_ai";
+  if (/thumbnail/.test(a)) return "thumbnail_ai";
+  if (/description/.test(a)) return "description_ai";
+  if (/title/.test(a)) return "title_ai";
+  if (/tag/.test(a)) return "tags_editor";
+  if (/video|optim/.test(a)) return "video_optimizer";
+  if (/revenue|receipt/.test(a)) return "revenue_insights";
+  if (/summary/.test(a)) return "summary";
+  if (/seo/.test(a)) return "seo_explorer";
+  return null;
+}
+
+function moduleForEvent(event: EventRow): string {
+  const raw = String(event.module || "").trim().toLowerCase();
+  // Reclassifica eventos antigos genéricos quando o nome da ação foi preservado.
+  if (["extension", "system", "youtube", ""].includes(raw)) {
+    const inferred = inferModuleFromAction(event.properties?.action);
+    if (inferred) return inferred;
+  }
+  // Eventos antigos do fetchSeoData podem ser separados pela origem registrada.
+  if (raw === "seo_explorer" && event.properties?.source === "background_analysis") return "seo_search";
+  return canonicalModule(raw);
+}
+
+function moduleLabel(value: unknown): string {
+  const key = canonicalModule(value);
+  return MODULE_LABELS[key] || key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function identity(event: EventRow): string | null {
+  // A extensão antiga não enviava user_id em todos os eventos. install_id é o
+  // identificador persistente para reconstruir instalações e atividade histórica.
+  return event.user_id || event.install_id || null;
+}
+
+function uniqueCount(rows: EventRow[], predicate: (event: EventRow) => boolean): number {
+  return new Set(rows.filter(predicate).map(identity).filter((value): value is string => Boolean(value))).size;
 }
 
 export async function GET(request: Request) {
@@ -44,6 +197,7 @@ export async function GET(request: Request) {
   if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data.user?.email) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const ownerEmail = String(process.env.OWNER_EMAIL || process.env.NEXT_PUBLIC_OWNER_EMAIL || "gabrielbzago@gmail.com").toLowerCase();
   if (data.user.email.toLowerCase() !== ownerEmail) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
@@ -51,12 +205,19 @@ export async function GET(request: Request) {
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days") || 30)));
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
-  const [{ data: events, error: queryError }, { data: users, error: usersError }] = await Promise.all([
+  const [
+    { data: events, error: queryError },
+    { data: users, error: usersError },
+    { data: installations, error: installationsError },
+  ] = await Promise.all([
     supabaseAdmin.from("tubex_events")
       .select("user_id,install_id,event_name,module,created_at,properties")
       .gte("created_at", since).order("created_at", { ascending: false }).limit(20000),
     supabaseAdmin.from("users")
-      .select("id,plan,status,stripe_customer_id,stripe_subscription_id"),
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id"),
+    supabaseAdmin.from("tubex_installations")
+      .select("install_id,email,name,picture,user_id,extension_version,first_seen,last_seen")
+      .order("last_seen", { ascending: false }).limit(1000),
   ]);
 
   if (queryError) {
@@ -66,26 +227,37 @@ export async function GET(request: Request) {
 
   const list = (events || []) as EventRow[];
   const userRows = (users || []) as UserRow[];
-  const count = (name: string) => list.filter((e) => e.event_name === name).length;
-  const countAny = (names: Set<string>) => list.filter((e) => names.has(e.event_name)).length;
+  const count = (name: string) => list.filter((event) => event.event_name === name).length;
+  const countAny = (names: Set<string>) => list.filter((event) => names.has(event.event_name)).length;
 
+  const installIds = new Set(list.map((event) => event.install_id).filter((value): value is string => Boolean(value)));
+  const dailySets: Record<string, { installs: Set<string>; searches: number; logins: Set<string> }> = {};
+  const ensureDay = (day: string) => dailySets[day] ||= { installs: new Set<string>(), searches: 0, logins: new Set<string>() };
   const byModule: Record<string, number> = {};
   const byEvent: Record<string, number> = {};
-  const dailySets: Record<string, { installs: Set<string>; searches: Set<string>; logins: Set<string> }> = {};
-  const ensureDay = (day: string) => dailySets[day] ||= { installs: new Set(), searches: new Set(), logins: new Set() };
 
-  for (const e of list) {
-    const day = String(e.created_at).slice(0, 10);
-    const d = ensureDay(day);
-    const who = identity(e);
-    if (who && INSTALL_ACTIVITY_EVENTS.has(e.event_name)) d.installs.add(e.install_id || who);
-    if (who && SEARCH_EVENTS.has(e.event_name)) d.searches.add(who);
-    if (who && e.event_name === "login_success") d.logins.add(who);
-    byEvent[e.event_name] = (byEvent[e.event_name] || 0) + 1;
-    if (e.module) byModule[e.module] = (byModule[e.module] || 0) + 1;
+  for (const event of list) {
+    const day = String(event.created_at).slice(0, 10);
+    const daily = ensureDay(day);
+    const who = identity(event);
+
+    // Instalação ativa histórica: usa install_id mesmo quando o evento
+    // extension_installed não existia na versão antiga da extensão.
+    if (event.install_id && INSTALL_ACTIVITY_EVENTS.has(event.event_name)) daily.installs.add(event.install_id);
+    // Pesquisas são eventos, não usuários únicos: várias pesquisas da mesma
+    // instalação no mesmo dia precisam aparecer no gráfico e no total.
+    if (SEARCH_EVENTS.has(event.event_name)) daily.searches += 1;
+    if (who && event.event_name === "login_success") daily.logins.add(who);
+
+    byEvent[event.event_name] = (byEvent[event.event_name] || 0) + 1;
+
+    const moduleKey = moduleForEvent(event);
+    if (moduleKey && MODULE_LABELS[moduleKey] && MODULE_ACTIVITY_EVENTS.has(event.event_name)) {
+      byModule[moduleKey] = (byModule[moduleKey] || 0) + 1;
+    }
   }
 
-  // Complete calendar range, including days with no events.
+  // Completa os dias sem atividade para preservar o eixo temporal do gráfico.
   for (let offset = days - 1; offset >= 0; offset--) {
     const date = new Date();
     date.setUTCHours(0, 0, 0, 0);
@@ -93,26 +265,44 @@ export async function GET(request: Request) {
     ensureDay(date.toISOString().slice(0, 10));
   }
 
-  // Count an installation from the persistent install_id even when the original
-  // extension_installed event was not emitted by that historical extension build.
-  const installIds = new Set(list.map((e) => e.install_id).filter((v): v is string => Boolean(v)));
-  const logins = uniqueCount(list, (e) => e.event_name === "login_success");
-  const searchedUsers = uniqueCount(list, (e) => SEARCH_EVENTS.has(e.event_name));
-  const pricingUsers = uniqueCount(list, (e) => e.event_name === "pricing_viewed");
-  const checkoutUsers = uniqueCount(list, (e) => e.event_name === "checkout_started");
+  const logins = uniqueCount(list, (event) => event.event_name === "login_success");
+  const searchedUsers = uniqueCount(list, (event) => SEARCH_EVENTS.has(event.event_name));
+  const pricingUsers = uniqueCount(list, (event) => event.event_name === "pricing_viewed");
+  const checkoutUsers = uniqueCount(list, (event) => event.event_name === "checkout_started");
 
-  // The billing webhook updates users. Use the persisted Stripe subscription ID,
-  // paid plan and active status as the source of truth for confirmed subscriptions.
-  const activePaidSubscriptions = usersError ? [] : userRows.filter((u) =>
-    PAID_PLANS.has(String(u.plan || "").toLowerCase()) &&
-    String(u.status || "").toLowerCase() === "active" &&
-    Boolean(u.stripe_subscription_id)
+  // A tabela users, atualizada pelo webhook Stripe, é a fonte de verdade das
+  // assinaturas ativas. Não inferimos assinatura a partir de eventos de clique.
+  const activePaidSubscriptions = usersError ? [] : userRows.filter((user) =>
+    PAID_PLANS.has(String(user.plan || "").toLowerCase()) &&
+    String(user.status || "").toLowerCase() === "active" &&
+    Boolean(user.stripe_subscription_id)
   );
-  const subscriptionCount = new Set(activePaidSubscriptions.map((u) => u.stripe_subscription_id)).size;
+  const subscriptionCount = new Set(activePaidSubscriptions.map((user) => user.stripe_subscription_id)).size;
+  const userById = new Map(userRows.map((user) => [user.id, user]));
+  const extensionUsers = (installations || []).map((installation: any) => {
+    const linkedUser = installation.user_id ? userById.get(installation.user_id) : null;
+    return {
+      install_id: installation.install_id,
+      email: installation.email,
+      name: installation.name || linkedUser?.name || null,
+      picture: installation.picture || null,
+      user_id: installation.user_id || null,
+      plan: linkedUser?.plan || "não vinculado",
+      account_status: linkedUser?.status || null,
+      extension_version: installation.extension_version || null,
+      first_seen: installation.first_seen,
+      last_seen: installation.last_seen,
+    };
+  });
 
-  const daily = Object.entries(dailySets).sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({
-    date, installs: v.installs.size, searches: v.searches.size, logins: v.logins.size,
-  }));
+  const daily = Object.entries(dailySets)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, values]) => ({
+      date,
+      installs: values.installs.size,
+      searches: values.searches,
+      logins: values.logins.size,
+    }));
 
   return NextResponse.json({
     days,
@@ -133,12 +323,16 @@ export async function GET(request: Request) {
     },
     dataQuality: {
       subscriptionsAvailable: !usersError,
+      extensionIdentityAvailable: !installationsError,
       historicalIdentity: "user_id ou install_id",
       notes: [
-        "Eventos históricos search_submitted e analysis_completed são considerados pesquisas.",
-        "Instalações históricas são identificadas pelo install_id persistente, mesmo sem evento extension_installed.",
+        "Pesquisas incluem search_submitted, search_performed e analysis_completed.",
+        "Instalações históricas são reconstruídas pelo install_id persistente, mesmo sem extension_installed.",
+        "Atividade diária de instalações conta install_id distintos com atividade naquele dia.",
         "Logins só são contabilizados quando existe login_success; abertura do YouTube não é tratada como login.",
         "Assinaturas confirmadas vêm de users: plano pago, status active e stripe_subscription_id preenchido.",
+        "E-mails da extensão vêm exclusivamente do endpoint Google userinfo validado no servidor.",
+        ...(installationsError ? ["Tabela tubex_installations indisponível; execute a migration 20261114_tubex_installations.sql."] : []),
         ...(usersError ? ["Não foi possível consultar users; assinaturas não foram contabilizadas."] : []),
       ],
     },
@@ -150,9 +344,19 @@ export async function GET(request: Request) {
       { name: "Iniciaram checkout", value: checkoutUsers },
       { name: "Assinaturas ativas confirmadas", value: subscriptionCount },
     ],
-    modules: Object.entries(byModule).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+    modules: TRACKED_MODULE_KEYS
+      .map((name) => ({ name, label: moduleLabel(name), value: byModule[name] || 0 }))
+      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR")),
     events: Object.entries(byEvent).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
+    extensionUsers,
     daily,
-    recent: list.slice(0, 100).map((e) => ({ user_id: e.user_id, install_id: e.install_id, event_name: e.event_name, module: e.module, created_at: e.created_at })),
+    recent: list.slice(0, 100).map((event) => ({
+      user_id: event.user_id,
+      install_id: event.install_id,
+      event_name: event.event_name,
+      module: event.module,
+      module_label: event.module ? moduleLabel(moduleForEvent(event)) : null,
+      created_at: event.created_at,
+    })),
   }, { headers: { "Cache-Control": "no-store" } });
 }
