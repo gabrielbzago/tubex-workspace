@@ -95,7 +95,16 @@ export async function POST(request: Request) {
       }];
     });
     if (!rows.length) return NextResponse.json({ success:true, accepted:0 }, { headers: corsHeaders });
-    const { error } = await supabaseAdmin.from("tubex_events").upsert(rows,{onConflict:"id",ignoreDuplicates:true});
+    // Em upserts em lote, o PostgREST pode preencher colunas ausentes com NULL.
+    // defaultToNull:false preserva o DEFAULT gen_random_uuid() do banco quando
+    // eventos antigos da fila não possuem event_id.
+    const { error } = await supabaseAdmin
+      .from("tubex_events")
+      .upsert(rows, {
+        onConflict: "id",
+        ignoreDuplicates: true,
+        defaultToNull: false
+      });
     if (error) {
       console.error("[TubeX analytics ingestion]",error.message);
       return NextResponse.json({ error:"analytics_unavailable" },{status:503, headers:corsHeaders});

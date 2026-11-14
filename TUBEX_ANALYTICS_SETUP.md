@@ -36,3 +36,6 @@ A extensão mantém uma fila limitada no `chrome.storage.local`, envia lotes de 
 - Após recarregar a extensão, o Service Worker deve enviar `POST` para o mesmo domínio.
 - O POST deve responder `{ "success": true, "accepted": N }`.
 - Só considerar a telemetria operacional depois de confirmar linhas novas em `public.tubex_events`.
+
+
+CORRECAO v4.3.3: URL canonica de ingestao atualizada para https://www.tubexai.com.br/api/analytics/events para evitar redirecionamento HTTP 308 do dominio sem www.
