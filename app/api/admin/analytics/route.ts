@@ -32,7 +32,9 @@ const MODULE_ACTIVITY_EVENTS = new Set([
   "search_failed", "analysis_completed", "analysis_failed", "ai_generation_completed",
   "quota_exhausted", "competitor_analysis", "competitor_analysis_started",
   "competitor_analysis_failed", "trend_search_completed", "trend_search_failed",
-  "summary_viewed", "creator_workspace_opened",
+  "summary_viewed", "creator_workspace_opened", "api_request_succeeded",
+  "pricing_viewed", "upgrade_clicked", "checkout_started", "subscription_activated",
+  "subscription_cancelled", "subscription_expired",
 ]);
 const PAID_PLANS = new Set(["start", "pro", "expert"]);
 
@@ -69,7 +71,7 @@ const TRACKED_MODULE_KEYS = [
   "seo_search", "seo_explorer", "keyword_explorer", "keyword_trends", "competitor_radar",
   "creator_workspace", "outliers", "summary", "video_optimizer", "video_ai", "video_list_ai",
   "title_ai", "description_ai", "thumbnail_ai", "tags_editor", "intelligence", "ai_legacy",
-  "diagnostics", "chat_ai", "engaged_views", "revenue_insights",
+  "diagnostics", "chat_ai", "engaged_views", "revenue_insights", "billing",
 ];
 
 const MODULE_ALIASES: Record<string, string> = {
@@ -79,6 +81,58 @@ const MODULE_ALIASES: Record<string, string> = {
   video_optimizer_module: "video_optimizer",
   seo_research: "seo_search",
   content_seo: "seo_search",
+  revenue: "revenue_insights",
+  diagnosis: "diagnostics",
+  diagnostic: "diagnostics",
+  video: "video_ai",
+  extension_module: "extension",
+};
+
+const ACTION_MODULES: Record<string, string> = {
+  fetchSeoData: "seo_search",
+  youtubeKeywordSuggestions: "keyword_explorer",
+  fetchRelatedKeywordSuggestions: "keyword_explorer",
+  fetchKeywordSearchInsights: "keyword_explorer",
+  fetchKeywordVolume: "keyword_explorer",
+  fetchGoogleAdsKeywordMetrics: "keyword_explorer",
+  generateAdvancedRelatedKeywords: "keyword_explorer",
+  searchYoutubeVideos: "keyword_explorer",
+  googleTrends: "keyword_trends",
+  generateAdvancedTags: "tags_editor",
+  runVideoOptimizer: "video_optimizer",
+  video_ai_chat: "video_ai",
+  generateViralScoreAI: "video_ai",
+  generateThumbnail: "thumbnail_ai",
+  gerarDescricaoPorTitulo: "description_ai",
+  gerarTextoIA: "title_ai",
+  gerarTextoIAPainel: "intelligence",
+  generateAIVideoIdeas: "intelligence",
+  generateVideoOpportunityAI: "intelligence",
+  generateChannelStrategyAI: "intelligence",
+  generateChannelOpportunities: "intelligence",
+  generateTubeXInsight: "intelligence",
+  generateChannelDiagnosisAI: "diagnostics",
+  detectChannelNicheAI: "competitor_radar",
+  generateNicheCompetitorRadar: "competitor_radar",
+  fetchChannelSummary: "summary",
+  fetchQuickStatsChannel: "creator_workspace",
+  fetchQuickStatsVisitedHistory: "creator_workspace",
+  fetchQuickStatsOwnChannel: "creator_workspace",
+  fetchOwnChannelViewsHistory: "creator_workspace",
+  fetchOwnVideoEngagedViews: "engaged_views",
+  fetchOwnChannelEngagedViews: "engaged_views",
+  fetchOwnChannelEngagedViews30d: "engaged_views",
+  fetchLast7DaysVideos: "creator_workspace",
+  fetchLast30DaysViews: "creator_workspace",
+  fetchSubsLast7Days: "creator_workspace",
+  fetchTopVideo: "creator_workspace",
+  fetchChannelStats: "creator_workspace",
+  fetchChannelStatsFromVideos: "creator_workspace",
+  fetchRevenueProgress: "revenue_insights",
+  tubexChatGetContext: "chat_ai",
+  tubexChatConnect: "chat_ai",
+  tubexChatAsk: "chat_ai",
+  getOAuthDiagnostics: "diagnostics",
 };
 
 function canonicalModule(value: unknown): string {
@@ -86,8 +140,36 @@ function canonicalModule(value: unknown): string {
   return MODULE_ALIASES[raw] || raw;
 }
 
+function inferModuleFromAction(value: unknown): string | null {
+  const action = String(value || "").trim();
+  if (!action) return null;
+  if (ACTION_MODULES[action]) return ACTION_MODULES[action];
+  const a = action.toLowerCase();
+  if (/checkout|upgrade|subscription|payment|plan/.test(a)) return "billing";
+  if (/keyword|suggestion|searchyoutube|searchkeyword/.test(a)) return "keyword_explorer";
+  if (/trend/.test(a)) return "keyword_trends";
+  if (/competitor|radar|outlier/.test(a)) return /outlier/.test(a) ? "outliers" : "competitor_radar";
+  if (/creator|calendar|workspace/.test(a)) return "creator_workspace";
+  if (/diagnostic/.test(a)) return "diagnostics";
+  if (/chat/.test(a)) return "chat_ai";
+  if (/thumbnail/.test(a)) return "thumbnail_ai";
+  if (/description/.test(a)) return "description_ai";
+  if (/title/.test(a)) return "title_ai";
+  if (/tag/.test(a)) return "tags_editor";
+  if (/video|optim/.test(a)) return "video_optimizer";
+  if (/revenue|receipt/.test(a)) return "revenue_insights";
+  if (/summary/.test(a)) return "summary";
+  if (/seo/.test(a)) return "seo_explorer";
+  return null;
+}
+
 function moduleForEvent(event: EventRow): string {
   const raw = String(event.module || "").trim().toLowerCase();
+  // Reclassifica eventos antigos genéricos quando o nome da ação foi preservado.
+  if (["extension", "system", "youtube", ""].includes(raw)) {
+    const inferred = inferModuleFromAction(event.properties?.action);
+    if (inferred) return inferred;
+  }
   // Eventos antigos do fetchSeoData podem ser separados pela origem registrada.
   if (raw === "seo_explorer" && event.properties?.source === "background_analysis") return "seo_search";
   return canonicalModule(raw);
