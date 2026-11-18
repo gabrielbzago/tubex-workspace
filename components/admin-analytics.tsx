@@ -9,8 +9,8 @@ type Payload={days:number;totals:Record<string,number>;funnel:{name:string;value
 const number=(v:number|undefined)=>new Intl.NumberFormat("pt-BR").format(v||0);
 const SERIES=[
  {key:"installs",label:"Instalações",color:"#f59e0b"},
- {key:"searches",label:"Pesquisas/análises",color:"#0ea5e9"},
- {key:"logins",label:"Logins",color:"#10b981"},
+ {key:"searches",label:"Eventos de pesquisa/análise",color:"#0ea5e9"},
+ {key:"logins",label:"Contas com login",color:"#10b981"},
 ] as const;
 type SeriesKey=typeof SERIES[number]["key"];
 function DailyActivityChart({daily,days}:{daily:Daily[];days:number}){
@@ -47,7 +47,7 @@ function DailyActivityChart({daily,days}:{daily:Daily[];days:number}){
     {daily.map((d,i)=><rect key={`hit-${d.date}`} x={x(i)-(plotW/Math.max(daily.length,1))/2} y={top} width={plotW/Math.max(daily.length,1)} height={plotH} fill="transparent" onMouseEnter={()=>setHovered(i)} onFocus={()=>setHovered(i)} tabIndex={0} role="button" aria-label={`${labelDate(d.date)}: ${d.installs} instalações, ${d.searches} pesquisas, ${d.logins} logins`}/>)}
    </svg>
   </div>
-  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Quantidade de eventos por dia</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
+  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Instalações e logins únicos; pesquisas/análises são eventos no dia.</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
  </div>;
 }
 export default function AdminAnalytics(){
@@ -74,14 +74,14 @@ export default function AdminAnalytics(){
   {error&&<div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"><AlertTriangle className="mr-2 inline" size={16}/>{error}</div>}
   {loading?<div className="tx-surface rounded-2xl p-8 text-center text-sm">Carregando eventos...</div>:data&&<>
    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-    {[["Instalações",data.totals.installs,Activity],["Logins",data.totals.logins,Users],["Pesquisas/análises",data.totals.searches,Search],["Assinaturas confirmadas",data.totals.subscriptions,ShoppingCart]].map(([label,value,Icon]:any)=><div key={label} className="tx-surface rounded-2xl p-5"><div className="flex justify-between text-[var(--tx-muted)]"><span className="text-xs font-bold">{label}</span><Icon size={17}/></div><p className="mt-3 text-3xl font-black">{number(value)}</p></div>)}
+    {[["Instalações na extensão",data.totals.installs,Activity],["Contas com login",data.totals.logins,Users],["Eventos de pesquisa/análise",data.totals.searches,Search],["Assinaturas ativas (total atual)",data.totals.subscriptions,ShoppingCart]].map(([label,value,Icon]:any)=><div key={label} className="tx-surface rounded-2xl p-5"><div className="flex justify-between text-[var(--tx-muted)]"><span className="text-xs font-bold">{label}</span><Icon size={17}/></div><p className="mt-3 text-3xl font-black">{number(value)}</p></div>)}
    </div>
    <section className="tx-surface rounded-2xl p-5">
     <div className="mb-4"><h2 className="text-lg font-black">Atividade diária</h2><p className="mt-1 text-xs text-[var(--tx-muted)]">Evolução diária de instalações, pesquisas/análises e logins no período selecionado.</p></div>
     {data.daily.length?<DailyActivityChart daily={data.daily} days={days}/>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há atividade registrada no período.</p>}
    </section>
    <div className="grid gap-4 xl:grid-cols-2">
-    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Funil de ativação e conversão</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Etapas de atividade no período; assinaturas mostram o total ativo atual.</p><div className="space-y-4">{data.funnel.map((x,i)=>{const max=Math.max(1,data.funnel[0]?.value||0);const currentSubscriptions=x.name.startsWith("Assinaturas ativas");return <div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.name}</span><b>{number(x.value)} {i>0&&!currentSubscriptions&&max?`· ${Math.round(x.value/max*100)}%`:''}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-[var(--tx-accent)]" style={{width:`${Math.min(100,x.value/max*100)}%`}}/></div></div>})}</div></section>
+    <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Atividade e conversão</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Contas ou instalações únicas em cada etapa no período. As etapas são independentes; assinaturas ativas aparecem no cartão acima e representam o total atual.</p><div className="space-y-4">{data.funnel.map((x)=>{const max=Math.max(1,...data.funnel.map((step)=>step.value));return <div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.name}</span><b>{number(x.value)}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-[var(--tx-accent)]" style={{width:`${Math.min(100,x.value/max*100)}%`}}/></div></div>})}</div></section>
     <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Usuários por módulo</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Contas ou instalações únicas com atividade no período. Cliques repetidos não aumentam este total.</p>{data.modules.length?<div className="space-y-3">{data.modules.map(x=><div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.label||x.name}</span><b title={`${number(x.actions)} ações registradas`}>{number(x.value)} usuários · {number(x.actions)} ações</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-sky-500" style={{width:`${x.value/maxModule*100}%`}}/></div></div>)}</div>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há eventos de módulos.</p>}</section>
    </div>
    <section className="tx-surface rounded-2xl p-5">

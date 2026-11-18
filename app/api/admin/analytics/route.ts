@@ -241,7 +241,11 @@ export async function GET(request: Request) {
   const count = (name: string) => list.filter((event) => event.event_name === name).length;
   const countAny = (names: Set<string>) => list.filter((event) => names.has(event.event_name)).length;
 
-  const installIds = new Set(list.map((event) => event.install_id).filter((value): value is string => Boolean(value)));
+  // IDs web-* são chaves sintéticas usadas para eventos de cobrança no site,
+  // não instalações da extensão. O total de instalações usa só atividade da extensão.
+  const extensionInstallIds = new Set(list
+    .filter((event) => INSTALL_ACTIVITY_EVENTS.has(event.event_name) && event.install_id && !event.install_id.startsWith("web-"))
+    .map((event) => event.install_id as string));
   const dailySets: Record<string, { installs: Set<string>; searches: number; logins: Set<string> }> = {};
   const ensureDay = (day: string) => dailySets[day] ||= { installs: new Set<string>(), searches: 0, logins: new Set<string>() };
   // Módulos mostram instalações/contas distintas, não número bruto de cliques.
@@ -257,7 +261,7 @@ export async function GET(request: Request) {
 
     // Instalação ativa histórica: usa install_id mesmo quando o evento
     // extension_installed não existia na versão antiga da extensão.
-    if (event.install_id && INSTALL_ACTIVITY_EVENTS.has(event.event_name)) daily.installs.add(event.install_id);
+    if (event.install_id && !event.install_id.startsWith("web-") && INSTALL_ACTIVITY_EVENTS.has(event.event_name)) daily.installs.add(event.install_id);
     // Pesquisas são eventos, não usuários únicos: várias pesquisas da mesma
     // instalação no mesmo dia precisam aparecer no gráfico e no total.
     if (SEARCH_EVENTS.has(event.event_name)) daily.searches += 1;
@@ -331,7 +335,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     days,
     totals: {
-      installs: installIds.size,
+      installs: extensionInstallIds.size,
       logins,
       activeUsers: uniqueCount(list, () => true),
       searches: countAny(SEARCH_EVENTS),
@@ -343,7 +347,7 @@ export async function GET(request: Request) {
       errors: count("api_error"),
       loggedUsers: logins,
       searchedUsers,
-      identifiedInstalls: installIds.size,
+      identifiedInstalls: extensionInstallIds.size,
     },
     dataQuality: {
       subscriptionsAvailable: !usersError,
@@ -351,7 +355,7 @@ export async function GET(request: Request) {
       historicalIdentity: "user_id ou install_id",
       notes: [
         "Pesquisas incluem search_submitted, search_performed e analysis_completed.",
-        "Instalações históricas são reconstruídas pelo install_id persistente, mesmo sem extension_installed.",
+        "Instalações contam install_id distintos com atividade na extensão; IDs sintéticos web-* de cobrança ficam de fora.",
         "Atividade diária de instalações conta install_id distintos com atividade naquele dia.",
         "Logins só são contabilizados quando existe login_success; abertura do YouTube não é tratada como login.",
         "Assinaturas confirmadas vêm de users: plano pago, status active e stripe_subscription_id preenchido.",
@@ -361,12 +365,11 @@ export async function GET(request: Request) {
       ],
     },
     funnel: [
-      { name: "Instalações identificadas", value: installIds.size },
-      { name: "Logins confirmados", value: logins },
-      { name: "Instalações que pesquisaram", value: searchedUsers },
-      { name: "Visualizaram planos", value: pricingUsers },
-      { name: "Iniciaram checkout", value: checkoutUsers },
-      { name: "Assinaturas ativas (total atual)", value: subscriptionCount },
+      { name: "Instalações com atividade na extensão", value: extensionInstallIds.size },
+      { name: "Contas com login confirmado", value: logins },
+      { name: "Contas/instalações que pesquisaram", value: searchedUsers },
+      { name: "Contas que visualizaram planos", value: pricingUsers },
+      { name: "Contas que iniciaram checkout", value: checkoutUsers },
     ],
     modules: TRACKED_MODULE_KEYS
       .map((name) => ({ name, label: moduleLabel(name), value: moduleUsers[name]?.size || 0, actions: moduleActions[name] || 0 }))
