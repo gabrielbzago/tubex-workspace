@@ -86,6 +86,51 @@ async function findUser(customerId: string, email: string) {
   return null;
 }
 
+async function syncSubscription(subscription: Stripe.Subscription) {
+  const customerId = String(subscription.customer || "").trim();
+  const price = subscription.items.data[0]?.price;
+  const priceId = String(price?.id || "");
+  const amount = Number(price?.unit_amount || 0) / 100;
+  const metadataPlan = String(subscription.metadata?.plan || price?.metadata?.plan || "");
+  const lookupPlan = String((price as any)?.lookup_key || (price as any)?.nickname || "")
+    .toLowerCase().match(/(start|pro|expert)/)?.[1] || "";
+  const plan = inferPlan(amount, priceId, metadataPlan || lookupPlan || undefined);
+  const status = subscription.status === "active" || subscription.status === "trialing"
+    ? "active"
+    : subscription.status === "past_due" || subscription.status === "unpaid"
+      ? "past_due"
+      : "inactive";
+
+  let email = normalize(subscription.metadata?.email || "");
+  if (!email && customerId) {
+    try {
+      const customer = await getStripe().customers.retrieve(customerId);
+      if (!customer.deleted) email = normalize(customer.email || "");
+    } catch (error) {
+      console.warn("⚠️ CUSTOMER EMAIL LOOKUP FAILED:", customerId, error);
+    }
+  }
+  const user = await findUser(customerId, email);
+  const patch = {
+    ...(email ? { email } : {}),
+    ...(user?.name ? {} : email ? { name: email } : {}),
+    plan: status === "active" ? plan : "free",
+    status,
+    stripe_customer_id: customerId || user?.stripe_customer_id || null,
+    stripe_subscription_id: subscription.id,
+    updated_at: new Date().toISOString(),
+  };
+  if (user) {
+    const { error } = await supabaseAdmin.from("users").update(patch).eq("id", user.id);
+    if (error) throw error;
+  } else if (email) {
+    const { error } = await supabaseAdmin.from("users").upsert(patch, { onConflict: "email" });
+    if (error) throw error;
+  } else {
+    console.warn("⚠️ SUBSCRIPTION SEM E-MAIL PARA VINCULAR:", subscription.id);
+  }
+}
+
 async function writeProductAnalytics(emailValue: string, eventName: string, module = "billing", properties: Record<string, unknown> = {}) {
   const email = String(emailValue || "").trim().toLowerCase();
   if (!email) return;
@@ -302,7 +347,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     metadata.affiliate_code || referral?.affiliate_code || user.referred_by || ""
   );
 
-  const userPlan = inferPlan(amount, priceId, metadata.plan || referral?.plan || user.plan);
+  const invoicePrice = subscription.items.data[0]?.price;
+  const invoicePricePlan = String(invoicePrice?.metadata?.plan || (invoicePrice as any)?.lookup_key || (invoicePrice as any)?.nickname || "")
+    .toLowerCase().match(/(start|pro|expert)/)?.[1];
+  const userPlan = inferPlan(amount, priceId, invoicePricePlan || metadata.plan || referral?.plan || user.plan);
 
   await supabaseAdmin
     .from("users")
@@ -542,6 +590,10 @@ export async function POST(req: Request) {
         break;
       case "customer.subscription.deleted":
         await handleSubscriptionCanceled(event.data.object as Stripe.Subscription);
+        break;
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+        await syncSubscription(event.data.object as Stripe.Subscription);
         break;
       case "charge.dispute.created":
       case "charge.dispute.funds_withdrawn":
