@@ -244,7 +244,10 @@ export async function GET(request: Request) {
   const installIds = new Set(list.map((event) => event.install_id).filter((value): value is string => Boolean(value)));
   const dailySets: Record<string, { installs: Set<string>; searches: number; logins: Set<string> }> = {};
   const ensureDay = (day: string) => dailySets[day] ||= { installs: new Set<string>(), searches: 0, logins: new Set<string>() };
-  const byModule: Record<string, number> = {};
+  // Módulos mostram instalações/contas distintas, não número bruto de cliques.
+  // O volume bruto continua disponível como `actions` para auditoria.
+  const moduleUsers: Record<string, Set<string>> = {};
+  const moduleActions: Record<string, number> = {};
   const byEvent: Record<string, number> = {};
 
   for (const event of list) {
@@ -264,7 +267,8 @@ export async function GET(request: Request) {
 
     const moduleKey = moduleForEvent(event);
     if (moduleKey && MODULE_LABELS[moduleKey] && MODULE_ACTIVITY_EVENTS.has(event.event_name)) {
-      byModule[moduleKey] = (byModule[moduleKey] || 0) + 1;
+      moduleActions[moduleKey] = (moduleActions[moduleKey] || 0) + 1;
+      if (who) (moduleUsers[moduleKey] ||= new Set<string>()).add(who);
     }
   }
 
@@ -353,10 +357,10 @@ export async function GET(request: Request) {
       { name: "Instalações que pesquisaram", value: searchedUsers },
       { name: "Visualizaram planos", value: pricingUsers },
       { name: "Iniciaram checkout", value: checkoutUsers },
-      { name: "Assinaturas ativas confirmadas", value: subscriptionCount },
+      { name: "Assinaturas ativas (total atual)", value: subscriptionCount },
     ],
     modules: TRACKED_MODULE_KEYS
-      .map((name) => ({ name, label: moduleLabel(name), value: byModule[name] || 0 }))
+      .map((name) => ({ name, label: moduleLabel(name), value: moduleUsers[name]?.size || 0, actions: moduleActions[name] || 0 }))
       .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR")),
     events: Object.entries(byEvent).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
     extensionUsers,
