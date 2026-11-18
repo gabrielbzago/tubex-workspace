@@ -199,6 +199,14 @@ function identity(event: EventRow): string | null {
   return event.user_id || event.install_id || null;
 }
 
+function eventDay(value: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value || "00";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
 function uniqueCount(rows: EventRow[], predicate: (event: EventRow) => boolean): number {
   return new Set(rows.filter(predicate).map(identity).filter((value): value is string => Boolean(value))).size;
 }
@@ -215,15 +223,25 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days") || 30)));
   const since = new Date(Date.now() - days * 86400000).toISOString();
+  const currentMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date());
+  const requestedMonth = url.searchParams.get("month") || currentMonth;
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : currentMonth;
+  const [monthYear, monthNumber] = month.split("-").map(Number);
+  const monthSince = new Date(Date.UTC(monthYear, monthNumber - 1, 1, 3)).toISOString();
+  const monthUntil = new Date(Date.UTC(monthYear, monthNumber, 1, 3)).toISOString();
 
   const [
     { data: events, error: queryError },
+    { data: monthlyEvents, error: monthlyEventsError },
     { data: users, error: usersError },
     { data: installations, error: installationsError },
   ] = await Promise.all([
     supabaseAdmin.from("tubex_events")
       .select("user_id,install_id,event_name,module,created_at,properties")
       .gte("created_at", since).order("created_at", { ascending: false }).limit(20000),
+    supabaseAdmin.from("tubex_events")
+      .select("user_id,install_id,event_name,module,created_at,properties")
+      .gte("created_at", monthSince).lt("created_at", monthUntil).order("created_at", { ascending: false }).limit(20000),
     supabaseAdmin.from("users")
       .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id"),
     supabaseAdmin.from("tubex_installations")
@@ -245,6 +263,33 @@ export async function GET(request: Request) {
   const usageInstallById = new Map(installationRows.map((installation) => [installation.install_id, installation]));
   const dailyAccountSets: Record<string, Set<string>> = {};
   const usageRows = new Map<string, {date:string;accountKey:string;account:string;email:string|null;installId:string;actions:number;modules:Record<string,number>}>();
+  const monthlyUserRows = new Map<string, {accountKey:string;account:string;email:string|null;actions:number;days:Set<string>;modules:Record<string,number>}>();
+  const monthlyModuleActions: Record<string, number> = {};
+  for (const event of (monthlyEvents || []) as EventRow[]) {
+    if (!event.install_id || event.install_id.startsWith("web-") || !MODULE_ACTIVITY_EVENTS.has(event.event_name)) continue;
+    const moduleKey = moduleForEvent(event);
+    if (!moduleKey || !MODULE_LABELS[moduleKey]) continue;
+    const installation = usageInstallById.get(event.install_id);
+    const accountUser = (event.user_id ? usageUserById.get(event.user_id) : null) ||
+      (installation?.user_id ? usageUserById.get(installation.user_id) : null);
+    const email = String(accountUser?.email || installation?.email || "").trim().toLowerCase() || null;
+    const accountKey = email ? `email:${email}` : accountUser?.id || `install:${event.install_id}`;
+    const account = accountUser?.name || installation?.name || email || `Instalação ${event.install_id.slice(0, 8)}`;
+    const row = monthlyUserRows.get(accountKey) || {accountKey,account,email,actions:0,days:new Set<string>(),modules:{}};
+    row.actions += 1;
+    row.days.add(eventDay(event.created_at));
+    row.modules[moduleKey] = (row.modules[moduleKey] || 0) + 1;
+    monthlyUserRows.set(accountKey, row);
+    monthlyModuleActions[moduleKey] = (monthlyModuleActions[moduleKey] || 0) + 1;
+  }
+  const monthlyTopUsers = [...monthlyUserRows.values()]
+    .map((row) => ({accountKey:row.accountKey,account:row.account,email:row.email,actions:row.actions,activeDays:row.days.size,modules:Object.entries(row.modules).map(([name,actions])=>({name,label:moduleLabel(name),actions})).sort((a,b)=>b.actions-a.actions)}))
+    .sort((a,b)=>b.actions-a.actions||a.account.localeCompare(b.account,"pt-BR"))
+    .slice(0,10);
+  const monthlyTopModules = Object.entries(monthlyModuleActions)
+    .map(([name,actions])=>({name,label:moduleLabel(name),actions}))
+    .sort((a,b)=>b.actions-a.actions||a.label.localeCompare(b.label,"pt-BR"))
+    .slice(0,10);
 
   // IDs web-* são chaves sintéticas usadas para eventos de cobrança no site,
   // não instalações da extensão. O total de instalações usa só atividade da extensão.
@@ -260,7 +305,7 @@ export async function GET(request: Request) {
   const byEvent: Record<string, number> = {};
 
   for (const event of list) {
-    const day = String(event.created_at).slice(0, 10);
+    const day = eventDay(event.created_at);
     const daily = ensureDay(day);
     const who = identity(event);
 
@@ -356,6 +401,10 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     days,
+    month,
+    monthlyLeaderboardAvailable: !monthlyEventsError,
+    monthlyTopUsers,
+    monthlyTopModules,
     totals: {
       installs: extensionInstallIds.size,
       logins,
