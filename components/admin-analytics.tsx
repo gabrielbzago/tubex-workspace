@@ -5,7 +5,9 @@ import {Activity,Users,Search,ShoppingCart,RefreshCw,AlertTriangle} from "lucide
 
 type Daily={date:string;installs:number;searches:number;logins:number};
 type ExtensionUser={install_id:string;email:string;name:string|null;picture:string|null;user_id:string|null;plan:string;account_status:string|null;extension_version:string|null;first_seen:string;last_seen:string};
-type Payload={days:number;totals:Record<string,number>;funnel:{name:string;value:number}[];modules:{name:string;label:string;value:number;actions:number}[];events:{name:string;value:number}[];daily:Daily[];extensionUsers:ExtensionUser[];recent:{user_id:string|null;install_id:string;event_name:string;module:string|null;module_label:string|null;created_at:string}[]};
+type UserActivityDay={date:string;users:number};
+type UserActivity={date:string;accountKey:string;account:string;email:string|null;installId:string;actions:number;modules:{name:string;label:string;actions:number}[]};
+type Payload={days:number;totals:Record<string,number>;funnel:{name:string;value:number}[];modules:{name:string;label:string;value:number;actions:number}[];events:{name:string;value:number}[];daily:Daily[];userActivityDaily:UserActivityDay[];userActivity:UserActivity[];extensionUsers:ExtensionUser[];recent:{user_id:string|null;install_id:string;event_name:string;module:string|null;module_label:string|null;created_at:string}[]};
 const number=(v:number|undefined)=>new Intl.NumberFormat("pt-BR").format(v||0);
 const SERIES=[
  {key:"installs",label:"Instalações",color:"#f59e0b"},
@@ -50,8 +52,20 @@ function DailyActivityChart({daily,days}:{daily:Daily[];days:number}){
   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--tx-muted)]"><span>Instalações e logins únicos; pesquisas/análises são eventos no dia.</span><span>Passe o mouse ou toque nos pontos para consultar o histórico</span></div>
  </div>;
 }
+function UserUsageDailyChart({daily}:{daily:UserActivityDay[]}){
+ const width=960,height=190,left=42,right=20,top=14,bottom=34,plotW=width-left-right,plotH=height-top-bottom;
+ const max=Math.max(1,...daily.map((item)=>item.users));
+ const tickIndices=Array.from(new Set(Array.from({length:Math.min(6,daily.length)},(_,i)=>Math.round(i*(daily.length-1)/Math.max(1,Math.min(6,daily.length)-1)))));
+ const label=(date:string)=>new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+ const slot=plotW/Math.max(1,daily.length),barW=Math.max(2,Math.min(22,slot*.62));
+ return daily.length?<div className="overflow-hidden rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] p-2 sm:p-3"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Contas únicas usando o produto por dia" className="block h-auto w-full">
+  {[0,1,2,3].map((i)=>{const value=Math.round(max-(max/3)*i),y=top+(plotH/3)*i;return <g key={i}><line x1={left} x2={width-right} y1={y} y2={y} stroke="currentColor" opacity=".10" strokeDasharray="4 5"/><text x={left-9} y={y+4} textAnchor="end" fill="currentColor" opacity=".58" fontSize="11">{value}</text></g>})}
+  {daily.map((item,i)=>{const x=left+slot*i+(slot-barW)/2,barHeight=(item.users/max)*plotH;return <rect key={item.date} x={x} y={top+plotH-barHeight} width={barW} height={barHeight} rx="3" fill="#0ea5e9"><title>{label(item.date)}: {item.users} contas ativas</title></rect>})}
+  {tickIndices.map((i)=><text key={i} x={left+slot*i+slot/2} y={height-10} textAnchor="middle" fill="currentColor" opacity=".62" fontSize="11">{label(daily[i].date)}</text>)}
+ </svg></div>:<p className="rounded-xl bg-[var(--tx-surface-2)] p-4 text-sm text-[var(--tx-muted)]">Ainda não há atividade de módulos identificada neste período.</p>;
+}
 export default function AdminAnalytics(){
- const [data,setData]=useState<Payload|null>(null),[days,setDays]=useState(30),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const [data,setData]=useState<Payload|null>(null),[days,setDays]=useState(30),[loading,setLoading]=useState(true),[error,setError]=useState(""),[userFilter,setUserFilter]=useState("");
  async function load(){
   setLoading(true);setError("");
   try{
@@ -66,6 +80,10 @@ export default function AdminAnalytics(){
  }
  useEffect(()=>{load();},[days]);
  const maxModule=Math.max(1,...(data?.modules||[]).map(x=>x.value));
+ const visibleUserActivity=useMemo(()=>{
+  const rows=data?.userActivity||[],query=userFilter.trim().toLowerCase();
+  return query?rows.filter((row)=>`${row.account} ${row.email||""} ${row.modules.map((module)=>module.label).join(" ")}`.toLowerCase().includes(query)):rows;
+ },[data?.userActivity,userFilter]);
  return <div className="space-y-5">
   <div className="flex flex-wrap items-center justify-between gap-3">
    <div><p className="tx-kicker">OWNER · INTELIGÊNCIA DO PRODUTO</p><h1 className="mt-2 text-3xl font-black">TubeX Analytics</h1><p className="mt-1 text-sm text-[var(--tx-muted)]">Aquisição, ativação, utilização e conversão da extensão.</p></div>
@@ -79,6 +97,12 @@ export default function AdminAnalytics(){
    <section className="tx-surface rounded-2xl p-5">
     <div className="mb-4"><h2 className="text-lg font-black">Atividade diária</h2><p className="mt-1 text-xs text-[var(--tx-muted)]">Evolução diária de instalações, pesquisas/análises e logins no período selecionado.</p></div>
     {data.daily.length?<DailyActivityChart daily={data.daily} days={days}/>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há atividade registrada no período.</p>}
+   </section>
+   <section className="tx-surface rounded-2xl p-5">
+    <div className="mb-4"><h2 className="text-lg font-black">Uso diário por conta e módulo</h2><p className="mt-1 text-xs text-[var(--tx-muted)]">Contas ativas por dia e módulos registrados para cada conta no período selecionado.</p></div>
+    <UserUsageDailyChart daily={data.userActivityDaily||[]}/>
+    <div className="mb-3 mt-5 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[var(--tx-muted)]">Cada linha representa uma conta em um dia. Instalações sem e-mail verificado aparecem pelo identificador local.</p><input value={userFilter} onChange={(event)=>setUserFilter(event.target.value)} placeholder="Filtrar por conta ou módulo" aria-label="Filtrar histórico por conta ou módulo" className="w-full max-w-xs rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-2 text-xs"/></div>
+    {visibleUserActivity.length?<div className="max-h-[520px] overflow-auto"><table className="w-full text-left text-xs"><thead className="sticky top-0 bg-[var(--tx-surface)] text-[var(--tx-muted)]"><tr><th className="py-2">Dia</th><th>Conta</th><th>Módulos usados</th><th className="text-right">Ações</th></tr></thead><tbody>{visibleUserActivity.map((row)=><tr key={`${row.date}:${row.accountKey}`} className="border-t border-[var(--tx-border)]"><td className="whitespace-nowrap py-2">{new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR")}</td><td><div className="font-semibold">{row.account}</div>{row.email&&row.account!==row.email&&<div className="mt-0.5 break-all text-[var(--tx-muted)]">{row.email}</div>}</td><td><div className="flex flex-wrap gap-1.5">{row.modules.map((module)=><span key={module.name} className="rounded-full bg-[var(--tx-surface-2)] px-2 py-1">{module.label} · {number(module.actions)}</span>)}</div></td><td className="text-right font-bold">{number(row.actions)}</td></tr>)}</tbody></table></div>:<p className="rounded-xl bg-[var(--tx-surface-2)] p-4 text-sm text-[var(--tx-muted)]">{userFilter?"Nenhum uso corresponde a esse filtro.":"Ainda não há uso de módulos identificado neste período."}</p>}
    </section>
    <div className="grid gap-4 xl:grid-cols-2">
     <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Atividade e conversão</h2><p className="mb-5 mt-1 text-xs text-[var(--tx-muted)]">Contas ou instalações únicas em cada etapa no período. As etapas são independentes; assinaturas ativas aparecem no cartão acima e representam o total atual.</p><div className="space-y-4">{data.funnel.map((x)=>{const max=Math.max(1,...data.funnel.map((step)=>step.value));return <div key={x.name}><div className="mb-1 flex justify-between text-xs"><span>{x.name}</span><b>{number(x.value)}</b></div><div className="h-2 overflow-hidden rounded-full bg-[var(--tx-surface-2)]"><div className="h-full rounded-full bg-[var(--tx-accent)]" style={{width:`${Math.min(100,x.value/max*100)}%`}}/></div></div>})}</div></section>

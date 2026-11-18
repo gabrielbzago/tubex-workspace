@@ -238,8 +238,13 @@ export async function GET(request: Request) {
 
   const list = (events || []) as EventRow[];
   const userRows = (users || []) as UserRow[];
+  const installationRows = (installations || []) as Array<{install_id:string;email:string|null;name:string|null;user_id:string|null}>;
   const count = (name: string) => list.filter((event) => event.event_name === name).length;
   const countAny = (names: Set<string>) => list.filter((event) => names.has(event.event_name)).length;
+  const usageUserById = new Map(userRows.map((user) => [user.id, user]));
+  const usageInstallById = new Map(installationRows.map((installation) => [installation.install_id, installation]));
+  const dailyAccountSets: Record<string, Set<string>> = {};
+  const usageRows = new Map<string, {date:string;accountKey:string;account:string;email:string|null;installId:string;actions:number;modules:Record<string,number>}>();
 
   // IDs web-* são chaves sintéticas usadas para eventos de cobrança no site,
   // não instalações da extensão. O total de instalações usa só atividade da extensão.
@@ -273,6 +278,23 @@ export async function GET(request: Request) {
     if (moduleKey && MODULE_LABELS[moduleKey] && MODULE_ACTIVITY_EVENTS.has(event.event_name)) {
       moduleActions[moduleKey] = (moduleActions[moduleKey] || 0) + 1;
       if (who) (moduleUsers[moduleKey] ||= new Set<string>()).add(who);
+
+      // Histórico diário de uso real da extensão. Eventos de cobrança do site
+      // (web-*) não são tratados como uso de produto.
+      if (event.install_id && !event.install_id.startsWith("web-")) {
+        const installation = usageInstallById.get(event.install_id);
+        const accountUser = (event.user_id ? usageUserById.get(event.user_id) : null) ||
+          (installation?.user_id ? usageUserById.get(installation.user_id) : null);
+        const email = String(accountUser?.email || installation?.email || "").trim().toLowerCase() || null;
+        const accountKey = email ? `email:${email}` : accountUser?.id || `install:${event.install_id}`;
+        const account = accountUser?.name || installation?.name || email || `Instalação ${event.install_id.slice(0, 8)}`;
+        const usageKey = `${day}:${accountKey}`;
+        const row = usageRows.get(usageKey) || {date:day,accountKey,account,email,installId:event.install_id,actions:0,modules:{}};
+        row.actions += 1;
+        row.modules[moduleKey] = (row.modules[moduleKey] || 0) + 1;
+        usageRows.set(usageKey, row);
+        (dailyAccountSets[day] ||= new Set<string>()).add(accountKey);
+      }
     }
   }
 
@@ -374,6 +396,16 @@ export async function GET(request: Request) {
     modules: TRACKED_MODULE_KEYS
       .map((name) => ({ name, label: moduleLabel(name), value: moduleUsers[name]?.size || 0, actions: moduleActions[name] || 0 }))
       .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR")),
+    userActivityDaily: Object.keys(dailySets)
+      .sort((a, b) => a.localeCompare(b))
+      .map((date) => ({ date, users: dailyAccountSets[date]?.size || 0 })),
+    userActivity: [...usageRows.values()]
+      .map((row) => ({
+        ...row,
+        modules: Object.entries(row.modules).map(([name, actions]) => ({name,label:moduleLabel(name),actions})).sort((a,b)=>b.actions-a.actions),
+      }))
+      .sort((a,b)=>b.date.localeCompare(a.date)||a.account.localeCompare(b.account,"pt-BR"))
+      .slice(0,5000),
     events: Object.entries(byEvent).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
     extensionUsers,
     daily,
