@@ -294,8 +294,17 @@ export async function GET(request: Request) {
   );
   const subscriptionCount = new Set(activePaidSubscriptions.map((user) => user.stripe_subscription_id)).size;
   const userById = new Map(userRows.map((user) => [user.id, user]));
+  const userByEmail = new Map(
+    userRows
+      .filter((user) => user.email)
+      .map((user) => [String(user.email).trim().toLowerCase(), user])
+  );
   const extensionUsers = (installations || []).map((installation: any) => {
-    const linkedUser = installation.user_id ? userById.get(installation.user_id) : null;
+    // Algumas instalações autenticam o Google na extensão, mas nunca entram
+    // no dashboard. Nesses casos user_id fica vazio; o e-mail verificado é a
+    // chave segura para associar ao cadastro de cobrança.
+    const linkedUser = (installation.user_id ? userById.get(installation.user_id) : null) ||
+      (installation.email ? userByEmail.get(String(installation.email).trim().toLowerCase()) : null);
     return {
       install_id: installation.install_id,
       email: installation.email,
