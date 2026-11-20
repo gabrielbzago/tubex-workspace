@@ -34,9 +34,7 @@ const MODULE_ACTIVITY_EVENTS = new Set([
   "search_failed", "analysis_completed", "analysis_failed", "ai_generation_completed",
   "quota_exhausted", "competitor_analysis", "competitor_analysis_started",
   "competitor_analysis_failed", "trend_search_completed", "trend_search_failed",
-  "summary_viewed", "creator_workspace_opened", "api_request_succeeded",
-  "pricing_viewed", "upgrade_clicked", "checkout_started", "subscription_activated",
-  "subscription_cancelled", "subscription_expired",
+  "summary_viewed", "creator_workspace_opened",
 ]);
 const PAID_PLANS = new Set(["start", "pro", "expert"]);
 
@@ -207,6 +205,13 @@ function eventDay(value: string): string {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+function startOfLocalRange(days: number): string {
+  const [year, month, day] = eventDay(new Date().toISOString()).split("-").map(Number);
+  // O período inclui hoje e os (days - 1) dias de calendário anteriores,
+  // começando à meia-noite de São Paulo, em vez de deslizar a cada hora.
+  return new Date(Date.UTC(year, month - 1, day - (days - 1), 3)).toISOString();
+}
+
 function uniqueCount(rows: EventRow[], predicate: (event: EventRow) => boolean): number {
   return new Set(rows.filter(predicate).map(identity).filter((value): value is string => Boolean(value))).size;
 }
@@ -222,7 +227,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const days = Math.max(1, Math.min(90, Number(url.searchParams.get("days") || 30)));
-  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const since = startOfLocalRange(days);
   const currentMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(new Date());
   const requestedMonth = url.searchParams.get("month") || currentMonth;
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? requestedMonth : currentMonth;
@@ -345,9 +350,8 @@ export async function GET(request: Request) {
 
   // Completa os dias sem atividade para preservar o eixo temporal do gráfico.
   for (let offset = days - 1; offset >= 0; offset--) {
-    const date = new Date();
-    date.setUTCHours(0, 0, 0, 0);
-    date.setUTCDate(date.getUTCDate() - offset);
+    const [year, month, day] = eventDay(new Date().toISOString()).split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day - offset, 12));
     ensureDay(date.toISOString().slice(0, 10));
   }
 

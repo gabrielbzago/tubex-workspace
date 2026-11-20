@@ -94,6 +94,13 @@ export async function POST(request: Request) {
       const eventName = cleanText(e?.event_name,80);
       const installId = cleanText(e?.install_id,64);
       if (!eventName || !ALLOWED.has(eventName) || !installId) return [];
+      // A extensão mantém queued_at desde a ocorrência do evento; preservar
+      // esse instante evita jogar lotes offline inteiros no dia da sincronização.
+      const now = Date.now();
+      const queuedAt = Number(e?.queued_at);
+      const eventTime = Number.isSafeInteger(queuedAt) && queuedAt >= now - 400 * 86400000 && queuedAt <= now + 5 * 60000
+        ? new Date(queuedAt).toISOString()
+        : new Date(now).toISOString();
       const props = e?.properties && typeof e.properties === "object" ? e.properties : {};
       // Keep only low-risk, bounded metadata. Never accept raw query text, tokens or content.
       const safeProps = {
@@ -117,7 +124,8 @@ export async function POST(request: Request) {
         session_id: cleanText(e?.session_id,64),
         event_name: eventName,
         module: cleanText(e?.module,60),
-        properties: safeProps
+        properties: safeProps,
+        created_at: eventTime
       }];
     });
     if (!rows.length) return NextResponse.json({ success:true, accepted:0 }, { headers: corsHeaders });
