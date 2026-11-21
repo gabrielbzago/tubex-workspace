@@ -28,7 +28,7 @@ const i18n={
 function Logo(){return <a href="/dashboard" className="flex items-center gap-2 font-black tracking-[-.06em] text-[22px] text-[var(--tx-text)]"><span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--tx-accent)] text-[10px] text-[#11151a]">TX</span>Tube<span className="text-[var(--tx-accent)]">X</span></a>}
 
 export default function DashboardLayout({user}:{user:any}){
- const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"account"|"billing"|"support">("dashboard");
+ const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"usage"|"account"|"billing"|"support">("dashboard");
  const [mobileOpen,setMobileOpen]=useState(false);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
@@ -115,7 +115,7 @@ export default function DashboardLayout({user}:{user:any}){
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
  const navItems:any[]=[
   ["dashboard",Home,t.dashboard],["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["affiliate",Users,t.affiliate],
-  ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"]]:[]),
+  ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"],["usage",Activity,"Comportamento de Uso"]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
  function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={dashboard:"dashboard",workspace:"seo_explorer",creator:"creator_workspace",affiliate:"affiliate",account:"account",billing:"billing",support:"support"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,next==="billing"?"pricing_viewed":"module_opened",module))}
@@ -135,7 +135,7 @@ export default function DashboardLayout({user}:{user:any}){
   <main className="tx-app-main min-h-screen min-w-0 w-full lg:pl-[232px]">
    <header className="sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
     <div className="mx-auto flex h-[60px] w-full max-w-[1180px] min-w-0 items-center gap-2 px-3 sm:h-[66px] sm:px-4">
-     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
+     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
@@ -148,7 +148,7 @@ export default function DashboardLayout({user}:{user:any}){
     {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
     {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}
     {tab==="dashboard"&&<Overview user={user} userData={userData} t={t} onTab={setTab} isOwner={isOwner}/>}
-    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{tab==="behavior"&&isOwner&&<AdminSubscriberBehavior/>}{(tab==="admin"||tab==="analytics"||tab==="behavior")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
+    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{tab==="behavior"&&isOwner&&<AdminSubscriberBehavior/>}{tab==="usage"&&isOwner&&<AdminSubscriberBehavior segment="free"/>}{(tab==="admin"||tab==="analytics"||tab==="behavior"||tab==="usage")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
     {tab==="account"&&<Account user={user} userData={userData} t={t} isOwner={isOwner}/>}
     {tab==="billing"&&<Billing userData={userData} t={t}/>}
     {tab==="support"&&<Support t={t}/>}

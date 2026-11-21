@@ -39,6 +39,8 @@ export async function GET(request: Request) {
   if (error || !data.user?.email) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const ownerEmail = String(process.env.OWNER_EMAIL || process.env.NEXT_PUBLIC_OWNER_EMAIL || "gabrielbzago@gmail.com").toLowerCase();
   if (data.user.email.toLowerCase() !== ownerEmail) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const requestedSegment = new URL(request.url).searchParams.get("segment");
+  const segment = requestedSegment === "free" ? "free" : "subscribers";
 
   try {
     const [usersResult, firstEventsResult, installationsResult] = await Promise.all([
@@ -74,23 +76,42 @@ export async function GET(request: Request) {
     const usersById = new Map(users.map((user: any) => [user.id, user]));
     const usersByEmail = new Map(users.filter((user: any) => user.email).map((user: any) => [String(user.email).toLowerCase(), user]));
     const installToUser = new Map<string, string>();
+    const installationsById = new Map((installations as any[]).map((install) => [install.install_id, install]));
     for (const install of installations as any[]) {
-      const user = (install.user_id && usersById.get(install.user_id)) || (install.email && usersByEmail.get(String(install.email).toLowerCase()));
-      if (user) installToUser.set(install.install_id, (user as any).id);
+      const user: any = (install.user_id && usersById.get(install.user_id)) || (install.email && usersByEmail.get(String(install.email).toLowerCase()));
+      const authUser: any = (install.user_id && authById.get(install.user_id)) || (install.email && authByEmail.get(String(install.email).toLowerCase()));
+      const emailKey = install.email ? `email:${String(install.email).trim().toLowerCase()}` : null;
+      if (authUser?.id || user?.id || emailKey) installToUser.set(install.install_id, authUser?.id || user?.id || emailKey!);
     }
     const now = Date.now();
     const recentCutoff = now - 30 * 86400000;
     const accounts = new Map<string, any>();
-    const accountFor = (userId: string) => {
-      if (accounts.has(userId)) return accounts.get(userId);
-      const user: any = usersById.get(userId);
-      if (!user) return null;
-      const authUser: any = authById.get(userId) || (user.email ? authByEmail.get(String(user.email).toLowerCase()) : null);
+    const accountFor = (userId: string, identity?: { email?: string | null; name?: string | null }) => {
+      const emailKey = userId.startsWith("email:") ? userId.slice(6).toLowerCase() : String(identity?.email || "").trim().toLowerCase();
+      const directAuth: any = authById.get(userId);
+      const user: any = usersById.get(userId) || (directAuth?.email ? usersByEmail.get(String(directAuth.email).toLowerCase()) : null) || (emailKey ? usersByEmail.get(emailKey) : null);
+      const authUser: any = directAuth || (user?.email ? authByEmail.get(String(user.email).toLowerCase()) : null) || (emailKey ? authByEmail.get(emailKey) : null);
+      if (!user && !authUser && !emailKey) return null;
+      const accountId = authUser?.id || user?.id || (emailKey ? `email:${emailKey}` : userId);
+      if (accounts.has(accountId)) {
+        const existing = accounts.get(accountId);
+        if (user) {
+          existing.name = user.name || existing.name;
+          existing.email = user.email || existing.email;
+          existing.plan = user.plan || existing.plan;
+          existing.accountStatus = user.status || existing.accountStatus;
+          existing.subscriptionId = user.stripe_subscription_id || existing.subscriptionId;
+        }
+        if (authUser) { existing.authUser = authUser; existing.createdAt = authUser.created_at || existing.createdAt; }
+        return existing;
+      }
       const row = {
-        id: userId, name: user.name || user.email || "Conta", email: user.email || "", plan: user.plan || "free",
+        id: accountId,
+        name: user?.name || authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || identity?.name || user?.email || authUser?.email || identity?.email || "Conta",
+        email: user?.email || authUser?.email || identity?.email || emailKey || "", plan: user?.plan || "free",
         authUser,
         createdAt: authUser?.created_at || null,
-        accountStatus: user.status || "unknown", subscriptionId: user.stripe_subscription_id || null,
+        accountStatus: user?.status || "unknown", subscriptionId: user?.stripe_subscription_id || null,
         firstLoginAt: null as string | null, lastLoginAt: null as string | null, lastActivityAt: null as string | null,
         lastResource: null as string | null, loginMoments: [] as number[],
         sessionMap: new Map<string, { id: string; startedAt: string; lastActivityAt: string; actions: number; modules: Map<string, number> }>(),
@@ -99,13 +120,23 @@ export async function GET(request: Request) {
         lastSubscriptionEvent: null as "activated" | "canceled" | null,
         paymentJourney: [] as Array<{ eventName: string; label: string; at: string; plan: string | null; source: string | null }>,
       };
-      accounts.set(userId, row);
+      accounts.set(accountId, row);
       return row;
     };
+    for (const user of users as any[]) accountFor(user.id);
+    for (const authUser of authUsers as any[]) accountFor(authUser.id);
+    for (const install of installations as any[]) {
+      const email = install.email ? String(install.email).trim().toLowerCase() : "";
+      const user: any = (install.user_id && usersById.get(install.user_id)) || (email ? usersByEmail.get(email) : null);
+      const authUser: any = (install.user_id && authById.get(install.user_id)) || (email ? authByEmail.get(email) : null);
+      const accountId = authUser?.id || user?.id || (email ? `email:${email}` : null);
+      if (accountId) accountFor(accountId, { email: email || null, name: install.name || null });
+    }
     for (const event of events as any[]) {
       const userId = event.user_id || installToUser.get(event.install_id);
       if (!userId) continue;
-      const account = accountFor(userId);
+      const installation: any = installationsById.get(event.install_id);
+      const account = accountFor(userId, installation ? { email: installation.email, name: installation.name } : undefined);
       if (!account) continue;
       const at = iso(event.created_at);
       if (!at) continue;
@@ -166,8 +197,10 @@ export async function GET(request: Request) {
     const rows = [...accounts.values()].map((account: any) => {
       const lastActivityMs = account.lastActivityAt ? Date.parse(account.lastActivityAt) : 0;
       const subStatus = String(account.accountStatus).toLowerCase();
-      const canceled = account.lastSubscriptionEvent === "canceled" || ["canceled", "cancelled"].includes(subStatus);
-      const isSubscriber = Boolean(account.subscriptionId || account.subscribedAt || canceled || ["pro", "expert", "start"].includes(String(account.plan).toLowerCase()));
+      const canceled = account.lastSubscriptionEvent === "canceled" || ["canceled", "cancelled"].includes(subStatus) || (subStatus === "inactive" && Boolean(account.subscriptionId));
+      const paidPlan = ["start", "pro", "expert"].includes(String(account.plan).toLowerCase());
+      const currentSubscriber = ["active", "trialing"].includes(subStatus) && Boolean(account.subscriptionId || paidPlan);
+      const isSubscriber = currentSubscriber || canceled || Boolean(account.subscriptionId || account.subscribedAt || paidPlan);
       const regular = lastActivityMs > 0 && now - lastActivityMs <= 30 * 86400000 && account.activeDays30.size >= 2;
       const status = canceled ? "canceled" : regular ? "active" : "at_risk";
       const modules = [...account.moduleMap.entries()].map(([key, value]: any) => ({ key, ...value })).sort((a: any, b: any) => b.count - a.count);
@@ -181,7 +214,8 @@ export async function GET(request: Request) {
       const highUse = account.activeDays30.size >= 8 || account.actions30 >= 30;
       return {
         id: account.id, name: account.name, email: account.email, plan: account.plan, status, createdAt: account.createdAt,
-        isSubscriber, subscribedAt: account.subscribedAt, canceledAt: account.canceledAt, cancelReason: account.cancelReason,
+        isSubscriber, currentSubscriber, formerSubscriber: isSubscriber && !currentSubscriber,
+        subscribedAt: account.subscribedAt, canceledAt: account.canceledAt, cancelReason: account.cancelReason,
         firstLoginAt: account.firstLoginAt, lastLoginAt, lastActivityAt: account.lastActivityAt,
         lastResource: account.lastResource, loginCount: account.loginCount, returned,
         returnCount, activeDays: account.activeDays.size, activeDays30: account.activeDays30.size,
@@ -192,8 +226,8 @@ export async function GET(request: Request) {
         })).sort((a: any, b: any) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt)).slice(0, 30),
         paymentJourney: account.paymentJourney.slice(-100).reverse(),
       };
-    }).filter((account: any) => account.isSubscriber).sort((a: any, b: any) => (Date.parse(b.lastActivityAt || "") || 0) - (Date.parse(a.lastActivityAt || "") || 0));
-    return NextResponse.json({ accounts: rows, eventCount: totalEvents }, { headers: { "Cache-Control": "no-store" } });
+    }).filter((account: any) => segment === "subscribers" ? account.isSubscriber : !account.currentSubscriber && !["owner", "admin", "administrator"].includes(String(account.plan).toLowerCase())).sort((a: any, b: any) => (Date.parse(b.lastActivityAt || "") || 0) - (Date.parse(a.lastActivityAt || "") || 0));
+    return NextResponse.json({ accounts: rows, eventCount: totalEvents, segment }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
     console.error("[TubeX subscriber behavior]", error?.message || error);
     return NextResponse.json({ error: "behavior_unavailable" }, { status: 503 });
