@@ -17,9 +17,48 @@ const MODULE_EVENTS = new Set([
   "module_opened", "extension_action", "ui_action", "search_submitted", "search_performed", "search_failed",
   "analysis_completed", "analysis_failed", "ai_generation_completed", "quota_exhausted", "competitor_analysis",
   "competitor_analysis_started", "competitor_analysis_failed", "trend_search_completed", "trend_search_failed",
-  "summary_viewed", "creator_workspace_opened", "feature_used",
+  "summary_viewed", "creator_workspace_opened", "feature_used", "api_request_succeeded", "extension_started",
+  "youtube_opened", "session_started",
 ]);
 const NON_PRODUCT_MODULES = new Set(["billing", "payments", "payment", "checkout", "subscription", "account", "affiliate", "support", "dashboard", "web_dashboard"]);
+const MODULE_ALIASES: Record<string, string> = {
+  trends: "keyword_trends", ai: "ai_legacy", keyword_labs: "keyword_explorer", seo_research: "seo_search",
+  content_seo: "seo_search", revenue: "revenue_insights", diagnosis: "diagnostics", diagnostic: "diagnostics",
+  video: "video_ai", extension_module: "extension",
+};
+function inferModuleFromAction(value: unknown) {
+  const action = String(value || "").trim().toLowerCase();
+  if (!action) return null;
+  if (/checkout|upgrade|subscription|payment|billing|invoice|verificarplano|checksubscription|\bplan\b/.test(action)) return "billing";
+  if (/fetchseodata|seo.?search/.test(action)) return "seo_search";
+  if (/keyword|suggestion|searchyoutube|searchkeyword/.test(action)) return "keyword_explorer";
+  if (/trend/.test(action)) return "keyword_trends";
+  if (/outlier/.test(action)) return "outliers";
+  if (/competitor|radar/.test(action)) return "competitor_radar";
+  if (/creator|calendar|workspace|channelstats|channelviews|quickstats/.test(action)) return "creator_workspace";
+  if (/diagnostic/.test(action)) return "diagnostics";
+  if (/chat/.test(action)) return "chat_ai";
+  if (/thumbnail/.test(action)) return "thumbnail_ai";
+  if (/description/.test(action)) return "description_ai";
+  if (/title/.test(action)) return "title_ai";
+  if (/tag/.test(action)) return "tags_editor";
+  if (/video.?optim|optimizer/.test(action)) return "video_optimizer";
+  if (/revenue|receipt|faturamento/.test(action)) return "revenue_insights";
+  if (/summary/.test(action)) return "summary";
+  if (/insight|channelvideos|channelidentity|executaria|gerartextoia/.test(action)) return "intelligence";
+  if (/seo/.test(action)) return "seo_explorer";
+  return null;
+}
+function productModule(event: any) {
+  const raw = String(event.module || "").trim().toLowerCase();
+  const inferred = inferModuleFromAction(event.properties?.action || event.properties?.endpoint || event.properties?.feature);
+  const key = (inferred && (["", "extension", "system", "youtube"].includes(raw) || event.event_name === "api_request_succeeded"))
+    ? inferred
+    : MODULE_ALIASES[raw] || raw || inferred || "extension";
+  const context = [raw, event.properties?.action, event.properties?.endpoint, event.properties?.feature].join(" ").toLowerCase();
+  const billing = /billing|payment|checkout|subscription|invoice|verificarplano|checksubscription/.test(context);
+  return { key: event.event_name === "session_started" || event.event_name === "extension_started" ? (inferred || "extension") : key, billing };
+}
 const LABELS: Record<string, string> = {
   seo_search: "SEO de Pesquisa", seo_explorer: "SEO Explorer", keyword_explorer: "Keyword Explorer",
   keyword_trends: "Tendências de Palavras-chave", competitor_radar: "Radar de Concorrentes",
@@ -133,10 +172,11 @@ export async function GET(request: Request) {
       if (accountId) accountFor(accountId, { email: email || null, name: install.name || null });
     }
     for (const event of events as any[]) {
-      const userId = event.user_id || installToUser.get(event.install_id);
-      if (!userId) continue;
       const installation: any = installationsById.get(event.install_id);
-      const account = accountFor(userId, installation ? { email: installation.email, name: installation.name } : undefined);
+      const installationIdentity = installation ? { email: installation.email, name: installation.name } : undefined;
+      const linkedInstallUserId = installToUser.get(event.install_id);
+      const account = (event.user_id ? accountFor(event.user_id, installationIdentity) : null)
+        || (linkedInstallUserId ? accountFor(linkedInstallUserId, installationIdentity) : null);
       if (!account) continue;
       const at = iso(event.created_at);
       if (!at) continue;
@@ -171,9 +211,8 @@ export async function GET(request: Request) {
         account.cancelReason = [event.properties?.reason, event.properties?.feedback, event.properties?.comment]
           .map((value) => String(value || "").trim()).filter((value) => value && value !== "not_provided").join(" · ") || "Motivo não informado";
       }
-      const moduleKey = String(event.module || event.properties?.feature || "extension").toLowerCase();
-      const billingEvent = /billing|payment|checkout|subscription|invoice/.test(String(event.event_name).toLowerCase());
-      if (!MODULE_EVENTS.has(event.event_name) || billingEvent || NON_PRODUCT_MODULES.has(moduleKey) || /billing|payment|checkout|subscription|invoice/.test(moduleKey)) continue;
+      const { key: moduleKey, billing } = productModule(event);
+      if (!MODULE_EVENTS.has(event.event_name) || billing || NON_PRODUCT_MODULES.has(moduleKey) || /billing|payment|checkout|subscription|invoice/.test(moduleKey)) continue;
 
       account.lastActivityAt = at;
       account.totalActions++;
