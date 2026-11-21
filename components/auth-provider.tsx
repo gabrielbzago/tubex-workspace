@@ -3,13 +3,14 @@ import { useEffect,useState } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/dashboard-layout";
 import LoginPage from "@/components/login-page";
+import { recordInitialDashboardOpen, recordWebLogin } from "@/lib/tubex-client-analytics";
 
 export default function AuthProvider(){
   const [session,setSession]=useState<any>(null);
   const [loading,setLoading]=useState(true);
   useEffect(()=>{
     let mounted=true;
-    supabase.auth.getSession().then(({data})=>{if(mounted){setSession(data.session);setLoading(false)}});
+    supabase.auth.getSession().then(({data})=>{if(mounted){setSession(data.session);setLoading(false);if(data.session){if(sessionStorage.getItem("tubex-pending-google-login")==="1"){sessionStorage.removeItem("tubex-pending-google-login");void recordWebLogin(data.session)}void recordInitialDashboardOpen(data.session)}}});
     const {data}=supabase.auth.onAuthStateChange((_event,next)=>{if(mounted)setSession(next)});
     return()=>{mounted=false;data.subscription.unsubscribe()};
   },[]);

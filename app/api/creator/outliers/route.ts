@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeTubeXItems } from "@/lib/tubex-seo-engine";
 import { callTubeXBackend, getAuthenticatedPlan, getAuthenticatedUser } from "@/lib/tubex-backend";
+import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
     }
 
     const videos = [...videoMap.values()];
+    await recordServerProductEvent(request, user.id, "competitor_analysis", "outliers");
     if (!videos.length) return NextResponse.json({ success: true, items: [], message: "O backend não encontrou vídeos suficientes para esse nicho. Tente uma expressão mais específica." });
 
     const channelMap = new Map<string, { channelId: string; title: string; thumbnail: string; videoIds: string[]; searchViews: number }>();

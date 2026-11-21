@@ -443,13 +443,14 @@ async function recordAnalyticsEvent(
   userId: string,
   eventName: string,
   module = "billing",
-  properties: Record<string, unknown> = {}
+  properties: Record<string, unknown> = {},
+  installId = `web-${userId}`
 ) {
   if (!userId) return;
   try {
     const { error } = await supabaseAdmin.from("tubex_events").insert({
       user_id: userId,
-      install_id: null,
+      install_id: installId,
       session_id: null,
       event_name: eventName,
       module,
@@ -474,7 +475,7 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
   if (referralError) throw referralError;
 
   const { data: canceledUser } = await supabaseAdmin
-    .from("users").select("id").eq("stripe_subscription_id",subscriptionId).maybeSingle();
+    .from("users").select("id,plan").eq("stripe_subscription_id",subscriptionId).maybeSingle();
   const { error: userError } = await supabaseAdmin
     .from("users")
     .update({
@@ -485,7 +486,12 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
     .eq("stripe_subscription_id", subscriptionId);
 
   if (userError) throw userError;
-  if (canceledUser?.id) await recordAnalyticsEvent(canceledUser.id,"subscription_cancelled","billing");
+  if (canceledUser?.id) await recordAnalyticsEvent(canceledUser.id,"subscription_cancelled","billing",{
+    plan: canceledUser.plan || "unknown",
+    reason: subscription.cancellation_details?.reason || "not_provided",
+    feedback: subscription.cancellation_details?.feedback || "not_provided",
+    comment: String(subscription.cancellation_details?.comment || "").replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 240),
+  });
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {

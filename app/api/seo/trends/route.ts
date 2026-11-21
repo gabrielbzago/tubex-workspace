@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callTubeXBackend, getAuthenticatedUser, getTrendSeries } from "@/lib/tubex-backend";
+import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
         message: "O Google Trends não disponibilizou uma série para esta pesquisa agora. Tente novamente mais tarde.",
       }, { status: 200, headers: { "Cache-Control": "private, max-age=0, must-revalidate" } });
     }
+    await recordServerProductEvent(request, user.id, "trend_search_completed", "keyword_trends");
     return NextResponse.json({ success: true, keyword, range, geo: "", property: body?.property === "google" ? "google" : "youtube", metric: "relative_interest_index_0_100", isSearchCount: false, trend }, {
       headers: { "Cache-Control": "private, max-age=0, must-revalidate" },
     });

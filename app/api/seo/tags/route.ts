@@ -6,6 +6,7 @@ import {
   consumeKeywordUsage,
   releaseKeywordUsage,
 } from "@/lib/tubex-backend";
+import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,6 +97,8 @@ export async function POST(request: Request) {
     // Pro e Expert recebem a lista completa, conforme o editor da extensão.
     const visibleLimit = plan === "free" ? 3 : tags.length;
     const responseTags = plan === "free" ? tags.slice(0, 13) : tags;
+
+    await recordServerProductEvent(request, user.id, "search_performed", "seo_search");
 
     return NextResponse.json({
       success: true,

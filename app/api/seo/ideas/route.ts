@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callTubeXBackend, getAuthenticatedUser } from "@/lib/tubex-backend";
+import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     const rawIdeas = ai?.ideas || ai?.data?.ideas || null;
     const text = (typeof ai?.text === "string" ? ai.text : typeof ai?.data?.text === "string" ? ai.data.text : rawIdeas ? JSON.stringify(rawIdeas) : "").trim();
     if (!text) throw new Error("O backend de IA não retornou ideias.");
+    await recordServerProductEvent(request, user.id, "ai_generation_completed", "creator_workspace");
     return NextResponse.json({ success: true, text, ideas: Array.isArray(rawIdeas) ? rawIdeas : null });
   } catch (error: any) {
     const status = String(error?.message || "").includes("TUBEX_BACKEND_API_KEY") ? 503 : 502;

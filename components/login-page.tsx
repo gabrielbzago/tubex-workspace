@@ -3,6 +3,7 @@ import { useEffect,useState,FormEvent } from "react";
 import { ArrowRight,CheckCircle2,Eye,EyeOff,Lock,Mail,Loader2,Sparkles,BarChart3,Search,Users,ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "./theme-toggle";
+import { recordWebLogin } from "@/lib/tubex-client-analytics";
 
 type Lang="pt-br"|"pt-pt"|"es"|"en";
 const langs=[
@@ -38,8 +39,8 @@ export default function LoginPage(){
    return `${base}${base.includes("?")?"&":"?"}client_reference_id=${encodeURIComponent(affiliateRef)}`;
  }
  function changeLang(l:Lang){setLang(l);setOpenLang(false);localStorage.setItem("tubex-language",l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}))}
- async function login(e:FormEvent){e.preventDefault();setLoading(true);setError("");const {error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)setError(t.loginError);else window.location.href="/dashboard";setLoading(false)}
- async function google(){setGoogleLoading(true);const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:`${window.location.origin}/dashboard`,scopes:"openid email profile https://www.googleapis.com/auth/youtube.readonly",queryParams:{access_type:"offline",prompt:"consent"}}});if(error){setError(t.googleError);setGoogleLoading(false)}}
+ async function login(e:FormEvent){e.preventDefault();setLoading(true);setError("");const {data,error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)setError(t.loginError);else{await recordWebLogin(data.session);window.location.href="/dashboard"}setLoading(false)}
+ async function google(){setGoogleLoading(true);sessionStorage.setItem("tubex-pending-google-login","1");const {error}=await supabase.auth.signInWithOAuth({provider:"google",options:{redirectTo:`${window.location.origin}/dashboard`,scopes:"openid email profile https://www.googleapis.com/auth/youtube.readonly",queryParams:{access_type:"offline",prompt:"consent"}}});if(error){sessionStorage.removeItem("tubex-pending-google-login");setError(t.googleError);setGoogleLoading(false)}}
  async function reset(){if(!email.trim()){setError(t.email+" obrigatório");return}setLoading(true);const {error}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:`${window.location.origin}/reset-password`});if(error)setError(t.resetError);else setMessage(t.reset);setLoading(false)}
  const feature=[{i:<Search size={18}/>,t:t.p1},{i:<Sparkles size={18}/>,t:t.p2},{i:<BarChart3 size={18}/>,t:t.p3}];
  return <main className="min-h-screen bg-[var(--tx-bg)] text-[var(--tx-text)]">

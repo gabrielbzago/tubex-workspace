@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildTubeXKeywordAnalysis } from "@/lib/tubex-seo-engine";
 import { callTubeXBackend, getAuthenticatedPlan, getAuthenticatedUser, consumeKeywordUsage, releaseKeywordUsage } from "@/lib/tubex-backend";
+import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
       usageReservationId = null;
       return NextResponse.json({ code: "NO_RESULTS", error: "Não encontramos vídeos suficientes para analisar essa expressão. Experimente uma palavra-chave mais específica ou uma variação." }, { status: 404 });
     }
+    await recordServerProductEvent(request, user.id, "search_performed", "keyword_explorer");
     // Free public Google Trends signals, split by Google Web Search and YouTube Search.
     // Do not label either series as absolute search volume.
     const trendsPayload = await Promise.allSettled([

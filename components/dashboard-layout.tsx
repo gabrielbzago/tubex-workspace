@@ -7,9 +7,11 @@ import ThemeToggle from "./theme-toggle";
 import AffiliatePage from "./affiliate-page";
 import AdminAffiliates from "./admin-affiliates";
 import AdminAnalytics from "./admin-analytics";
+import AdminSubscriberBehavior from "./admin-subscriber-behavior";
 import SeoWorkspace from "./seo-workspace";
 import CreatorWorkspace from "./creator-workspace";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
+import { recordWebProductEvent } from "@/lib/tubex-client-analytics";
 
 type Lang="pt-br"|"pt-pt"|"es"|"en";
 const languages=[
@@ -26,7 +28,7 @@ const i18n={
 function Logo(){return <a href="/dashboard" className="flex items-center gap-2 font-black tracking-[-.06em] text-[22px] text-[var(--tx-text)]"><span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--tx-accent)] text-[10px] text-[#11151a]">TX</span>Tube<span className="text-[var(--tx-accent)]">X</span></a>}
 
 export default function DashboardLayout({user}:{user:any}){
- const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"account"|"billing"|"support">("dashboard");
+ const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"account"|"billing"|"support">("dashboard");
  const [mobileOpen,setMobileOpen]=useState(false);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
@@ -88,6 +90,7 @@ export default function DashboardLayout({user}:{user:any}){
   window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
 }
  async function logout(){
+  try{sessionStorage.removeItem(`tubex-dashboard-open-recorded:${String(user?.id||"")}`)}catch{}
   // Limpa o cache de pesquisa somente quando o usuário encerra a sessão.
   try {
    const ownerKey=String(user?.id||user?.email||"user");
@@ -100,10 +103,10 @@ export default function DashboardLayout({user}:{user:any}){
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
  const navItems:any[]=[
   ["dashboard",Home,t.dashboard],["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["affiliate",Users,t.affiliate],
-  ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"]]:[]),
+  ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
- function selectTab(next:any){setTab(next);setMobileOpen(false)}
+ function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={dashboard:"dashboard",workspace:"seo_explorer",creator:"creator_workspace",affiliate:"affiliate",account:"account",billing:"billing",support:"support"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"module_opened",module))}
  return <div className="min-h-screen bg-[var(--tx-bg)] text-[var(--tx-text)]">
   <aside className="fixed inset-y-0 left-0 hidden w-[232px] border-r border-[var(--tx-border)] bg-[var(--tx-surface)] p-4 lg:flex lg:flex-col">
    <Logo/>
@@ -133,7 +136,7 @@ export default function DashboardLayout({user}:{user:any}){
     {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
     {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}
     {tab==="dashboard"&&<Overview user={user} userData={userData} t={t} onTab={setTab} isOwner={isOwner}/>}
-    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{(tab==="admin"||tab==="analytics")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
+    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{tab==="behavior"&&isOwner&&<AdminSubscriberBehavior/>}{(tab==="admin"||tab==="analytics"||tab==="behavior")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
     {tab==="account"&&<Account user={user} userData={userData} t={t} isOwner={isOwner}/>}
     {tab==="billing"&&<Billing userData={userData} t={t}/>}
     {tab==="support"&&<Support t={t}/>}
