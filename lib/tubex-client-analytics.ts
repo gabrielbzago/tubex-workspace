@@ -5,7 +5,7 @@ async function getSessionId(session: Session) {
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
 
-export async function recordWebProductEvent(session: Session | null, eventName: string, module: string) {
+export async function recordWebProductEvent(session: Session | null, eventName: string, module: string, properties: Record<string, unknown> = {}) {
   if (!session?.access_token || !session.user.id || typeof window === "undefined") return;
   try {
     const sessionId = await getSessionId(session);
@@ -18,7 +18,7 @@ export async function recordWebProductEvent(session: Session | null, eventName: 
         event_name: eventName,
         module,
         queued_at: Date.now(),
-        properties: { source: "web_dashboard" },
+        properties: { source: "web_dashboard", ...properties },
       }),
       keepalive: true,
     });

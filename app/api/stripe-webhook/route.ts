@@ -513,6 +513,13 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
       .from("affiliate_referrals").update({ status: "past_due", updated_at: new Date().toISOString() })
       .eq("stripe_customer_id", customerId);
     if (referralError) throw referralError;
+    const { data: billedUser } = await supabaseAdmin.from("users").select("id,plan").eq("stripe_customer_id", customerId).maybeSingle();
+    if (billedUser?.id) await recordAnalyticsEvent(billedUser.id, "payment_failed", "billing", {
+      plan: billedUser.plan || "unknown",
+      invoice_id: invoiceId,
+      amount_due: invoice.amount_due,
+      currency: invoice.currency || "unknown",
+    });
   }
 }
 

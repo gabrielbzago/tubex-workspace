@@ -5,12 +5,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SEARCH_EVENTS = new Set(["search_submitted", "search_performed", "analysis_completed", "trend_search_completed"]);
+const BILLING_LABELS: Record<string, string> = {
+  pricing_viewed: "Planos visualizados",
+  upgrade_clicked: "Clique para assinar / abrir pagamentos",
+  checkout_started: "Checkout iniciado",
+  subscription_activated: "Assinatura confirmada",
+  subscription_cancelled: "Assinatura cancelada",
+  payment_failed: "Pagamento não concluído",
+};
 const MODULE_EVENTS = new Set([
   "module_opened", "extension_action", "ui_action", "search_submitted", "search_performed", "search_failed",
   "analysis_completed", "analysis_failed", "ai_generation_completed", "quota_exhausted", "competitor_analysis",
   "competitor_analysis_started", "competitor_analysis_failed", "trend_search_completed", "trend_search_failed",
   "summary_viewed", "creator_workspace_opened", "feature_used",
 ]);
+const NON_PRODUCT_MODULES = new Set(["billing", "payments", "payment", "checkout", "subscription", "account", "affiliate", "support", "dashboard", "web_dashboard"]);
 const LABELS: Record<string, string> = {
   seo_search: "SEO de Pesquisa", seo_explorer: "SEO Explorer", keyword_explorer: "Keyword Explorer",
   keyword_trends: "Tendências de Palavras-chave", competitor_radar: "Radar de Concorrentes",
@@ -83,11 +92,12 @@ export async function GET(request: Request) {
         createdAt: authUser?.created_at || null,
         accountStatus: user.status || "unknown", subscriptionId: user.stripe_subscription_id || null,
         firstLoginAt: null as string | null, lastLoginAt: null as string | null, lastActivityAt: null as string | null,
-        lastResource: null as string | null, loginCount: 0, returnCount: 0, sessionIds: new Set<string>(),
-        sessionMap: new Map<string, { id: string; startedAt: string; lastActivityAt: string; actions: number; login: boolean; modules: Map<string, number> }>(),
+        lastResource: null as string | null, loginMoments: [] as number[],
+        sessionMap: new Map<string, { id: string; startedAt: string; lastActivityAt: string; actions: number; modules: Map<string, number> }>(),
         activeDays: new Set<string>(), activeDays30: new Set<string>(), searchCount: 0, totalActions: 0, actions30: 0, moduleMap: new Map<string, { name: string; count: number; lastUsedAt: string }>(),
         subscribedAt: null as string | null, canceledAt: null as string | null, cancelReason: null as string | null,
         lastSubscriptionEvent: null as "activated" | "canceled" | null,
+        paymentJourney: [] as Array<{ eventName: string; label: string; at: string; plan: string | null; source: string | null }>,
       };
       accounts.set(userId, row);
       return row;
@@ -99,20 +109,24 @@ export async function GET(request: Request) {
       if (!account) continue;
       const at = iso(event.created_at);
       if (!at) continue;
-      account.lastActivityAt = at;
-      account.totalActions++;
-      account.activeDays.add(at.slice(0, 10));
-      if (Date.parse(at) >= recentCutoff) { account.activeDays30.add(at.slice(0, 10)); account.actions30++; }
-      const sessionKey = event.session_id ? String(event.session_id) : `day:${at.slice(0, 10)}`;
-      const session = account.sessionMap.get(sessionKey) || { id: sessionKey.startsWith("day:") ? `Dia ${at.slice(0, 10)}` : sessionKey, startedAt: at, lastActivityAt: at, actions: 0, login: false, modules: new Map<string, number>() };
-      session.lastActivityAt = at;
-      session.actions++;
+      const eventName = String(event.event_name || "");
+      if (BILLING_LABELS[eventName]) {
+        account.paymentJourney.push({
+          eventName,
+          label: BILLING_LABELS[eventName],
+          at,
+          plan: event.properties?.plan ? String(event.properties.plan) : null,
+          source: event.properties?.source ? String(event.properties.source) : null,
+        });
+      }
       if (event.event_name === "login_success") {
-        account.loginCount++;
-        if (!account.firstLoginAt) account.firstLoginAt = at;
-        account.lastLoginAt = at;
-        session.login = true;
-        if (event.session_id) account.sessionIds.add(event.session_id);
+        const loginTime = Date.parse(at);
+        const previousLogin = account.loginMoments[account.loginMoments.length - 1];
+        // The web app and extension can both report the same sign-in. Collapse
+        // duplicate reports within two minutes into one authentication.
+        if (previousLogin === undefined || loginTime - previousLogin > 120000) account.loginMoments.push(loginTime);
+        else account.loginMoments[account.loginMoments.length - 1] = loginTime;
+        continue;
       }
       if (event.event_name === "subscription_activated") {
         account.subscribedAt = at;
@@ -126,16 +140,27 @@ export async function GET(request: Request) {
         account.cancelReason = [event.properties?.reason, event.properties?.feedback, event.properties?.comment]
           .map((value) => String(value || "").trim()).filter((value) => value && value !== "not_provided").join(" · ") || "Motivo não informado";
       }
+      const moduleKey = String(event.module || event.properties?.feature || "extension").toLowerCase();
+      const billingEvent = /billing|payment|checkout|subscription|invoice/.test(String(event.event_name).toLowerCase());
+      if (!MODULE_EVENTS.has(event.event_name) || billingEvent || NON_PRODUCT_MODULES.has(moduleKey) || /billing|payment|checkout|subscription|invoice/.test(moduleKey)) continue;
+
+      account.lastActivityAt = at;
+      account.totalActions++;
+      account.activeDays.add(at.slice(0, 10));
+      if (Date.parse(at) >= recentCutoff) { account.activeDays30.add(at.slice(0, 10)); account.actions30++; }
+      // Access token IDs persist across several days, so the activity view is
+      // intentionally grouped by calendar day, independently of login count.
+      const sessionKey = `day:${at.slice(0, 10)}`;
+      const session = account.sessionMap.get(sessionKey) || { id: `Dia ${at.slice(0, 10)}`, startedAt: at, lastActivityAt: at, actions: 0, modules: new Map<string, number>() };
+      session.lastActivityAt = at;
+      session.actions++;
       if (SEARCH_EVENTS.has(event.event_name)) account.searchCount++;
-      if (MODULE_EVENTS.has(event.event_name)) {
-        const moduleKey = String(event.module || event.properties?.feature || "extension").toLowerCase();
-        const moduleRow = account.moduleMap.get(moduleKey) || { name: label(moduleKey), count: 0, lastUsedAt: at };
-        moduleRow.count++;
-        moduleRow.lastUsedAt = at;
-        account.moduleMap.set(moduleKey, moduleRow);
-        session.modules.set(moduleKey, (session.modules.get(moduleKey) || 0) + 1);
-        account.lastResource = moduleRow.name;
-      }
+      const moduleRow = account.moduleMap.get(moduleKey) || { name: label(moduleKey), count: 0, lastUsedAt: at };
+      moduleRow.count++;
+      moduleRow.lastUsedAt = at;
+      account.moduleMap.set(moduleKey, moduleRow);
+      session.modules.set(moduleKey, (session.modules.get(moduleKey) || 0) + 1);
+      account.lastResource = moduleRow.name;
       account.sessionMap.set(sessionKey, session);
     }
     const rows = [...accounts.values()].map((account: any) => {
@@ -147,9 +172,12 @@ export async function GET(request: Request) {
       const status = canceled ? "canceled" : regular ? "active" : "at_risk";
       const modules = [...account.moduleMap.entries()].map(([key, value]: any) => ({ key, ...value })).sort((a: any, b: any) => b.count - a.count);
       const authUser: any = account.authUser;
+      account.loginCount = account.loginMoments.length;
+      account.firstLoginAt = account.loginMoments.length ? new Date(account.loginMoments[0]).toISOString() : null;
+      account.lastLoginAt = account.loginMoments.length ? new Date(account.loginMoments[account.loginMoments.length - 1]).toISOString() : null;
       const lastLoginAt = account.lastLoginAt || iso(authUser?.last_sign_in_at);
-      const returned = account.loginCount > 1 || account.sessionIds.size > 1 || Boolean(authUser?.last_sign_in_at && authUser?.created_at && Date.parse(authUser.last_sign_in_at) - Date.parse(authUser.created_at) > 86400000);
-      const returnCount = Math.max(account.loginCount - 1, returned ? 1 : 0);
+      const returned = account.activeDays.size > 1;
+      const returnCount = Math.max(0, account.activeDays.size - 1);
       const highUse = account.activeDays30.size >= 8 || account.actions30 >= 30;
       return {
         id: account.id, name: account.name, email: account.email, plan: account.plan, status, createdAt: account.createdAt,
@@ -159,9 +187,10 @@ export async function GET(request: Request) {
         returnCount, activeDays: account.activeDays.size, activeDays30: account.activeDays30.size,
         searchCount: account.searchCount, totalActions: account.totalActions, actions30: account.actions30, highUse, modules,
         sessions: [...account.sessionMap.values()].map((session: any) => ({
-          id: session.id, startedAt: session.startedAt, lastActivityAt: session.lastActivityAt, actions: session.actions, login: session.login,
+          id: session.id, startedAt: session.startedAt, lastActivityAt: session.lastActivityAt, actions: session.actions,
           modules: [...session.modules.entries()].map(([key, count]) => ({ name: label(key), count })),
         })).sort((a: any, b: any) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt)).slice(0, 30),
+        paymentJourney: account.paymentJourney.slice(-100).reverse(),
       };
     }).filter((account: any) => account.isSubscriber).sort((a: any, b: any) => (Date.parse(b.lastActivityAt || "") || 0) - (Date.parse(a.lastActivityAt || "") || 0));
     return NextResponse.json({ accounts: rows, eventCount: totalEvents }, { headers: { "Cache-Control": "no-store" } });

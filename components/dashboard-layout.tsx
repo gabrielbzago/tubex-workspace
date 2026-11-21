@@ -43,6 +43,18 @@ export default function DashboardLayout({user}:{user:any}){
  useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
   (async()=>{if(!user?.email)return;const {data}=await supabase.from("users").select("*").eq("email",user.email).maybeSingle();setUserData(data)})();
  },[user?.email]);
+ useEffect(()=>{
+  const trackStripeLink=(event:MouseEvent)=>{
+   const target=event.target;
+   if(!(target instanceof Element))return;
+   const link=target.closest<HTMLAnchorElement>('a[href*="buy.stripe.com"]');
+   if(!link)return;
+   const plan=String(link.textContent||"assinatura").trim().replace(/\s+/g," ").slice(0,40);
+   void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"upgrade_clicked","billing",{plan,source:"stripe_checkout_link"}));
+  };
+  document.addEventListener("click",trackStripeLink,true);
+  return()=>document.removeEventListener("click",trackStripeLink,true);
+ },[]);
  // Apply the selected language to all UI text nodes, including the independently
  // rendered Keyword Explorer and Workspace SEO, and keep newly rendered UI in sync.
  useEffect(()=>{
@@ -106,7 +118,7 @@ export default function DashboardLayout({user}:{user:any}){
   ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
- function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={dashboard:"dashboard",workspace:"seo_explorer",creator:"creator_workspace",affiliate:"affiliate",account:"account",billing:"billing",support:"support"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"module_opened",module))}
+ function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={dashboard:"dashboard",workspace:"seo_explorer",creator:"creator_workspace",affiliate:"affiliate",account:"account",billing:"billing",support:"support"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,next==="billing"?"pricing_viewed":"module_opened",module))}
  return <div className="min-h-screen bg-[var(--tx-bg)] text-[var(--tx-text)]">
   <aside className="fixed inset-y-0 left-0 hidden w-[232px] border-r border-[var(--tx-border)] bg-[var(--tx-surface)] p-4 lg:flex lg:flex-col">
    <Logo/>
