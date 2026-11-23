@@ -112,3 +112,15 @@ input::placeholder,textarea::placeholder{color:var(--tx-muted)}
 select option{background:var(--tx-surface);color:var(--tx-text)}
 .tx-surface, .tx-feature, .tx-plan, .tx-faq, .tx-login-card{color:var(--tx-text)}
 html.dark :is(.recharts-cartesian-axis-tick-value,.recharts-legend-item-text){fill:var(--tx-muted)!important;color:var(--tx-muted)!important}
+
+/* Data viz (painéis owner): paleta categórica validada + status fixos. */
+:root,html.light,html[data-theme="light"]{
+  --viz-1:#2a78d6;--viz-2:#eb6834;--viz-3:#1baf7a;--viz-4:#eda100;--viz-5:#e87ba4;--viz-6:#6250d6;
+  --viz-seq-1:#a9c9f0;--viz-seq-2:#5e9be3;--viz-seq-3:#1f5fb0;
+  --viz-good:#0ca30c;--viz-warning:#fab219;--viz-serious:#ec835a;--viz-critical:#d03b3b;--viz-neutral:#a3abb5;
+}
+html.dark{
+  --viz-1:#3987e5;--viz-2:#d95926;--viz-3:#199e70;--viz-4:#c98500;--viz-5:#d55181;--viz-6:#9085e9;
+  --viz-seq-1:#284a75;--viz-seq-2:#3f78c2;--viz-seq-3:#8db8f0;
+  --viz-neutral:#56626b;
+}

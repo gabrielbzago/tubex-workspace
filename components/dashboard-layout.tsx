@@ -41,7 +41,22 @@ export default function DashboardLayout({user}:{user:any}){
  const isOwner = ownerEmails.includes(userEmail);
 
  useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
-  (async()=>{if(!user?.email)return;const {data}=await supabase.from("users").select("*").eq("email",user.email).maybeSingle();setUserData(data)})();
+  (async()=>{
+   if(!user?.email)return;
+   const {data}=await supabase.from("users").select("*").ilike("email",String(user.email).trim().toLowerCase().replace(/[\\%_]/g,(c:string)=>"\\"+c)).limit(1).maybeSingle();
+   setUserData(data);
+   // O plano exibido vem do servidor, com a mesma busca da extensão: todos os
+   // e-mails da conta são consultados e o melhor plano vence (status validado).
+   try{
+    const {data:sessionData}=await supabase.auth.getSession();
+    const token=sessionData.session?.access_token;
+    if(!token)return;
+    const res=await fetch("/api/account/plan",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+    if(!res.ok)return;
+    const resolved=await res.json();
+    if(resolved?.plan)setUserData((prev:any)=>({...(prev||{}),plan:resolved.plan,status:resolved.status||(resolved.plan==="free"?(prev?.status||"active"):"active"),planEmail:resolved.planEmail||null}));
+   }catch{}
+  })();
  },[user?.email]);
  useEffect(()=>{
   const trackStripeLink=(event:MouseEvent)=>{
@@ -49,12 +64,15 @@ export default function DashboardLayout({user}:{user:any}){
    if(!(target instanceof Element))return;
    const link=target.closest<HTMLAnchorElement>('a[href*="buy.stripe.com"]');
    if(!link)return;
+   // Pré-preenche o e-mail do login no checkout do Stripe para a assinatura cair
+   // no mesmo e-mail da conta (evita assinatura em outro e-mail aparecer como FREE).
+   try{const loginEmail=String(user?.email||"").trim().toLowerCase();if(loginEmail){const url=new URL(link.href);if(!url.searchParams.get("prefilled_email")){url.searchParams.set("prefilled_email",loginEmail);link.href=url.toString()}}}catch{}
    const plan=String(link.textContent||"assinatura").trim().replace(/\s+/g," ").slice(0,40);
    void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"upgrade_clicked","billing",{plan,source:"stripe_checkout_link"}));
   };
   document.addEventListener("click",trackStripeLink,true);
   return()=>document.removeEventListener("click",trackStripeLink,true);
- },[]);
+ },[user?.email]);
  // Apply the selected language to all UI text nodes, including the independently
  // rendered Keyword Explorer and Workspace SEO, and keep newly rendered UI in sync.
  useEffect(()=>{
@@ -187,7 +205,7 @@ function Overview({user,userData,t,onTab,isOwner}:any){
   </section>
   <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
    <Stat title={t.plan} value={plan} icon={<ShieldCheck size={17}/>}/>
-   <Stat title={t.status} value={userData?.status==="inactive"?"Inactive":t.active} icon={<Check size={17}/>}/>
+   <Stat title={t.status} value={["inactive","canceled","incomplete_expired","unpaid"].includes(String(userData?.status||""))?"Inactive":t.active} icon={<Check size={17}/>}/>
    <Stat title={t.connected} value={userData?.youtube_channel_name||t.notConnected} icon={<Users size={17}/>}/>
   </section>
   <div className="grid min-w-0 gap-3 lg:grid-cols-2 sm:gap-4">

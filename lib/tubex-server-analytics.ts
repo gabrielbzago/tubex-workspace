@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export async function recordServerProductEvent(request: Request, userId: string, eventName: string, module: string) {
+export async function recordServerProductEvent(request: Request, userId: string, eventName: string, module: string, extra: Record<string, string | number | null> = {}) {
   if (!userId) return;
   const bearer = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
   const sessionId = bearer ? createHash("sha256").update(bearer).digest("hex").slice(0, 32) : null;
@@ -12,7 +12,7 @@ export async function recordServerProductEvent(request: Request, userId: string,
       session_id: sessionId,
       event_name: eventName,
       module,
-      properties: { source: "web_dashboard" },
+      properties: { source: "web_dashboard", ...extra },
     });
     if (error) console.warn("[TubeX product analytics] event not recorded", eventName, error.message);
   } catch (error: any) {

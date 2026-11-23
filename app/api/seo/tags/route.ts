@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    let plan = await getAuthenticatedPlan(user.id, user.email);
+    let plan = await getAuthenticatedPlan(user);
     if (["owner", "admin", "administrator"].includes(plan)) plan = "expert";
     if (plan === "member") plan = "pro";
     if (!["free", "pro", "expert"].includes(plan)) plan = "free";
@@ -51,6 +51,8 @@ export async function POST(request: Request) {
     const quota = await consumeKeywordUsage(user.id, `tags:${source}:${keyword}`, dailyLimit);
     usageReservationId = quota.usageId;
     if (!quota.allowed) {
+      // Registra o limite atingido para o painel de comportamento (quem bateu limite).
+      await recordServerProductEvent(request, user.id, "quota_exhausted", "seo_search", { feature: "tags_search", plan, reason: "daily_limit" });
       return NextResponse.json({
         code: "PLAN_LIMIT_REACHED",
         error: plan === "free"

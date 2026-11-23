@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const keyword = String(body?.keyword || "").trim().replace(/\s+/g, " ").slice(0, 100);
     if (keyword.length < 2) return NextResponse.json({ code: "INVALID_KEYWORD", error: "Digite uma palavra-chave com pelo menos 2 caracteres para começar." }, { status: 400 });
 
-    let plan = await getAuthenticatedPlan(user.id, user.email);
+    let plan = await getAuthenticatedPlan(user);
     if (["owner", "admin", "administrator"].includes(plan)) plan = "expert";
     if (plan === "member") plan = "pro";
     if (!["free", "pro", "expert"].includes(plan)) plan = "free";
@@ -30,6 +30,8 @@ export async function POST(request: Request) {
     const quota = await consumeKeywordUsage(user.id, keyword, dailyLimit);
     usageReservationId = quota.usageId;
     if (!quota.allowed) {
+      // Registra o limite atingido para o painel de comportamento (quem bateu limite).
+      await recordServerProductEvent(request, user.id, "quota_exhausted", "keyword_explorer", { feature: "keyword_search", plan, reason: "daily_limit" });
       return NextResponse.json({
         code: "PLAN_LIMIT_REACHED",
         error: plan === "free"

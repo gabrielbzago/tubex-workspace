@@ -78,7 +78,8 @@ async function findUser(customerId: string, email: string) {
     const { data } = await supabaseAdmin
       .from("users")
       .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
-      .eq("email", email)
+      .ilike("email", email.replace(/[\\%_]/g, (ch) => "\\" + ch))
+      .limit(1)
       .maybeSingle();
     if (data) return data;
   }
@@ -114,7 +115,9 @@ async function syncSubscription(subscription: Stripe.Subscription) {
   const patch = {
     ...(email ? { email } : {}),
     ...(user?.name ? {} : email ? { name: email } : {}),
-    plan: status === "active" ? plan : "free",
+    // past_due = carência (Stripe ainda tentando cobrar): mantém o plano, igual
+    // ao webhook do backend da extensão e ao planoSB. Só inactive vira free.
+    plan: status === "active" || status === "past_due" ? plan : "free",
     status,
     stripe_customer_id: customerId || user?.stripe_customer_id || null,
     stripe_subscription_id: subscription.id,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { effectivePlanFromRow, planRank } from "@/lib/tubex-plan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -363,8 +364,8 @@ export async function GET(request: Request) {
   // A tabela users, atualizada pelo webhook Stripe, é a fonte de verdade das
   // assinaturas ativas. Não inferimos assinatura a partir de eventos de clique.
   const activePaidSubscriptions = usersError ? [] : userRows.filter((user) =>
-    PAID_PLANS.has(String(user.plan || "").toLowerCase()) &&
-    String(user.status || "").toLowerCase() === "active" &&
+    // Mesma regra do planoSB/extensão: trialing e past_due (carência) contam.
+    PAID_PLANS.has(effectivePlanFromRow(user).plan) &&
     Boolean(user.stripe_subscription_id)
   );
   const subscriptionCount = new Set(activePaidSubscriptions.map((user) => user.stripe_subscription_id)).size;
@@ -378,15 +379,20 @@ export async function GET(request: Request) {
     // Algumas instalações autenticam o Google na extensão, mas nunca entram
     // no dashboard. Nesses casos user_id fica vazio; o e-mail verificado é a
     // chave segura para associar ao cadastro de cobrança.
-    const linkedUser = (installation.user_id ? userById.get(installation.user_id) : null) ||
-      (installation.email ? userByEmail.get(String(installation.email).trim().toLowerCase()) : null);
+    // Melhor plano entre a linha ligada por user_id e a linha do e-mail Google
+    // (mesma regra do site e da extensão: o melhor plano vence).
+    const candidates = [
+      installation.user_id ? userById.get(installation.user_id) : null,
+      installation.email ? userByEmail.get(String(installation.email).trim().toLowerCase()) : null,
+    ].filter(Boolean) as any[];
+    const linkedUser = candidates.sort((a, b) => planRank(effectivePlanFromRow(b).plan) - planRank(effectivePlanFromRow(a).plan))[0] || null;
     return {
       install_id: installation.install_id,
       email: installation.email,
       name: installation.name || linkedUser?.name || null,
       picture: installation.picture || null,
       user_id: installation.user_id || null,
-      plan: linkedUser?.plan || "não vinculado",
+      plan: linkedUser ? effectivePlanFromRow(linkedUser).plan : "não vinculado",
       account_status: linkedUser?.status || null,
       extension_version: installation.extension_version || null,
       first_seen: installation.first_seen,

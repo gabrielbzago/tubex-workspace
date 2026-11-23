@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { featurePlan, resolveAccountPlan } from "@/lib/tubex-plan";
 
 export async function getAuthenticatedUser(request: Request) {
   const authorization = request.headers.get("authorization") || "";
@@ -9,18 +10,16 @@ export async function getAuthenticatedUser(request: Request) {
   return data.user;
 }
 
-export async function getAuthenticatedPlan(userId: string, email?: string | null) {
+/**
+ * Plano efetivo da conta logada. Usa a mesma busca da extensão: consulta todos
+ * os e-mails da pessoa (login, Google vinculado, instalações da extensão) e o
+ * melhor plano vence. Veja lib/tubex-plan.ts.
+ */
+export async function getAuthenticatedPlan(user: any, email?: string | null) {
   try {
-    const byId = await supabaseAdmin.from("users").select("plan").eq("id", userId).maybeSingle();
-    const normalizePlan = (value: unknown) => {
-      const plan = String(value || "free").toLowerCase().trim();
-      return ["owner", "admin", "administrator"].includes(plan) ? "expert" : plan;
-    };
-    if (byId.data?.plan) return normalizePlan(byId.data.plan);
-    if (email) {
-      const byEmail = await supabaseAdmin.from("users").select("plan").eq("email", email.toLowerCase()).maybeSingle();
-      if (byEmail.data?.plan) return normalizePlan(byEmail.data.plan);
-    }
+    const account = typeof user === "string" ? { id: user, email } : user;
+    const resolved = await resolveAccountPlan(account);
+    return featurePlan(resolved.plan);
   } catch {}
   return "free";
 }
