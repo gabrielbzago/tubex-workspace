@@ -40,6 +40,7 @@ export default function AchievementsCenter({ user }: { user: any }) {
   const [goalMetric, setGoalMetric] = useState("subscriber_count");
   const [goalTarget, setGoalTarget] = useState("");
   const [savingGoal, setSavingGoal] = useState(false);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
 
   const authHeaders = useCallback(async () => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -107,6 +108,39 @@ export default function AchievementsCenter({ user }: { user: any }) {
   const filtered = useMemo(() => (data?.achievements || []).filter(item => filter === "all" || (filter === "unlocked" ? item.unlocked : filter === "locked" ? !item.unlocked : item.category === filter)), [data, filter]);
   const unlockedCount = data?.achievements.filter(item => item.unlocked).length || 0;
   const next = data?.achievements.filter(item => !item.unlocked).sort((a, b) => b.progress - a.progress)[0];
+  const featuredAchievement = data?.achievements.filter(item => item.unlocked).sort((a, b) => new Date(b.unlocked_at || 0).getTime() - new Date(a.unlocked_at || 0).getTime())[0];
+
+  async function sendTestAchievementEmail() {
+    setSendingTestEmail(true); setError(""); setNotice("");
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/achievements/test-email", { method: "POST", headers });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || "Não foi possível enviar o e-mail de teste.");
+      setNotice(`E-mail de demonstração enviado para ${result.to}. Confira sua caixa de entrada.`);
+    } catch (err: any) { setError(err?.message || "Falha ao enviar o e-mail de demonstração."); }
+    finally { setSendingTestEmail(false); }
+  }
+
+  function downloadAchievementCard() {
+    if (!featuredAchievement || !data?.profile) return;
+    const title = featuredAchievement.title.replace(/[&<>\"]/g, "");
+    const channel = String(data.profile.channel_title || "Meu canal").replace(/[&<>\"]/g, "");
+    const value = fmt(featuredAchievement.current_value);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#171923"/><stop offset="1" stop-color="#292d3b"/></linearGradient><linearGradient id="gold"><stop stop-color="#f8d66d"/><stop offset="1" stop-color="#d49b20"/></linearGradient></defs><rect width="1200" height="1200" rx="64" fill="url(#g)"/><circle cx="600" cy="410" r="205" fill="none" stroke="url(#gold)" stroke-width="20"/><circle cx="600" cy="410" r="174" fill="#202432" stroke="#f7c94b" stroke-width="4"/><path d="M600 270l42 86 95 14-69 67 16 95-84-45-84 45 16-95-69-67 95-14z" fill="url(#gold)"/><text x="600" y="115" fill="#f7c94b" font-family="Arial,sans-serif" font-size="54" font-weight="800" text-anchor="middle">TubeX</text><text x="600" y="700" fill="#f7c94b" font-family="Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle">CONQUISTA DESBLOQUEADA</text><text x="600" y="790" fill="#fff" font-family="Arial,sans-serif" font-size="58" font-weight="800" text-anchor="middle">${title}</text><text x="600" y="885" fill="#f7c94b" font-family="Arial,sans-serif" font-size="76" font-weight="800" text-anchor="middle">${value}</text><text x="600" y="970" fill="#d7d9e0" font-family="Arial,sans-serif" font-size="38" text-anchor="middle">${channel}</text><text x="600" y="1090" fill="#aeb3c2" font-family="Arial,sans-serif" font-size="26" text-anchor="middle">Sua evolução merece ser reconhecida · tubexai.com.br</text></svg>`;
+    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = "tubex-conquista.svg"; link.click(); URL.revokeObjectURL(url);
+  }
+
+  async function shareAchievementCard() {
+    if (!featuredAchievement || !data?.profile) return;
+    const message = `Conquista desbloqueada no TubeX! ${data.profile.channel_title}: ${featuredAchievement.title}. Minha evolução merece ser reconhecida!`;
+    try {
+      if (navigator.share) await navigator.share({ title: "Minha conquista TubeX", text: message, url: "https://tubexai.com.br" });
+      else { await navigator.clipboard.writeText(message); setNotice("Texto da conquista copiado para compartilhar!"); }
+    } catch (err: any) { if (err?.name !== "AbortError") setError("Não foi possível abrir o compartilhamento neste navegador."); }
+  }
 
   async function saveGoal(event: React.FormEvent) {
     event.preventDefault(); setSavingGoal(true); setError(""); setNotice("");
@@ -152,6 +186,32 @@ export default function AchievementsCenter({ user }: { user: any }) {
 
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600">{error}</div>}
     {notice && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700">{notice}</div>}
+
+    {featuredAchievement && data?.profile && <section className="tx-surface overflow-hidden rounded-3xl border border-[var(--tx-accent)]/40">
+      <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] lg:items-center lg:p-7">
+        <div>
+          <p className="tx-kicker flex items-center gap-2"><Sparkles size={14}/> Conquista em destaque</p>
+          <h2 className="mt-2 text-2xl font-black">Sua vitória merece ser compartilhada.</h2>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--tx-muted)]">Criamos um card oficial TubeX com sua conquista, seu canal e a marca que você alcançou. Baixe, compartilhe ou envie para seu e-mail para conferir como ele chega.</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button onClick={downloadAchievementCard} className="tx-btn tx-btn-primary"><Award size={15}/> Baixar card SVG</button>
+            <button onClick={shareAchievementCard} className="tx-btn"><RefreshCw size={15}/> Compartilhar</button>
+            <button onClick={sendTestAchievementEmail} disabled={sendingTestEmail} className="tx-btn disabled:opacity-50"><Mail size={15} className={sendingTestEmail ? "animate-pulse" : ""}/>{sendingTestEmail ? "Enviando..." : "Enviar conquista por e-mail"}</button>
+          </div>
+          <p className="mt-3 text-xs text-[var(--tx-muted)]">O e-mail de demonstração será enviado para o endereço cadastrado na sua conta TubeX.</p>
+        </div>
+        <div className="mx-auto w-full max-w-[390px] rounded-[28px] bg-[#171923] p-6 text-center text-white shadow-xl">
+          <div className="flex items-center justify-center gap-2 text-xl font-black tracking-tight"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f4c542] text-sm text-[#171923]">TX</span> Tube<span className="text-[#f4c542]">X</span></div>
+          <p className="mt-6 text-xs font-extrabold tracking-[.22em] text-[#f4c542]">CONQUISTA DESBLOQUEADA</p>
+          <div className="mx-auto mt-5 grid h-40 w-40 place-items-center rounded-full border-[7px] border-[#e8a92d] bg-[radial-gradient(circle,#ffda77,#ed9b2c)] shadow-[0_0_45px_rgba(244,197,66,.25)]"><Award size={76} className="text-[#60390e]"/></div>
+          <h3 className="mt-5 text-2xl font-black leading-tight">{featuredAchievement.title}</h3>
+          <p className="mt-2 text-4xl font-black text-[#f4c542]">{fmt(featuredAchievement.current_value)}</p>
+          <p className="mt-2 text-sm text-slate-300">{data.profile.channel_title}</p>
+          <div className="mt-6 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold text-slate-200">SUA EVOLUÇÃO MERECE SER RECONHECIDA</div>
+          <p className="mt-5 text-[10px] tracking-widest text-slate-400">TUBEXAI.COM.BR</p>
+        </div>
+      </div>
+    </section>}
     {!data?.profile && <section className="tx-surface rounded-2xl p-6"><div className="flex items-start gap-3"><Video className="mt-1 text-red-500"/><div><h2 className="text-lg font-black">Conecte seu canal do YouTube</h2><p className="mt-1 text-sm text-[var(--tx-muted)]">Para reconhecer suas conquistas automaticamente, autorize a leitura das estatísticas públicas do canal que você administra.</p><button onClick={sync} className="tx-btn tx-btn-primary mt-4">Conectar YouTube</button></div></div></section>}
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
