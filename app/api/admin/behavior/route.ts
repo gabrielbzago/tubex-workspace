@@ -1,383 +1,448 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { OWNER_EMAILS, effectivePlanFromRow, planRank } from "@/lib/tubex-plan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SEARCH_EVENTS = new Set(["search_submitted", "search_performed", "analysis_completed", "trend_search_completed"]);
-const BILLING_LABELS: Record<string, string> = {
-  pricing_viewed: "Planos visualizados",
-  upgrade_clicked: "Clique para assinar / abrir pagamentos",
-  checkout_started: "Checkout iniciado",
-  subscription_activated: "Assinatura confirmada",
-  subscription_cancelled: "Assinatura cancelada",
-  payment_failed: "Pagamento não concluído",
-  upgrade_prompt_viewed: "Viu aviso de upgrade",
-  upgrade_prompt_clicked: "Clicou no aviso de upgrade",
-  quota_exhausted: "Atingiu o limite do plano",
+const DAY = 86_400_000;
+const PAID_PLANS = new Set(["start", "member", "pro", "expert", "legend", "corporate"]);
+const VALID_STATUSES = new Set(["active", "approved", "trialing", "past_due"]);
+const OWNER_EMAILS = [
+  process.env.OWNER_EMAILS || "",
+  process.env.OWNER_EMAIL || "",
+  process.env.NEXT_PUBLIC_OWNER_EMAIL || "",
+  "gabrielbzago@gmail.com",
+].join(",").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
+
+const str = (v: any) => String(v ?? "").trim();
+const emailKey = (v: any) => str(v).toLowerCase();
+const ms = (v: any) => {
+  const n = Date.parse(str(v));
+  return Number.isFinite(n) ? n : 0;
 };
-const PAID = new Set(["start", "member", "pro", "expert"]);
-// Motivos do Stripe (cancellation_details.feedback / reason) em português.
-const CANCEL_LABELS: Record<string, string> = {
-  too_expensive: "Achou caro", missing_features: "Faltou recurso", switched_service: "Trocou por outra ferramenta",
-  unused: "Não estava usando", customer_service: "Atendimento", too_complex: "Difícil de usar",
-  low_quality: "Qualidade abaixo do esperado", other: "Outro motivo", cancellation_requested: "Pediu o cancelamento (sem motivo)",
-  payment_failed: "Pagamento falhou", payment_disputed: "Contestação de pagamento", subscription_expired: "Assinatura expirou",
+const iso = (v: any) => ms(v) ? new Date(ms(v)).toISOString() : null;
+const daysAgo = (v: any, now: number) => ms(v) ? Math.max(0, Math.floor((now - ms(v)) / DAY)) : null;
+const maxDate = (...values: any[]) => {
+  const valid = values.map(iso).filter(Boolean) as string[];
+  return valid.sort((a, b) => ms(b) - ms(a))[0] || null;
 };
-const MODULE_EVENTS = new Set([
-  "module_opened", "extension_action", "ui_action", "search_submitted", "search_performed", "search_failed",
-  "analysis_completed", "analysis_failed", "ai_generation_completed", "quota_exhausted", "competitor_analysis",
-  "competitor_analysis_started", "competitor_analysis_failed", "trend_search_completed", "trend_search_failed",
-  "summary_viewed", "creator_workspace_opened", "feature_used", "api_request_succeeded", "extension_started",
-  "youtube_opened", "session_started",
-]);
-const NON_PRODUCT_MODULES = new Set(["billing", "payments", "payment", "checkout", "subscription", "account", "affiliate", "support", "dashboard", "web_dashboard"]);
-const MODULE_ALIASES: Record<string, string> = {
-  trends: "keyword_trends", ai: "ai_legacy", keyword_labs: "keyword_explorer", seo_research: "seo_search",
-  content_seo: "seo_search", revenue: "revenue_insights", diagnosis: "diagnostics", diagnostic: "diagnostics",
-  video: "video_ai", extension_module: "extension",
+const minDate = (...values: any[]) => {
+  const valid = values.map(iso).filter(Boolean) as string[];
+  return valid.sort((a, b) => ms(a) - ms(b))[0] || null;
 };
-function inferModuleFromAction(value: unknown) {
-  const action = String(value || "").trim().toLowerCase();
-  if (!action) return null;
-  if (/checkout|upgrade|subscription|payment|billing|invoice|verificarplano|checksubscription|\bplan\b/.test(action)) return "billing";
-  if (/fetchseodata|seo.?search/.test(action)) return "seo_search";
-  if (/keyword|suggestion|searchyoutube|searchkeyword/.test(action)) return "keyword_explorer";
-  if (/trend/.test(action)) return "keyword_trends";
-  if (/outlier/.test(action)) return "outliers";
-  if (/competitor|radar/.test(action)) return "competitor_radar";
-  if (/creator|calendar|workspace|channelstats|channelviews|quickstats/.test(action)) return "creator_workspace";
-  if (/diagnostic/.test(action)) return "diagnostics";
-  if (/chat/.test(action)) return "chat_ai";
-  if (/thumbnail/.test(action)) return "thumbnail_ai";
-  if (/description/.test(action)) return "description_ai";
-  if (/title/.test(action)) return "title_ai";
-  if (/tag/.test(action)) return "tags_editor";
-  if (/video.?optim|optimizer/.test(action)) return "video_optimizer";
-  if (/revenue|receipt|faturamento/.test(action)) return "revenue_insights";
-  if (/summary/.test(action)) return "summary";
-  if (/insight|channelvideos|channelidentity|executaria|gerartextoia/.test(action)) return "intelligence";
-  if (/seo/.test(action)) return "seo_explorer";
+const displayName = (row: any, auth: any) =>
+  str(row?.name || row?.full_name || auth?.user_metadata?.full_name || auth?.user_metadata?.name || auth?.email?.split("@")[0] || row?.email || "Sem nome");
+
+async function getOwner(request: Request) {
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  const user = data?.user;
+  if (error || !user?.id || !user.email) return null;
+
+  const email = emailKey(user.email);
+  if (OWNER_EMAILS.includes(email)) return user;
+  const role = str(user.app_metadata?.role || user.app_metadata?.user_role).toLowerCase();
+  if (["owner", "admin", "administrator"].includes(role)) return user;
+
+  const { data: row, error: rowError } = await supabaseAdmin
+    .from("users").select("*").eq("id", user.id).maybeSingle();
+  if (rowError) console.warn("[admin behavior] owner lookup by id:", rowError.message);
+  const roles = [row?.plan, row?.role, row?.user_role, row?.account_role].map((v) => str(v).toLowerCase());
+  if (roles.some((v) => ["owner", "admin", "administrator"].includes(v)) || row?.is_owner === true || row?.is_admin === true) return user;
+
+  const { data: byEmail, error: emailError } = await supabaseAdmin
+    .from("users").select("*").ilike("email", email).maybeSingle();
+  if (emailError) console.warn("[admin behavior] owner lookup by email:", emailError.message);
+  const emailRoles = [byEmail?.plan, byEmail?.role, byEmail?.user_role, byEmail?.account_role].map((v) => str(v).toLowerCase());
+  if (emailRoles.some((v) => ["owner", "admin", "administrator"].includes(v)) || byEmail?.is_owner === true || byEmail?.is_admin === true) return user;
   return null;
 }
-function productModule(event: any) {
-  const raw = String(event.module || "").trim().toLowerCase();
-  const inferred = inferModuleFromAction(event.properties?.action || event.properties?.endpoint || event.properties?.feature);
-  const key = (inferred && (["", "extension", "system", "youtube"].includes(raw) || event.event_name === "api_request_succeeded"))
-    ? inferred
-    : MODULE_ALIASES[raw] || raw || inferred || "extension";
-  const context = [raw, event.properties?.action, event.properties?.endpoint, event.properties?.feature].join(" ").toLowerCase();
-  const billing = /billing|payment|checkout|subscription|invoice|verificarplano|checksubscription/.test(context);
-  return { key: event.event_name === "session_started" || event.event_name === "extension_started" ? (inferred || "extension") : key, billing };
+
+async function fetchAll(table: string, columns = "*", pageSize = 1000, maxRows = 50000) {
+  const rows: any[] = [];
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const { data, error } = await (supabaseAdmin as any).from(table).select(columns).range(from, from + pageSize - 1);
+    if (error) {
+      console.warn(`[admin behavior] ${table} unavailable:`, error.message);
+      return rows;
+    }
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
 }
-const LABELS: Record<string, string> = {
-  seo_search: "SEO de Pesquisa", seo_explorer: "SEO Explorer", keyword_explorer: "Keyword Explorer",
-  keyword_trends: "Tendências de Palavras-chave", competitor_radar: "Radar de Concorrentes",
-  creator_workspace: "Creator Workspace", outliers: "Detector de Outliers", summary: "Resumo do Canal",
-  video_optimizer: "Otimizador de Vídeos", video_ai: "IA para Vídeos", video_list_ai: "IA de Lista de Vídeos",
-  title_ai: "IA de Títulos", description_ai: "IA de Descrições", thumbnail_ai: "IA de Thumbnails",
-  tags_editor: "Editor de Tags", intelligence: "Inteligência TubeX", billing: "Assinaturas e Pagamentos",
-  extension: "Extensão TubeX", system: "Sistema", ai_legacy: "IA (módulo não identificado)",
-};
-const label = (key: string) => LABELS[key] || key.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Recurso não identificado";
-const iso = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+
+async function fetchAuthUsers() {
+  const users: any[] = [];
+  for (let page = 1; page <= 100; page++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) {
+      console.warn("[admin behavior] Auth users unavailable:", error.message);
+      break;
+    }
+    const batch = data?.users || [];
+    users.push(...batch);
+    if (batch.length < 1000) break;
+  }
+  return users;
+}
+
+function normalizePlan(value: any) {
+  const plan = str(value || "free").toLowerCase();
+  if (plan === "basic" || plan === "starter") return "start";
+  if (plan === "legend" || plan === "corporate") return "expert";
+  return plan || "free";
+}
+function moduleLabel(value: string) {
+  const labels: Record<string, string> = {
+    seo_explorer: "SEO Explorer", seo_search: "SEO de Pesquisa", dashboard: "Dashboard",
+    creator_workspace: "Área do Criador", billing: "Planos e pagamentos", keyword: "Palavras-chave",
+    keyword_explorer: "Keyword Explorer", analytics: "Analytics", ai: "Inteligência Artificial",
+    video_editor: "Editor de vídeo", title_ai: "Gerador de títulos", thumbnail_ai: "Gerador de thumbnails",
+    tags_editor: "Editor de tags", description_ai: "Gerador de descrição",
+  };
+  return labels[value] || value.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+function eventLabel(name: string) {
+  const labels: Record<string, string> = {
+    login_success: "Login realizado", module_opened: "Módulo aberto", upgrade_clicked: "Clique em upgrade",
+    checkout_started: "Checkout iniciado", checkout_start: "Checkout iniciado",
+    subscription_created: "Assinatura criada", subscription_canceled: "Assinatura cancelada",
+    payment_failed: "Pagamento recusado", quota_limit_reached: "Limite atingido",
+  };
+  return labels[name] || name.replace(/[_-]+/g, " ");
+}
 
 export async function GET(request: Request) {
-  const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data.user?.email) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const ownerEmail = String(process.env.OWNER_EMAIL || process.env.NEXT_PUBLIC_OWNER_EMAIL || "gabrielbzago@gmail.com").toLowerCase();
-  if (data.user.email.toLowerCase() !== ownerEmail) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  const requestedSegment = new URL(request.url).searchParams.get("segment");
-  const segment = requestedSegment === "free" ? "free" : "subscribers";
+  const owner = await getOwner(request);
+  if (!owner) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  try {
-    const [usersResult, firstEventsResult, installationsResult] = await Promise.all([
-      supabaseAdmin.from("users").select("id,email,name,plan,status,stripe_subscription_id,stripe_customer_id"),
-      supabaseAdmin.from("tubex_events").select("id,user_id,install_id,event_name,module,properties,session_id,created_at", { count: "exact" }).order("created_at", { ascending: true }).order("id", { ascending: true }).range(0, 999),
-      supabaseAdmin.from("tubex_installations").select("install_id,user_id,email,name"),
-    ]);
-    if (firstEventsResult.error) throw firstEventsResult.error;
-    if (usersResult.error) throw usersResult.error;
-    const users = usersResult.data || [];
-    const events: any[] = [...(firstEventsResult.data || [])];
-    const totalEvents = firstEventsResult.count || events.length;
-    for (let base = 1000; base < totalEvents; base += 10000) {
-      const pages = await Promise.all(Array.from({ length: Math.min(10, Math.ceil((totalEvents - base) / 1000)) }, (_, page) => {
-        const start = base + page * 1000;
-        return supabaseAdmin.from("tubex_events").select("id,user_id,install_id,event_name,module,properties,session_id,created_at").order("created_at", { ascending: true }).order("id", { ascending: true }).range(start, Math.min(start + 999, totalEvents - 1));
-      }));
-      for (const page of pages) {
-        if (page.error) throw page.error;
-        events.push(...(page.data || []));
-      }
-    }
-    const authUsers: any[] = [];
-    for (let page = 1; page <= 50; page++) {
-      const result = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
-      if (result.error) throw result.error;
-      authUsers.push(...result.data.users);
-      if (result.data.users.length < 1000) break;
-    }
-    const authById = new Map(authUsers.map((user: any) => [user.id, user]));
-    const authByEmail = new Map(authUsers.filter((user: any) => user.email).map((user: any) => [String(user.email).toLowerCase(), user]));
-    const installations = installationsResult.data || [];
-    const usersById = new Map(users.map((user: any) => [user.id, user]));
-    const usersByEmail = new Map(users.filter((user: any) => user.email).map((user: any) => [String(user.email).toLowerCase(), user]));
-    const installToUser = new Map<string, string>();
-    const installationsById = new Map((installations as any[]).map((install) => [install.install_id, install]));
-    for (const install of installations as any[]) {
-      const user: any = (install.user_id && usersById.get(install.user_id)) || (install.email && usersByEmail.get(String(install.email).toLowerCase()));
-      const authUser: any = (install.user_id && authById.get(install.user_id)) || (install.email && authByEmail.get(String(install.email).toLowerCase()));
-      const emailKey = install.email ? `email:${String(install.email).trim().toLowerCase()}` : null;
-      if (authUser?.id || user?.id || emailKey) installToUser.set(install.install_id, authUser?.id || user?.id || emailKey!);
-    }
-    const now = Date.now();
-    const recentCutoff = now - 30 * 86400000;
-    const accounts = new Map<string, any>();
-    const accountFor = (userId: string, identity?: { email?: string | null; name?: string | null }) => {
-      const emailKey = userId.startsWith("email:") ? userId.slice(6).toLowerCase() : String(identity?.email || "").trim().toLowerCase();
-      const directAuth: any = authById.get(userId);
-      const user: any = usersById.get(userId) || (directAuth?.email ? usersByEmail.get(String(directAuth.email).toLowerCase()) : null) || (emailKey ? usersByEmail.get(emailKey) : null);
-      const authUser: any = directAuth || (user?.email ? authByEmail.get(String(user.email).toLowerCase()) : null) || (emailKey ? authByEmail.get(emailKey) : null);
-      if (!user && !authUser && !emailKey) return null;
-      const accountId = authUser?.id || user?.id || (emailKey ? `email:${emailKey}` : userId);
-      const addEmails = (target: any) => {
-        for (const value of [user?.email, authUser?.email, emailKey, identity?.email, authUser?.user_metadata?.email, ...((authUser?.identities || []).map((item: any) => item?.identity_data?.email))]) {
-          const email = String(value || "").trim().toLowerCase();
-          if (email) target.emails.add(email);
-        }
-      };
-      if (accounts.has(accountId)) {
-        const existing = accounts.get(accountId);
-        if (user) {
-          existing.name = user.name || existing.name;
-          existing.email = user.email || existing.email;
-          existing.plan = user.plan || existing.plan;
-          existing.accountStatus = user.status || existing.accountStatus;
-          existing.subscriptionId = user.stripe_subscription_id || existing.subscriptionId;
-        }
-        if (authUser) { existing.authUser = authUser; existing.createdAt = authUser.created_at || existing.createdAt; }
-        addEmails(existing);
-        return existing;
-      }
-      const row = {
-        id: accountId,
-        name: user?.name || authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || identity?.name || user?.email || authUser?.email || identity?.email || "Conta",
-        email: user?.email || authUser?.email || identity?.email || emailKey || "", plan: user?.plan || "free",
-        authUser,
-        createdAt: authUser?.created_at || null,
-        accountStatus: user?.status || "unknown", subscriptionId: user?.stripe_subscription_id || null,
-        firstLoginAt: null as string | null, lastLoginAt: null as string | null, lastActivityAt: null as string | null,
-        lastResource: null as string | null, loginMoments: [] as number[],
-        sessionMap: new Map<string, { id: string; startedAt: string; lastActivityAt: string; actions: number; modules: Map<string, number> }>(),
-        activeDays: new Set<string>(), activeDays30: new Set<string>(), searchCount: 0, totalActions: 0, actions30: 0, moduleMap: new Map<string, { name: string; count: number; lastUsedAt: string }>(),
-        subscribedAt: null as string | null, canceledAt: null as string | null, cancelReason: null as string | null,
-        lastSubscriptionEvent: null as "activated" | "canceled" | null,
-        cancelCode: null as string | null, cancelComment: null as string | null,
-        emails: new Set<string>(),
-        quotaHits: 0, quotaHits30: 0, lastQuotaAt: null as string | null, quotaFeatures: new Map<string, number>(),
-        upgradeClicks: 0, upgradeClicks30: 0, checkoutStarts: 0, checkoutStarts30: 0, pricingViews30: 0, promptViews30: 0, paymentFailures: 0,
-        preSubscribeQuotaHits: 0, preSubscribeModules: new Map<string, number>(),
-        paymentJourney: [] as Array<{ eventName: string; label: string; at: string; plan: string | null; source: string | null }>,
-      };
-      addEmails(row);
-      accounts.set(accountId, row);
-      return row;
-    };
-    for (const user of users as any[]) accountFor(user.id);
-    for (const authUser of authUsers as any[]) accountFor(authUser.id);
-    for (const install of installations as any[]) {
-      const email = install.email ? String(install.email).trim().toLowerCase() : "";
-      const user: any = (install.user_id && usersById.get(install.user_id)) || (email ? usersByEmail.get(email) : null);
-      const authUser: any = (install.user_id && authById.get(install.user_id)) || (email ? authByEmail.get(email) : null);
-      const accountId = authUser?.id || user?.id || (email ? `email:${email}` : null);
-      if (accountId) accountFor(accountId, { email: email || null, name: install.name || null });
-    }
-    for (const event of events as any[]) {
-      const installation: any = installationsById.get(event.install_id);
-      const installationIdentity = installation ? { email: installation.email, name: installation.name } : undefined;
-      const linkedInstallUserId = installToUser.get(event.install_id);
-      const account = (event.user_id ? accountFor(event.user_id, installationIdentity) : null)
-        || (linkedInstallUserId ? accountFor(linkedInstallUserId, installationIdentity) : null);
-      if (!account) continue;
-      const at = iso(event.created_at);
-      if (!at) continue;
-      const eventName = String(event.event_name || "");
-      const eventMs = Date.parse(at);
-      const recent = eventMs >= recentCutoff;
-      if (eventName === "quota_exhausted") {
-        account.quotaHits++;
-        if (recent) account.quotaHits30++;
-        account.lastQuotaAt = at;
-        const feature = label(String(event.properties?.feature || productModule(event).key || "recurso"));
-        account.quotaFeatures.set(feature, (account.quotaFeatures.get(feature) || 0) + 1);
-        if (account.lastSubscriptionEvent !== "activated") account.preSubscribeQuotaHits++;
-      }
-      if (eventName === "upgrade_clicked" || eventName === "upgrade_prompt_clicked") { account.upgradeClicks++; if (recent) account.upgradeClicks30++; }
-      if (eventName === "checkout_started") { account.checkoutStarts++; if (recent) account.checkoutStarts30++; }
-      if (eventName === "pricing_viewed" && recent) account.pricingViews30++;
-      if (eventName === "upgrade_prompt_viewed" && recent) account.promptViews30++;
-      if (eventName === "payment_failed") account.paymentFailures++;
-      if (BILLING_LABELS[eventName]) {
-        account.paymentJourney.push({
-          eventName,
-          label: BILLING_LABELS[eventName],
-          at,
-          plan: event.properties?.plan ? String(event.properties.plan) : null,
-          source: event.properties?.source ? String(event.properties.source) : null,
-        });
-      }
-      if (event.event_name === "login_success") {
-        const loginTime = Date.parse(at);
-        const previousLogin = account.loginMoments[account.loginMoments.length - 1];
-        // The web app and extension can both report the same sign-in. Collapse
-        // duplicate reports within two minutes into one authentication.
-        if (previousLogin === undefined || loginTime - previousLogin > 120000) account.loginMoments.push(loginTime);
-        else account.loginMoments[account.loginMoments.length - 1] = loginTime;
-        continue;
-      }
-      if (event.event_name === "subscription_activated") {
-        account.subscribedAt = at;
-        account.lastSubscriptionEvent = "activated";
-        account.canceledAt = null;
-        account.cancelReason = null;
-        account.cancelCode = null;
-        account.cancelComment = null;
-      }
-      if (event.event_name === "subscription_cancelled") {
-        account.canceledAt = at;
-        account.lastSubscriptionEvent = "canceled";
-        account.cancelReason = [event.properties?.reason, event.properties?.feedback, event.properties?.comment]
-          .map((value) => String(value || "").trim()).filter((value) => value && value !== "not_provided").map((value) => CANCEL_LABELS[value] || value).join(" · ") || "Motivo não informado";
-        const feedback = String(event.properties?.feedback || "").trim();
-        const reason = String(event.properties?.reason || "").trim();
-        account.cancelCode = feedback && feedback !== "not_provided" ? feedback : reason && reason !== "not_provided" ? reason : "not_provided";
-        const comment = String(event.properties?.comment || "").trim();
-        account.cancelComment = comment || null;
-      }
-      const { key: moduleKey, billing } = productModule(event);
-      if (!MODULE_EVENTS.has(event.event_name) || billing || NON_PRODUCT_MODULES.has(moduleKey) || /billing|payment|checkout|subscription|invoice/.test(moduleKey)) continue;
+  const url = new URL(request.url);
+  const segment = url.searchParams.get("segment") === "free" ? "free" : "subscribers";
+  const now = Date.now();
+  const cutoff30 = now - 30 * DAY;
+  const cutoff7 = now - 7 * DAY;
 
-      account.lastActivityAt = at;
-      account.totalActions++;
-      account.activeDays.add(at.slice(0, 10));
-      if (Date.parse(at) >= recentCutoff) { account.activeDays30.add(at.slice(0, 10)); account.actions30++; }
-      // Access token IDs persist across several days, so the activity view is
-      // intentionally grouped by calendar day, independently of login count.
-      const sessionKey = `day:${at.slice(0, 10)}`;
-      const session = account.sessionMap.get(sessionKey) || { id: `Dia ${at.slice(0, 10)}`, startedAt: at, lastActivityAt: at, actions: 0, modules: new Map<string, number>() };
-      session.lastActivityAt = at;
-      session.actions++;
-      if (SEARCH_EVENTS.has(event.event_name)) account.searchCount++;
-      const moduleRow = account.moduleMap.get(moduleKey) || { name: label(moduleKey), count: 0, lastUsedAt: at };
-      moduleRow.count++;
-      moduleRow.lastUsedAt = at;
-      account.moduleMap.set(moduleKey, moduleRow);
-      session.modules.set(moduleKey, (session.modules.get(moduleKey) || 0) + 1);
-      account.lastResource = moduleRow.name;
-      if (account.lastSubscriptionEvent !== "activated" && !account.subscribedAt) account.preSubscribeModules.set(moduleRow.name, (account.preSubscribeModules.get(moduleRow.name) || 0) + 1);
-      account.sessionMap.set(sessionKey, session);
+  // A base é reconstruída a partir de users + Auth. Não depende de eventos recentes.
+  const [userRows, authUsers, eventRows, installations, referrals, sales] = await Promise.all([
+    fetchAll("users", "*"),
+    fetchAuthUsers(),
+    fetchAll("tubex_events", "id,user_id,install_id,session_id,event_name,module,properties,created_at"),
+    fetchAll("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen"),
+    fetchAll("affiliate_referrals", "id,referred_email,referred_name,plan,status,stripe_subscription_id,updated_at,created_at"),
+    fetchAll("affiliate_sales", "id,customer_email,customer_name,plan,status,stripe_subscription_id,last_payment_date,created_at"),
+  ]);
+
+  type Bucket = { key: string; email: string; emails: Set<string>; ids: Set<string>; row: any; auth: any; installs: any[]; events: any[]; referrals: any[]; sales: any[] };
+  const buckets = new Map<string, Bucket>();
+  const idToKey = new Map<string, string>();
+  const emailToKey = new Map<string, string>();
+  const installToKey = new Map<string, string>();
+
+  const ensure = (emailValue: any, idValue?: any) => {
+    const email = emailKey(emailValue);
+    const id = str(idValue);
+    // Um usuário pode entrar no site com um e-mail e na extensão com outro.
+    // Quando o user_id autenticado coincide, os dois e-mails pertencem à mesma conta.
+    const key = (id && idToKey.get(id)) || (email && emailToKey.get(email)) ||
+      (email ? `email:${email}` : id ? `id:${id}` : "");
+    if (!key) return null;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, email, emails: new Set(), ids: new Set(), row: null, auth: null, installs: [], events: [], referrals: [], sales: [] };
+      buckets.set(key, bucket);
     }
-    const rows = [...accounts.values()].map((account: any) => {
-      const lastActivityMs = account.lastActivityAt ? Date.parse(account.lastActivityAt) : 0;
-      const daysSinceActivity = lastActivityMs ? Math.floor((now - lastActivityMs) / 86400000) : null;
-      // Plano efetivo: mesma regra do site/extensão. Todos os e-mails da conta são
-      // consultados e o melhor plano vence (plano pago só com status válido).
-      let plan = "free";
-      let billingStatus = String(account.accountStatus || "unknown").toLowerCase();
-      let subscriptionId = account.subscriptionId;
-      let hadPaidRow = false;
-      for (const email of account.emails as Set<string>) {
-        if (OWNER_EMAILS.has(email)) { plan = "owner"; billingStatus = "active"; continue; }
-        const row: any = usersByEmail.get(email);
-        if (!row) continue;
-        if (row.stripe_subscription_id) hadPaidRow = true;
-        const effective = effectivePlanFromRow(row);
-        if (planRank(effective.plan) > planRank(plan)) { plan = effective.plan; billingStatus = effective.status || billingStatus; subscriptionId = row.stripe_subscription_id || subscriptionId; }
-      }
-      const currentSubscriber = PAID.has(plan);
-      const pastDue = currentSubscriber && billingStatus === "past_due";
-      const canceled = !currentSubscriber && (account.lastSubscriptionEvent === "canceled" || ["canceled", "cancelled"].includes(billingStatus) || (billingStatus === "inactive" && Boolean(subscriptionId || hadPaidRow)));
-      const isSubscriber = currentSubscriber || canceled || Boolean(account.subscribedAt);
-      const engaged = daysSinceActivity !== null && daysSinceActivity <= 14 && account.activeDays30.size >= 2;
-      const usedLast30 = daysSinceActivity !== null && daysSinceActivity <= 30;
+    if (email) {
+      bucket.emails.add(email);
+      emailToKey.set(email, key);
+      if (!bucket.email) bucket.email = email;
+    }
+    if (id) { bucket.ids.add(id); idToKey.set(id, key); }
+    return bucket;
+  };
 
-      // Status com o porquê. Cada regra vira um motivo legível no painel.
-      const reasons: string[] = [];
-      let status: "active" | "at_risk" | "inactive" | "canceled";
-      if (canceled) {
-        status = "canceled";
-        reasons.push(account.canceledAt ? `Cancelou em ${account.canceledAt.slice(0, 10)}` : "Assinatura encerrada no Stripe");
-      } else if (engaged && !pastDue) {
-        status = "active";
-        reasons.push(`${account.activeDays30.size} dias com uso nos últimos 30`, `Último uso há ${daysSinceActivity} dia(s)`);
-      } else if (usedLast30 || pastDue) {
-        status = "at_risk";
-        if (pastDue) reasons.push("Pagamento pendente (past_due)");
-        if (daysSinceActivity !== null && daysSinceActivity > 14) reasons.push(`Sem uso há ${daysSinceActivity} dias`);
-        if (account.activeDays30.size < 2) reasons.push(`Só ${account.activeDays30.size} dia com uso em 30`);
-        if (!reasons.length) reasons.push("Uso abaixo do padrão de conta ativa");
-      } else {
-        status = "inactive";
-        reasons.push(daysSinceActivity === null ? "Nenhum uso de recurso registrado" : `Sem uso há ${daysSinceActivity} dias`);
-      }
-
-      // Probabilidade de assinar (só para quem não assina hoje).
-      const factors: Array<{ label: string; points: number }> = [];
-      if (!currentSubscriber) {
-        if (account.quotaHits30 > 0) factors.push({ label: `Bateu o limite ${account.quotaHits30}x em 30 dias`, points: account.quotaHits30 >= 3 ? 35 : 25 });
-        if (account.checkoutStarts30 > 0) factors.push({ label: "Abriu o checkout e não concluiu", points: 25 });
-        else if (account.checkoutStarts > 0) factors.push({ label: "Já abriu o checkout antes", points: 10 });
-        if (account.upgradeClicks30 > 0) factors.push({ label: `Clicou em assinar ${account.upgradeClicks30}x`, points: 15 });
-        if (account.pricingViews30 + account.promptViews30 > 0) factors.push({ label: "Viu planos ou aviso de upgrade", points: 5 });
-        if (account.activeDays30.size >= 5) factors.push({ label: `${account.activeDays30.size} dias ativos em 30`, points: 15 });
-        else if (account.activeDays30.size >= 2) factors.push({ label: `${account.activeDays30.size} dias ativos em 30`, points: 8 });
-        if (account.actions30 >= 30) factors.push({ label: `${account.actions30} ações em 30 dias`, points: 10 });
-        if (daysSinceActivity !== null && daysSinceActivity <= 7) factors.push({ label: "Usou nos últimos 7 dias", points: 5 });
-        if (canceled) factors.push({ label: "Já foi assinante", points: 5 });
-        if (daysSinceActivity === null || daysSinceActivity > 30) factors.push({ label: "Sem uso há mais de 30 dias", points: -20 });
-      }
-      const propensity = Math.max(0, Math.min(100, factors.reduce((sum, factor) => sum + factor.points, 0)));
-      const propensityTier = currentSubscriber ? null : propensity >= 60 ? "hot" : propensity >= 30 ? "warm" : "cold";
-      const preModules = [...account.preSubscribeModules.entries()].sort((a: any, b: any) => b[1] - a[1]);
-      const modules = [...account.moduleMap.entries()].map(([key, value]: any) => ({ key, ...value })).sort((a: any, b: any) => b.count - a.count);
-      const authUser: any = account.authUser;
-      account.loginCount = account.loginMoments.length;
-      account.firstLoginAt = account.loginMoments.length ? new Date(account.loginMoments[0]).toISOString() : null;
-      account.lastLoginAt = account.loginMoments.length ? new Date(account.loginMoments[account.loginMoments.length - 1]).toISOString() : null;
-      const lastLoginAt = account.lastLoginAt || iso(authUser?.last_sign_in_at);
-      const returned = account.activeDays.size > 1;
-      const returnCount = Math.max(0, account.activeDays.size - 1);
-      const highUse = account.activeDays30.size >= 8 || account.actions30 >= 30;
-      return {
-        id: account.id, name: account.name, email: account.email, plan, billingStatus, status, statusReasons: reasons, createdAt: account.createdAt,
-        isSubscriber, currentSubscriber, formerSubscriber: isSubscriber && !currentSubscriber,
-        linkedEmails: (account.emails as Set<string>).size,
-        subscribedAt: account.subscribedAt, canceledAt: account.canceledAt, cancelReason: account.cancelReason,
-        cancelCode: account.cancelCode, cancelLabel: account.cancelCode ? (CANCEL_LABELS[account.cancelCode] || (account.cancelCode === "not_provided" ? "Motivo não informado" : account.cancelCode)) : null, cancelComment: account.cancelComment,
-        quotaHits: account.quotaHits, quotaHits30: account.quotaHits30, lastQuotaAt: account.lastQuotaAt,
-        quotaFeatures: [...account.quotaFeatures.entries()].map(([name, count]: any) => ({ name, count })).sort((a: any, b: any) => b.count - a.count),
-        upgradeClicks: account.upgradeClicks, checkoutStarts: account.checkoutStarts, paymentFailures: account.paymentFailures,
-        propensity, propensityTier, propensityFactors: factors,
-        subscribeDrivers: { quotaHitsBefore: account.preSubscribeQuotaHits, topModules: preModules.slice(0, 3).map(([name, count]: any) => ({ name, count })) },
-        daysSinceActivity,
-        firstLoginAt: account.firstLoginAt, lastLoginAt, lastActivityAt: account.lastActivityAt,
-        lastResource: account.lastResource, loginCount: account.loginCount, returned,
-        returnCount, activeDays: account.activeDays.size, activeDays30: account.activeDays30.size,
-        searchCount: account.searchCount, totalActions: account.totalActions, actions30: account.actions30, highUse, modules,
-        sessions: [...account.sessionMap.values()].map((session: any) => ({
-          id: session.id, startedAt: session.startedAt, lastActivityAt: session.lastActivityAt, actions: session.actions,
-          modules: [...session.modules.entries()].map(([key, count]) => ({ name: label(key), count })),
-        })).sort((a: any, b: any) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt)).slice(0, 30),
-        paymentJourney: account.paymentJourney.slice(-100).reverse(),
-      };
-    }).filter((account: any) => account.plan !== "owner" && (segment === "subscribers" ? account.isSubscriber : !account.currentSubscriber)).sort((a: any, b: any) => (Date.parse(b.lastActivityAt || "") || 0) - (Date.parse(a.lastActivityAt || "") || 0));
-    return NextResponse.json({ accounts: rows, eventCount: totalEvents, segment }, { headers: { "Cache-Control": "no-store" } });
-  } catch (error: any) {
-    console.error("[TubeX subscriber behavior]", error?.message || error);
-    return NextResponse.json({ error: "behavior_unavailable" }, { status: 503 });
+  for (const auth of authUsers) {
+    const bucket = ensure(auth.email, auth.id);
+    if (!bucket) continue;
+    bucket.auth = auth;
+    if (auth.id) idToKey.set(String(auth.id), bucket.key);
   }
+  for (const row of userRows) {
+    const bucket = ensure(row.email, row.id);
+    if (!bucket) continue;
+    // Keep the richest existing users row if duplicate e-mails exist.
+    if (!bucket.row || (normalizePlan(row.plan) !== "free" && normalizePlan(bucket.row.plan) === "free")) bucket.row = row;
+    if (row.id) idToKey.set(String(row.id), bucket.key);
+  }
+  for (const install of installations) {
+    const bucket = ensure(install.email, install.user_id);
+    if (!bucket) continue;
+    bucket.installs.push(install);
+    installToKey.set(String(install.install_id), bucket.key);
+  }
+  for (const referral of referrals) {
+    const bucket = ensure(referral.referred_email);
+    if (bucket) bucket.referrals.push(referral);
+  }
+  for (const sale of sales) {
+    const bucket = ensure(sale.customer_email);
+    if (bucket) bucket.sales.push(sale);
+  }
+  for (const event of eventRows) {
+    const props = event.properties && typeof event.properties === "object" ? event.properties : {};
+    const key = (event.user_id && idToKey.get(String(event.user_id))) ||
+      (event.install_id && installToKey.get(String(event.install_id))) ||
+      (props.email && emailToKey.get(emailKey(props.email))) ||
+      (String(event.install_id || "").startsWith("web-") && idToKey.get(String(event.install_id).slice(4)));
+    if (key) buckets.get(key)?.events.push(event);
+  }
+
+  const accounts = [];
+  let legacyAccounts = 0;
+  let accountsWithoutEvents = 0;
+
+  for (const bucket of buckets.values()) {
+    const row = bucket.row || {};
+    const auth = bucket.auth || null;
+    const email = bucket.email || emailKey(auth?.email);
+    if (!email) continue;
+
+    const rawPlan = normalizePlan(row.plan);
+    const rowStatus = str(row.status || "").toLowerCase();
+    const stripeSubId = str(row.stripe_subscription_id);
+    const stripeCustomerId = str(row.stripe_customer_id);
+    const referralHistory = bucket.referrals.length > 0;
+    const salesHistory = bucket.sales.length > 0;
+    const activeReferral = [...bucket.referrals]
+      .filter((x) => str(x.status).toLowerCase() === "active" && PAID_PLANS.has(normalizePlan(x.plan)))
+      .sort((a, b) => ms(b.updated_at || b.created_at) - ms(a.updated_at || a.created_at))[0];
+    const historicPlan = normalizePlan(
+      [...bucket.referrals, ...bucket.sales]
+        .sort((a, b) => ms(b.updated_at || b.last_payment_date || b.created_at) - ms(a.updated_at || a.last_payment_date || a.created_at))
+        .find((x) => PAID_PLANS.has(normalizePlan(x.plan)))?.plan || rawPlan
+    );
+    const effectivePlan = PAID_PLANS.has(rawPlan) ? rawPlan : normalizePlan(activeReferral?.plan);
+    const billingStatus = rowStatus || str(activeReferral?.status || "unknown").toLowerCase();
+    const currentSubscriber = PAID_PLANS.has(effectivePlan) &&
+      (VALID_STATUSES.has(billingStatus) || (!rowStatus && Boolean(stripeSubId || activeReferral)));
+    const formerSubscriber = !currentSubscriber && (
+      Boolean(stripeSubId || stripeCustomerId) || referralHistory || salesHistory ||
+      (PAID_PLANS.has(rawPlan) && ["canceled", "cancelled", "inactive", "expired"].includes(billingStatus))
+    );
+    const isSubscriber = currentSubscriber || formerSubscriber;
+    const plan = currentSubscriber ? effectivePlan : formerSubscriber ? (PAID_PLANS.has(historicPlan) ? historicPlan : "assinante anterior") : "free";
+
+    const events = bucket.events.sort((a, b) => ms(a.created_at) - ms(b.created_at));
+    const resourceEvents = events.filter((e) => !["login_success", "logout", "session_started"].includes(str(e.event_name).toLowerCase()));
+    const loginEvents = events.filter((e) => /login_success|auth_login/i.test(str(e.event_name)));
+    const usage30 = resourceEvents.filter((e) => ms(e.created_at) >= cutoff30);
+    const usage7 = resourceEvents.filter((e) => ms(e.created_at) >= cutoff7);
+    const moduleMap = new Map<string, { key: string; name: string; count: number; lastUsedAt: string }>();
+    for (const event of resourceEvents) {
+      const key = str(event.module || event.event_name || "outro");
+      const current = moduleMap.get(key) || { key, name: moduleLabel(key), count: 0, lastUsedAt: str(event.created_at) };
+      current.count += 1;
+      if (ms(event.created_at) > ms(current.lastUsedAt)) current.lastUsedAt = str(event.created_at);
+      moduleMap.set(key, current);
+    }
+    const modules = [...moduleMap.values()].sort((a, b) => b.count - a.count);
+    const days = [...new Set(resourceEvents.map((e) => str(e.created_at).slice(0, 10)).filter(Boolean))];
+    const days30 = [...new Set(usage30.map((e) => str(e.created_at).slice(0, 10)).filter(Boolean))];
+    const sessionsMap = new Map<string, any[]>();
+    for (const event of resourceEvents) {
+      const sessionKey = str(event.session_id || `day:${str(event.created_at).slice(0, 10)}`);
+      if (!sessionsMap.has(sessionKey)) sessionsMap.set(sessionKey, []);
+      sessionsMap.get(sessionKey)!.push(event);
+    }
+    const sessions = [...sessionsMap.entries()].map(([id, items]) => ({
+      id,
+      startedAt: minDate(...items.map((x) => x.created_at)),
+      lastActivityAt: maxDate(...items.map((x) => x.created_at)),
+      actions: items.length,
+      modules: [...new Set(items.map((x) => str(x.module || x.event_name)))].map((name) => ({
+        name: moduleLabel(name),
+        count: items.filter((x) => str(x.module || x.event_name) === name).length,
+      })),
+    })).sort((a, b) => ms(b.lastActivityAt) - ms(a.lastActivityAt));
+
+    const quotaEvents = events.filter((e) => /quota|limit_reached|limit_hit|usage_limit/i.test(str(e.event_name)));
+    const quotaMap = new Map<string, number>();
+    for (const event of quotaEvents) {
+      const props = event.properties || {};
+      const feature = str(props.feature || props.resource || event.module || "Limite do plano");
+      quotaMap.set(feature, (quotaMap.get(feature) || 0) + 1);
+    }
+    const upgradeEvents = events.filter((e) => /upgrade_clicked|upgrade_cta_clicked|subscribe_clicked/i.test(str(e.event_name)));
+    const checkoutEvents = events.filter((e) => /checkout_started|checkout_start|checkout_opened/i.test(str(e.event_name)));
+    const paymentFailures = events.filter((e) => /payment_failed|invoice_payment_failed/i.test(str(e.event_name))).length;
+    const paymentEvents = events.filter((e) => /checkout|payment|subscription|invoice|cancel/i.test(str(e.event_name)))
+      .map((e) => ({
+        eventName: str(e.event_name),
+        label: eventLabel(str(e.event_name)),
+        at: str(e.created_at),
+        plan: str(e.properties?.plan) || null,
+        source: str(e.properties?.source) || null,
+      })).slice(-100).reverse();
+
+    const installLastSeen = maxDate(...bucket.installs.map((x) => x.last_seen));
+    const authLastLogin = iso(auth?.last_sign_in_at);
+    const eventLastLogin = maxDate(...loginEvents.map((x) => x.created_at));
+    const lastLoginAt = maxDate(authLastLogin, eventLastLogin);
+    const lastResourceAt = maxDate(...resourceEvents.map((x) => x.created_at));
+    const latestResourceEvent = [...resourceEvents].sort((a, b) => ms(b.created_at) - ms(a.created_at))[0] || null;
+    const lastActivityAt = maxDate(lastResourceAt, installLastSeen, lastLoginAt);
+    const firstLoginAt = minDate(auth?.created_at, ...loginEvents.map((x) => x.created_at));
+    const daysSinceActivity = daysAgo(lastActivityAt, now);
+    const legacyOnly = resourceEvents.length === 0;
+    if (legacyOnly) accountsWithoutEvents++;
+    if (legacyOnly && (authLastLogin || installLastSeen)) legacyAccounts++;
+
+    const subscribedAt = minDate(
+      row.subscribed_at, row.subscription_started_at,
+      ...bucket.referrals.map((x) => x.created_at),
+      ...bucket.sales.map((x) => x.created_at)
+    );
+    const canceledReferral = bucket.referrals.filter((x) => ["canceled", "cancelled", "inactive"].includes(str(x.status).toLowerCase()));
+    const canceledAt = maxDate(
+      row.canceled_at, row.cancelled_at, row.subscription_canceled_at,
+      ...canceledReferral.map((x) => x.updated_at || x.created_at)
+    );
+    const cancelReason = str(row.cancel_reason || row.cancellation_reason || row.cancel_feedback || row.cancellation_feedback) || null;
+    const cancelCode = str(row.cancel_code || row.cancellation_code) || null;
+    const cancelComment = str(row.cancel_comment || row.cancellation_comment) || null;
+    const cancelLabel = cancelReason || (canceledReferral.length ? "Cancelamento registrado no histórico de afiliados" : null);
+
+    const activityReference = lastResourceAt || installLastSeen || lastLoginAt;
+    const activityDays = daysAgo(activityReference, now);
+    let status: "active" | "at_risk" | "inactive" | "canceled";
+    const statusReasons: string[] = [];
+    if (formerSubscriber) {
+      status = "canceled";
+      statusReasons.push("Há evidência de assinatura anterior, mas não há assinatura válida no cadastro atual.");
+    } else if (billingStatus === "past_due") {
+      status = "at_risk";
+      statusReasons.push("Pagamento pendente (past_due).");
+    } else if (resourceEvents.length) {
+      if (days30.length >= 2 && (activityDays ?? 9999) <= 14) status = "active";
+      else if (usage30.length || (activityDays !== null && activityDays <= 30)) status = "at_risk";
+      else status = "inactive";
+    } else if (activityDays !== null && activityDays <= 14) {
+      status = "active";
+      statusReasons.push("Classificação baseada no último login/sincronização; ainda não há eventos de uso de módulos para esta conta.");
+    } else if (activityDays !== null && activityDays <= 30) {
+      status = "at_risk";
+      statusReasons.push("Último acesso conhecido entre 15 e 30 dias; não há telemetria histórica de módulos.");
+    } else {
+      status = "inactive";
+      statusReasons.push("Sem eventos de uso ou acesso recente identificável.");
+    }
+    if (legacyOnly) statusReasons.push("Conta anterior à implantação da telemetria: ações e módulos usados antes do início do Analytics não podem ser reconstruídos.");
+    if (lastLoginAt) statusReasons.push(`Último login autenticado em ${lastLoginAt}.`);
+    if (installLastSeen) statusReasons.push(`Última sincronização da extensão em ${installLastSeen}.`);
+    if (lastResourceAt) statusReasons.push(`Último evento de recurso registrado em ${lastResourceAt}.`);
+
+    const activeDays = days.length || (activityDays !== null ? 1 : 0);
+    const activeDays30 = days30.length || (legacyOnly && activityDays !== null && activityDays <= 30 ? 1 : 0);
+    const actions30 = usage30.length;
+    const totalActions = resourceEvents.length;
+    const subscribeTime = ms(subscribedAt);
+    const beforeEvents = subscribeTime ? resourceEvents.filter((e) => ms(e.created_at) < subscribeTime) : [];
+    const beforeModules = new Map<string, number>();
+    for (const e of beforeEvents) {
+      const name = moduleLabel(str(e.module || e.event_name || "outro"));
+      beforeModules.set(name, (beforeModules.get(name) || 0) + 1);
+    }
+    const factors: { label: string; points: number }[] = [];
+    let propensity = 0;
+    const addFactor = (label: string, points: number) => { propensity += points; factors.push({ label, points }); };
+    if (quotaEvents.length) addFactor(`Atingiu limites ${quotaEvents.length} vez(es)`, Math.min(35, quotaEvents.length >= 3 ? 35 : 25));
+    if (checkoutEvents.length) addFactor("Iniciou checkout", 25);
+    if (upgradeEvents.length) addFactor("Clicou em upgrade/assinar", 15);
+    if (days30.length >= 5) addFactor("Ativo em 5 ou mais dias no mês", 15);
+    else if (days30.length >= 2) addFactor("Ativo em 2 a 4 dias no mês", 8);
+    if (actions30 >= 30) addFactor("30 ou mais ações no mês", 10);
+    if (usage7.length) addFactor("Usou nos últimos 7 dias", 5);
+    if (formerSubscriber) addFactor("Já foi assinante", 5);
+    if (activityDays !== null && activityDays > 30) addFactor("Sem uso há mais de 30 dias", -20);
+    propensity = Math.max(0, Math.min(100, propensity));
+    const propensityTier = propensity >= 60 ? "hot" : propensity >= 30 ? "warm" : "cold";
+
+    const loginCount = loginEvents.length;
+    const account = {
+      id: str(row.id || auth?.id || email),
+      name: displayName(row, auth),
+      email,
+      plan,
+      billingStatus,
+      status,
+      statusReasons,
+      isSubscriber,
+      currentSubscriber,
+      formerSubscriber,
+      linkedEmails: bucket.emails.size || 1,
+      createdAt: iso(row.created_at || auth?.created_at),
+      subscribedAt,
+      canceledAt,
+      cancelReason,
+      cancelCode,
+      cancelLabel,
+      cancelComment,
+      quotaHits: quotaEvents.length,
+      quotaHits30: quotaEvents.filter((e) => ms(e.created_at) >= cutoff30).length,
+      lastQuotaAt: maxDate(...quotaEvents.map((e) => e.created_at)),
+      quotaFeatures: [...quotaMap.entries()].map(([name, count]) => ({ name: moduleLabel(name), count })).sort((a, b) => b.count - a.count),
+      upgradeClicks: upgradeEvents.length,
+      checkoutStarts: checkoutEvents.length,
+      paymentFailures,
+      propensity,
+      propensityTier,
+      propensityFactors: factors,
+      subscribeDrivers: { quotaHitsBefore: beforeEvents.filter((e) => /quota|limit_reached|limit_hit|usage_limit/i.test(str(e.event_name))).length, topModules: [...beforeModules.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5) },
+      daysSinceActivity,
+      firstLoginAt,
+      lastLoginAt,
+      lastActivityAt,
+      lastResource: latestResourceEvent
+        ? moduleLabel(str(latestResourceEvent.module || latestResourceEvent.event_name || "outro"))
+        : installLastSeen ? "Extensão — última sincronização" : lastLoginAt ? "Login no TubeX" : null,
+      loginCount,
+      returned: sessions.length > 1,
+      returnCount: Math.max(0, sessions.length - 1),
+      activeDays,
+      activeDays30,
+      searchCount: resourceEvents.filter((e) => /search|keyword|seo|analysis|analyze/i.test(`${e.event_name} ${e.module}`)).length,
+      totalActions,
+      actions30,
+      highUse: actions30 >= 30,
+      modules,
+      sessions: sessions.slice(0, 100),
+      paymentJourney: paymentEvents,
+      _hasResourceEvents: resourceEvents.length > 0,
+    };
+    accounts.push(account);
+  }
+
+  const selectedAccounts = accounts.filter((account: any) =>
+    segment === "free" ? !account.currentSubscriber : account.isSubscriber
+  ).sort((a: any, b: any) => (ms(b.lastActivityAt) || 0) - (ms(a.lastActivityAt) || 0));
+
+  return NextResponse.json({
+    segment,
+    accounts: selectedAccounts,
+    meta: {
+      totalUsers: accounts.length,
+      totalCurrentSubscribers: accounts.filter((x: any) => x.currentSubscriber).length,
+      totalFormerSubscribers: accounts.filter((x: any) => x.formerSubscriber).length,
+      legacyAccounts,
+      accountsWithoutEvents,
+      usersTableRows: userRows.length,
+      authUsers: authUsers.length,
+      productEvents: eventRows.length,
+      installations: installations.length,
+      generatedAt: new Date(now).toISOString(),
+      note: "Contas antigas são recuperadas de users/Auth e históricos de cobrança. Uso por módulo só pode ser detalhado a partir da implantação de tubex_events.",
+    },
+  }, { headers: { "Cache-Control": "no-store" } });
 }
