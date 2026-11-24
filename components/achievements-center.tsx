@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, Bell, CheckCircle2, Circle, Crown, Flame, Loader2, Mail, RefreshCw, ShieldCheck, Sparkles, Star, Target, Trophy, Youtube } from "lucide-react";
+import { Award, Bell, CheckCircle2, Circle, Crown, Flame, Loader2, Mail, RefreshCw, ShieldCheck, Sparkles, Star, Target, Trophy, Video } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 type Achievement = {
@@ -135,7 +135,7 @@ export default function AchievementsCenter({ user }: { user: any }) {
         <button onClick={sync} disabled={syncing} className="tx-btn tx-btn-primary shrink-0"><RefreshCw size={15} className={syncing ? "animate-spin" : ""}/>{syncing ? "Sincronizando..." : "Atualizar meu canal"}</button>
       </div>
       {data?.profile && <div className="relative mt-5 flex items-center gap-3 rounded-2xl border border-[var(--tx-border)] bg-[var(--tx-surface)]/80 p-3">
-        {data.profile.channel_thumbnail ? <img src={data.profile.channel_thumbnail} alt="" className="h-12 w-12 rounded-full object-cover"/> : <div className="grid h-12 w-12 place-items-center rounded-full bg-[var(--tx-accent-soft)]"><Youtube/></div>}
+        {data.profile.channel_thumbnail ? <img src={data.profile.channel_thumbnail} alt="" className="h-12 w-12 rounded-full object-cover"/> : <div className="grid h-12 w-12 place-items-center rounded-full bg-[var(--tx-accent-soft)]"><Video/></div>}
         <div className="min-w-0 flex-1"><p className="truncate font-black">{data.profile.channel_title}</p><p className="text-xs text-[var(--tx-muted)]">Última atualização: {data.profile.last_synced_at ? new Date(data.profile.last_synced_at).toLocaleString("pt-BR") : "—"}</p></div>
         <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600">Conectado</span>
       </div>}
@@ -143,7 +143,7 @@ export default function AchievementsCenter({ user }: { user: any }) {
 
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-600">{error}</div>}
     {notice && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700">{notice}</div>}
-    {!data?.profile && <section className="tx-surface rounded-2xl p-6"><div className="flex items-start gap-3"><Youtube className="mt-1 text-red-500"/><div><h2 className="text-lg font-black">Conecte seu canal do YouTube</h2><p className="mt-1 text-sm text-[var(--tx-muted)]">Para reconhecer suas conquistas automaticamente, autorize a leitura das estatísticas públicas do canal que você administra.</p><button onClick={sync} className="tx-btn tx-btn-primary mt-4">Conectar YouTube</button></div></div></section>}
+    {!data?.profile && <section className="tx-surface rounded-2xl p-6"><div className="flex items-start gap-3"><Video className="mt-1 text-red-500"/><div><h2 className="text-lg font-black">Conecte seu canal do YouTube</h2><p className="mt-1 text-sm text-[var(--tx-muted)]">Para reconhecer suas conquistas automaticamente, autorize a leitura das estatísticas públicas do canal que você administra.</p><button onClick={sync} className="tx-btn tx-btn-primary mt-4">Conectar YouTube</button></div></div></section>}
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Metric icon={<Trophy/>} label="Conquistas desbloqueadas" value={`${unlockedCount}/${data?.achievements.length || 0}`}/>
