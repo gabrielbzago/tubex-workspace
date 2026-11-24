@@ -124,13 +124,65 @@ export default function AchievementsCenter({ user }: { user: any }) {
 
   function downloadAchievementCard() {
     if (!featuredAchievement || !data?.profile) return;
-    const title = featuredAchievement.title.replace(/[&<>\"]/g, "");
-    const channel = String(data.profile.channel_title || "Meu canal").replace(/[&<>\"]/g, "");
-    const value = fmt(featuredAchievement.current_value);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#171923"/><stop offset="1" stop-color="#292d3b"/></linearGradient><linearGradient id="gold"><stop stop-color="#f8d66d"/><stop offset="1" stop-color="#d49b20"/></linearGradient></defs><rect width="1200" height="1200" rx="64" fill="url(#g)"/><circle cx="600" cy="410" r="205" fill="none" stroke="url(#gold)" stroke-width="20"/><circle cx="600" cy="410" r="174" fill="#202432" stroke="#f7c94b" stroke-width="4"/><path d="M600 270l42 86 95 14-69 67 16 95-84-45-84 45 16-95-69-67 95-14z" fill="url(#gold)"/><text x="600" y="115" fill="#f7c94b" font-family="Arial,sans-serif" font-size="54" font-weight="800" text-anchor="middle">TubeX</text><text x="600" y="700" fill="#f7c94b" font-family="Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle">CONQUISTA DESBLOQUEADA</text><text x="600" y="790" fill="#fff" font-family="Arial,sans-serif" font-size="58" font-weight="800" text-anchor="middle">${title}</text><text x="600" y="885" fill="#f7c94b" font-family="Arial,sans-serif" font-size="76" font-weight="800" text-anchor="middle">${value}</text><text x="600" y="970" fill="#d7d9e0" font-family="Arial,sans-serif" font-size="38" text-anchor="middle">${channel}</text><text x="600" y="1090" fill="#aeb3c2" font-family="Arial,sans-serif" font-size="26" text-anchor="middle">Sua evolução merece ser reconhecida · tubexai.com.br</text></svg>`;
+    const xml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[char] || char));
+    const title = xml(featuredAchievement.title);
+    const channel = xml(data.profile.channel_title || "Meu canal");
+    const value = xml(fmt(featuredAchievement.current_value));
+    const tier = String(featuredAchievement.tier || "gold").toLowerCase();
+    const tierName = ({ bronze: "BRONZE", silver: "PRATA", gold: "OURO", platinum: "PLATINA" } as Record<string,string>)[tier] || "CONQUISTA";
+    const date = featuredAchievement.unlocked_at
+      ? new Date(featuredAchievement.unlocked_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })
+      : new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+    const avatar = String(data.profile.channel_thumbnail || "");
+    const avatarMarkup = /^https:\/\/[^"'<> ]+$/i.test(avatar)
+      ? `<image href="${xml(avatar)}" x="510" y="300" width="180" height="180" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>`
+      : `<circle cx="600" cy="390" r="90" fill="#353b4c"/><text x="600" y="418" fill="#f7c94b" font-family="Arial,sans-serif" font-size="78" font-weight="800" text-anchor="middle">${xml(channel.slice(0,1).toUpperCase())}</text>`;
+    const palette = tier === "platinum"
+      ? { a: "#d9f5ff", b: "#6bc7e8", c: "#174a68" }
+      : tier === "silver"
+      ? { a: "#f4f7fb", b: "#9daabd", c: "#39465a" }
+      : tier === "bronze"
+      ? { a: "#f6c69a", b: "#b96d38", c: "#60351f" }
+      : { a: "#ffe69a", b: "#e5a92e", c: "#6b430d" };
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="1350" viewBox="0 0 1200 1350">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101522"/><stop offset=".55" stop-color="#1c2434"/><stop offset="1" stop-color="#101522"/></linearGradient>
+ <radialGradient id="glow"><stop stop-color="${palette.b}" stop-opacity=".32"/><stop offset="1" stop-color="${palette.b}" stop-opacity="0"/></radialGradient>
+ <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${palette.a}"/><stop offset=".5" stop-color="${palette.b}"/><stop offset="1" stop-color="${palette.c}"/></linearGradient>
+ <linearGradient id="goldText"><stop stop-color="#fff0b6"/><stop offset="1" stop-color="${palette.b}"/></linearGradient>
+ <clipPath id="avatarClip"><circle cx="600" cy="390" r="90"/></clipPath>
+ <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18"/></filter>
+</defs>
+<rect width="1200" height="1350" rx="58" fill="url(#bg)"/>
+<circle cx="600" cy="360" r="430" fill="url(#glow)"/>
+<path d="M58 170H1142" stroke="#ffffff" stroke-opacity=".12"/>
+<rect x="72" y="58" width="1056" height="78" rx="22" fill="#ffffff" fill-opacity=".055" stroke="#ffffff" stroke-opacity=".1"/>
+<rect x="96" y="78" width="38" height="38" rx="11" fill="#f4c542"/><text x="115" y="105" fill="#151923" font-family="Arial,sans-serif" font-size="19" font-weight="900" text-anchor="middle">TX</text>
+<text x="152" y="107" fill="#ffffff" font-family="Arial,sans-serif" font-size="32" font-weight="900">Tube<tspan fill="#f4c542">X</tspan></text>
+<text x="1100" y="105" fill="#b9c1d2" font-family="Arial,sans-serif" font-size="17" font-weight="700" text-anchor="end">CREATOR ACHIEVEMENTS</text>
+<text x="600" y="235" fill="#cbd2df" font-family="Arial,sans-serif" font-size="24" font-weight="700" letter-spacing="6" text-anchor="middle">CONQUISTA DESBLOQUEADA</text>
+<circle cx="600" cy="420" r="210" fill="${palette.b}" opacity=".13" filter="url(#shadow)"/>
+<circle cx="600" cy="390" r="190" fill="#141b29" stroke="url(#metal)" stroke-width="13"/>
+<circle cx="600" cy="390" r="168" fill="none" stroke="${palette.a}" stroke-opacity=".55" stroke-width="2"/>
+<path d="M600 258l39 79 87 13-63 61 15 87-78-41-78 41 15-87-63-61 87-13z" fill="url(#metal)" stroke="${palette.a}" stroke-width="4" stroke-linejoin="round"/>
+<circle cx="600" cy="390" r="90" fill="#1b2231" stroke="#fff" stroke-opacity=".85" stroke-width="8"/>
+${avatarMarkup}
+<circle cx="600" cy="390" r="101" fill="none" stroke="url(#metal)" stroke-width="10"/>
+<rect x="460" y="595" width="280" height="54" rx="27" fill="url(#metal)"/>
+<text x="600" y="631" fill="${palette.c}" font-family="Arial,sans-serif" font-size="22" font-weight="900" letter-spacing="3" text-anchor="middle">${tierName}</text>
+<text x="600" y="730" fill="#ffffff" font-family="Arial,sans-serif" font-size="54" font-weight="900" text-anchor="middle">${title}</text>
+<text x="600" y="835" fill="url(#goldText)" font-family="Arial,sans-serif" font-size="100" font-weight="900" text-anchor="middle">${value}</text>
+<text x="600" y="900" fill="#e6eaf2" font-family="Arial,sans-serif" font-size="35" font-weight="700" text-anchor="middle">${channel}</text>
+<rect x="250" y="965" width="700" height="2" fill="#ffffff" fill-opacity=".15"/>
+<text x="600" y="1030" fill="#9faabd" font-family="Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="3" text-anchor="middle">CONQUISTA ALCANÇADA EM</text>
+<text x="600" y="1080" fill="#ffffff" font-family="Arial,sans-serif" font-size="32" font-weight="800" text-anchor="middle">${xml(date)}</text>
+<rect x="230" y="1150" width="740" height="82" rx="18" fill="#ffffff" fill-opacity=".055" stroke="#ffffff" stroke-opacity=".12"/>
+<text x="600" y="1199" fill="#f4c542" font-family="Arial,sans-serif" font-size="23" font-weight="800" text-anchor="middle">SUA EVOLUÇÃO MERECE SER RECONHECIDA</text>
+<text x="600" y="1290" fill="#8e99ad" font-family="Arial,sans-serif" font-size="19" letter-spacing="2" text-anchor="middle">TUBEXAI.COM.BR</text>
+</svg>`;
     const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a"); link.href = url; link.download = "tubex-conquista.svg"; link.click(); URL.revokeObjectURL(url);
+    const link = document.createElement("a"); link.href = url; link.download = "tubex-conquista-premium.svg"; link.click(); URL.revokeObjectURL(url);
   }
 
   async function shareAchievementCard() {
@@ -200,15 +252,17 @@ export default function AchievementsCenter({ user }: { user: any }) {
           </div>
           <p className="mt-3 text-xs text-[var(--tx-muted)]">O e-mail de demonstração será enviado para o endereço cadastrado na sua conta TubeX.</p>
         </div>
-        <div className="mx-auto w-full max-w-[390px] rounded-[28px] bg-[#171923] p-6 text-center text-white shadow-xl">
-          <div className="flex items-center justify-center gap-2 text-xl font-black tracking-tight"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f4c542] text-sm text-[#171923]">TX</span> Tube<span className="text-[#f4c542]">X</span></div>
-          <p className="mt-6 text-xs font-extrabold tracking-[.22em] text-[#f4c542]">CONQUISTA DESBLOQUEADA</p>
-          <div className="mx-auto mt-5 grid h-40 w-40 place-items-center rounded-full border-[7px] border-[#e8a92d] bg-[radial-gradient(circle,#ffda77,#ed9b2c)] shadow-[0_0_45px_rgba(244,197,66,.25)]"><Award size={76} className="text-[#60390e]"/></div>
-          <h3 className="mt-5 text-2xl font-black leading-tight">{featuredAchievement.title}</h3>
+        <div className="mx-auto w-full max-w-[390px] overflow-hidden rounded-[28px] border border-amber-300/30 bg-[radial-gradient(circle_at_50%_26%,#39445a_0%,#1b2231_42%,#101522_100%)] p-6 text-center text-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-white/10 pb-4"><div className="flex items-center gap-2 text-lg font-black"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f4c542] text-sm text-[#171923]">TX</span> Tube<span className="text-[#f4c542]">X</span></div><span className="text-[9px] font-bold tracking-widest text-slate-400">CREATOR ACHIEVEMENTS</span></div>
+          <p className="mt-6 text-[10px] font-extrabold tracking-[.22em] text-[#f4c542]">CONQUISTA DESBLOQUEADA</p>
+          <div className="relative mx-auto mt-5 grid h-40 w-40 place-items-center rounded-full border-[8px] border-amber-300 bg-[radial-gradient(circle,#ffe69a,#d99727)] shadow-[0_0_55px_rgba(244,197,66,.25)]"><Award size={76} className="text-[#68400d]"/>{data.profile.channel_thumbnail && <img src={data.profile.channel_thumbnail} alt="" className="absolute -bottom-1 -right-1 h-12 w-12 rounded-full border-4 border-[#e7b64c] object-cover"/>}</div>
+          <span className="mt-5 inline-flex rounded-full bg-gradient-to-r from-amber-200 to-amber-500 px-5 py-1.5 text-[10px] font-black tracking-[.18em] text-amber-950">{tierLabels[featuredAchievement.tier] || "CONQUISTA"}</span>
+          <h3 className="mt-4 text-2xl font-black leading-tight">{featuredAchievement.title}</h3>
           <p className="mt-2 text-4xl font-black text-[#f4c542]">{fmt(featuredAchievement.current_value)}</p>
-          <p className="mt-2 text-sm text-slate-300">{data.profile.channel_title}</p>
-          <div className="mt-6 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-bold text-slate-200">SUA EVOLUÇÃO MERECE SER RECONHECIDA</div>
-          <p className="mt-5 text-[10px] tracking-widest text-slate-400">TUBEXAI.COM.BR</p>
+          <p className="mt-2 text-sm font-bold text-slate-200">{data.profile.channel_title}</p>
+          <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Conquistada em {featuredAchievement.unlocked_at ? new Date(featuredAchievement.unlocked_at).toLocaleDateString("pt-BR") : "hoje"}</p>
+          <div className="mt-5 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-bold tracking-wider text-slate-200">SUA EVOLUÇÃO MERECE SER RECONHECIDA</div>
+          <p className="mt-4 text-[10px] tracking-widest text-slate-400">TUBEXAI.COM.BR</p>
         </div>
       </div>
     </section>}
