@@ -210,9 +210,7 @@ export async function GET(request: Request) {
     if (!email) continue;
 
     const rawPlan = normalizePlan(row.plan);
-    // users.status pode representar o estado geral da conta; subscription_status
-    // é a fonte específica da assinatura e deve ter prioridade.
-    const rowStatus = str(row.subscription_status || row.status || "").toLowerCase();
+    const rowStatus = str(row.status || "").toLowerCase();
     const stripeSubId = str(row.stripe_subscription_id);
     const stripeCustomerId = str(row.stripe_customer_id);
     const referralHistory = bucket.referrals.length > 0;
