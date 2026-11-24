@@ -191,9 +191,9 @@ export default function AchievementsCenter({ user }: { user: any }) {
       </div>
       <div className="tx-surface rounded-2xl p-5"><p className="tx-kicker flex items-center gap-2"><Mail size={14}/> Notificações</p><h2 className="mt-1 text-xl font-black">Seu resumo TubeX</h2><p className="mt-2 text-sm text-[var(--tx-muted)]">Receba um resumo semanal com novas conquistas e evolução do canal. Não enviaremos mensagens quando não houver novidades.</p>
         <div className="mt-4 space-y-3">
-          <Preference label="Receber e-mails do TubeX Conquistas" checked={data?.preferences.email_enabled !== false} onChange={v=>savePreferences("email_enabled",v)}/>
-          <Preference label="Resumo semanal" checked={data?.preferences.weekly_digest_enabled !== false} onChange={v=>savePreferences("weekly_digest_enabled",v)}/>
-          <Preference label="Avisos de conquistas importantes" checked={data?.preferences.important_email_enabled !== false} onChange={v=>savePreferences("important_email_enabled",v)}/>
+          <Preference label="Receber e-mails do TubeX Conquistas" checked={data?.preferences.email_enabled !== false} onChange={(v: boolean)=>savePreferences("email_enabled",v)}/>
+          <Preference label="Resumo semanal" checked={data?.preferences.weekly_digest_enabled !== false} onChange={(v: boolean)=>savePreferences("weekly_digest_enabled",v)}/>
+          <Preference label="Avisos de conquistas importantes" checked={data?.preferences.important_email_enabled !== false} onChange={(v: boolean)=>savePreferences("important_email_enabled",v)}/>
         </div>
         <div className="mt-5 rounded-xl bg-[var(--tx-surface-2)] p-3 text-xs text-[var(--tx-muted)]"><ShieldCheck size={14} className="mb-1"/> As métricas públicas são obtidas do YouTube Data API. Métricas privadas, como CTR, retenção e receita, serão adicionadas apenas com autorização do YouTube Analytics.</div>
       </div>
