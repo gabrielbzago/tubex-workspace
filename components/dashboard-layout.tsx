@@ -13,6 +13,7 @@ import SeoWorkspace from "./seo-workspace";
 import CreatorWorkspace from "./creator-workspace";
 import AchievementsCenter from "./achievements-center";
 import FeedDashboard from "./feed-dashboard";
+import IntelligenceCenter from "./intelligence-center";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
 import { recordWebProductEvent } from "@/lib/tubex-client-analytics";
 
@@ -31,7 +32,7 @@ const i18n={
 function Logo(){return <a href="/dashboard" className="flex items-center gap-2 font-black tracking-[-.06em] text-[22px] text-[var(--tx-text)]"><span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--tx-accent)] text-[10px] text-[#11151a]">TX</span>Tube<span className="text-[var(--tx-accent)]">X</span></a>}
 
 export default function DashboardLayout({user}:{user:any}){
- const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"usage"|"cancellations"|"achievements"|"feed"|"account"|"billing"|"support">("dashboard");
+ const [tab,setTab]=useState<"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"usage"|"cancellations"|"achievements"|"feed"|"intelligence"|"account"|"billing"|"support">("dashboard");
  const [mobileOpen,setMobileOpen]=useState(false);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
@@ -135,11 +136,11 @@ export default function DashboardLayout({user}:{user:any}){
  const plan=String(isOwner ? "expert" : (userData?.plan||"free")).toLowerCase();
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
  const navItems:any[]=[
-  ["dashboard",Home,t.dashboard],["feed",Rss,"Feed do canal"],["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["achievements",Trophy,"Conquistas"],["affiliate",Users,t.affiliate],
+  ["dashboard",Home,t.dashboard],["intelligence",Activity,"Inteligência"],["feed",Rss,"Feed do canal"],["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["achievements",Trophy,"Conquistas"],["affiliate",Users,t.affiliate],
   ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"],["usage",Activity,"Comportamento de Uso"],["cancellations",CreditCard,"Cancelamentos"]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
- function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={dashboard:"dashboard",feed:"channel_feed",workspace:"seo_explorer",creator:"creator_workspace",achievements:"achievements",affiliate:"affiliate",account:"account",billing:"billing",support:"support",cancellations:"cancellations"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,next==="billing"?"pricing_viewed":"module_opened",module))}
+ function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={dashboard:"dashboard",intelligence:"intelligence_center",feed:"channel_feed",workspace:"seo_explorer",creator:"creator_workspace",achievements:"achievements",affiliate:"affiliate",account:"account",billing:"billing",support:"support",cancellations:"cancellations"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,next==="billing"?"pricing_viewed":"module_opened",module))}
  return <div className="min-h-screen bg-[var(--tx-bg)] text-[var(--tx-text)]">
   <aside className="fixed inset-y-0 left-0 hidden w-[232px] border-r border-[var(--tx-border)] bg-[var(--tx-surface)] p-4 lg:flex lg:flex-col">
    <Logo/>
@@ -156,7 +157,7 @@ export default function DashboardLayout({user}:{user:any}){
   <main className="tx-app-main min-h-screen min-w-0 w-full lg:pl-[232px]">
    <header className="sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
     <div className="mx-auto flex h-[60px] w-full max-w-[1180px] min-w-0 items-center gap-2 px-3 sm:h-[66px] sm:px-4">
-     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="achievements"?"Conquistas":tab==="feed"?"Feed do canal":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="cancellations"?"Cancelamentos":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
+     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="achievements"?"Conquistas":tab==="feed"?"Feed do canal":tab==="intelligence"?"Central de Inteligência":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="cancellations"?"Cancelamentos":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
@@ -166,6 +167,7 @@ export default function DashboardLayout({user}:{user:any}){
    </header>
   {mobileOpen&&<div className="tx-mobile-menu lg:hidden max-h-[calc(100dvh-60px)] overflow-y-auto border-b border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-3"><nav className="grid grid-cols-2 gap-1">{navItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)]"}`}><Icon size={15}/><span>{label}</span>{id==="admin"&&<span className="ml-auto rounded-md bg-[var(--tx-accent)] px-1.5 py-0.5 text-[8px] font-black text-[#11151a]">OWNER</span>}</button>)}</nav></div>}
    <div className="tx-dashboard-content mx-auto w-full max-w-[1180px] min-w-0 px-3 py-4 pb-24 sm:px-4 sm:py-6 lg:py-8">
+    {tab==="intelligence"&&<IntelligenceCenter user={user} plan={isOwner ? "expert" : plan}/>}
     {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
     {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}{tab==="feed"&&<FeedDashboard/>}{tab==="achievements"&&<AchievementsCenter user={user}/>}
     {tab==="dashboard"&&<Overview user={user} userData={userData} t={t} onTab={setTab} isOwner={isOwner}/>}
