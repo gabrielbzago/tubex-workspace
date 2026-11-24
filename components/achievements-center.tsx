@@ -10,7 +10,16 @@ type Achievement = {
   unlocked: boolean; unlocked_at: string | null; progress: number; current_value: number;
 };
 type Payload = {
-  profile: any; achievements: Achievement[]; history: any[]; goals: any[];
+  profile: any;
+  cohort: {
+    band: string;
+    sample_size: number;
+    percentile: number | null;
+    disclaimer: string;
+  } | null;
+  achievements: Achievement[];
+  history: any[];
+  goals: any[];
   preferences: { email_enabled: boolean; weekly_digest_enabled: boolean; important_email_enabled: boolean };
   points: number;
 };
