@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeTubeXItems } from "@/lib/tubex-seo-engine";
 import { callTubeXBackend, getAuthenticatedPlan, getAuthenticatedUser } from "@/lib/tubex-backend";
-import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +20,7 @@ export async function POST(request: Request) {
     const ownTitles = Array.isArray(body?.ownTitles) ? body.ownTitles.slice(0, 12).map((v: any) => String(v || "").slice(0, 120)) : [];
     if (niche.length < 2) return NextResponse.json({ error: "Informe o nicho para encontrar vídeos fora da curva." }, { status: 400 });
 
-    const plan = await getAuthenticatedPlan(user);
+    const plan = await getAuthenticatedPlan(user.id, user.email);
     const isExpert = ["expert", "owner", "admin", "administrator"].includes(plan);
     const isPro = isExpert || plan === "pro" || plan === "member";
     const seeds = [...new Set([niche, `${niche} dicas`, `como ${niche}`, ...ownTitles.slice(0, 2)].map(v => v.trim()).filter(Boolean))].slice(0, isExpert ? 4 : isPro ? 3 : 2);
@@ -46,7 +45,6 @@ export async function POST(request: Request) {
     }
 
     const videos = [...videoMap.values()];
-    await recordServerProductEvent(request, user.id, "competitor_analysis", "outliers");
     if (!videos.length) return NextResponse.json({ success: true, items: [], message: "O backend não encontrou vídeos suficientes para esse nicho. Tente uma expressão mais específica." });
 
     const channelMap = new Map<string, { channelId: string; title: string; thumbnail: string; videoIds: string[]; searchViews: number }>();

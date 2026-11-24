@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { featurePlan, resolveAccountPlan } from "@/lib/tubex-plan";
 
 export async function getAuthenticatedUser(request: Request) {
   const authorization = request.headers.get("authorization") || "";
@@ -10,16 +9,18 @@ export async function getAuthenticatedUser(request: Request) {
   return data.user;
 }
 
-/**
- * Plano efetivo da conta logada. Usa a mesma busca da extensão: consulta todos
- * os e-mails da pessoa (login, Google vinculado, instalações da extensão) e o
- * melhor plano vence. Veja lib/tubex-plan.ts.
- */
-export async function getAuthenticatedPlan(user: any, email?: string | null) {
+export async function getAuthenticatedPlan(userId: string, email?: string | null) {
   try {
-    const account = typeof user === "string" ? { id: user, email } : user;
-    const resolved = await resolveAccountPlan(account);
-    return featurePlan(resolved.plan);
+    const byId = await supabaseAdmin.from("users").select("plan").eq("id", userId).maybeSingle();
+    const normalizePlan = (value: unknown) => {
+      const plan = String(value || "free").toLowerCase().trim();
+      return ["owner", "admin", "administrator"].includes(plan) ? "expert" : plan;
+    };
+    if (byId.data?.plan) return normalizePlan(byId.data.plan);
+    if (email) {
+      const byEmail = await supabaseAdmin.from("users").select("plan").eq("email", email.toLowerCase()).maybeSingle();
+      if (byEmail.data?.plan) return normalizePlan(byEmail.data.plan);
+    }
   } catch {}
   return "free";
 }
@@ -52,16 +53,12 @@ export async function callTubeXBackend(path: "/youtube" | "/youtube-channel" | "
   }
 }
 
-export function getTrendSeries(payload: any, range: "7d" | "30d" | "60d" | "90d" | "12m") {
+export function getTrendSeries(payload: any, range: "7d" | "30d" | "12m") {
   const rangeKeys = range === "7d"
     ? ["trend7d", "last7Days", "week"]
     : range === "30d"
       ? ["trend30d", "last30Days", "month"]
-      : range === "60d"
-        ? ["trend60d", "last60Days"]
-        : range === "90d"
-          ? ["trend90d", "last90Days"]
-          : ["trend12m", "last12Months", "year"];
+      : ["trend12m", "last12Months", "year"];
   const containers = [payload, payload?.data, payload?.result, payload?.results, payload?.response, payload?.default, payload?.data?.default, payload?.result?.default];
   const candidates: any[] = [];
   for (const container of containers) {

@@ -138,7 +138,6 @@ function TierPill({ tier, score }: { tier: Tier | null; score: number }) {
 export default function AdminSubscriberBehavior({ segment = "subscribers" }: { segment?: "subscribers" | "free" }) {
   const isFree = segment === "free";
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [legacyMeta, setLegacyMeta] = useState<{ legacyAccounts: number; accountsWithoutEvents: number; totalUsers: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -155,7 +154,6 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error === "forbidden" ? "Acesso restrito ao proprietário." : "Não foi possível carregar os dados de comportamento.");
       setAccounts(payload.accounts || []);
-      setLegacyMeta(payload.meta || null);
     } catch (reason: any) { setError(reason.message || "Falha ao carregar os dados."); }
     finally { setLoading(false); }
   }
@@ -225,10 +223,6 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
     </header>
 
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">{error}</div>}
-    {legacyMeta && <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3 text-xs leading-5 text-[var(--tx-muted)]">
-      <b className="text-[var(--tx-text)]">Base histórica recuperada:</b> {n(legacyMeta.totalUsers)} contas encontradas em users/Auth; {n(legacyMeta.legacyAccounts)} contas antigas com último login ou sincronização identificável e {n(legacyMeta.accountsWithoutEvents)} contas sem eventos de módulos.
-      O último acesso pode ser recuperado pelo Supabase Auth ou pela extensão. O uso detalhado de módulos só existe a partir da ativação da telemetria.
-    </div>}
 
     {showGuide && <section className="tx-surface rounded-2xl p-5">
       <h2 className="text-lg font-black">Como cada indicador é calculado</h2>

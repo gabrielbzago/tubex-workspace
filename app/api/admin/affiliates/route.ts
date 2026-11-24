@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const [users, sales, referrals, payouts, clicks] = await Promise.all([
+  const [users, sales, referrals, payouts] = await Promise.all([
     supabaseAdmin
       .from("users")
       .select(
@@ -92,13 +92,14 @@ export async function GET(request: Request) {
 
     supabaseAdmin
       .from("affiliate_payouts")
-      .select("id, affiliate_code, amount, status, created_at")
+      .select(
+        "id, affiliate_code, amount, status, created_at"
+      )
       .order("created_at", { ascending: false }),
-    supabaseAdmin.rpc("get_affiliate_click_counts"),
   ]);
 
   const firstError =
-    users.error || sales.error || referrals.error || payouts.error || clicks.error;
+    users.error || sales.error || referrals.error || payouts.error;
 
   if (firstError) {
     console.error("❌ ADMIN AFFILIATE QUERY ERROR:", firstError);
@@ -113,15 +114,6 @@ export async function GET(request: Request) {
   const saleRows = sales.data || [];
   const referralRows = referrals.data || [];
   const payoutRows = payouts.data || [];
-  const clickCounts = new Map<string, number>();
-  for (const click of (clicks.data || []) as any[]) {
-    const code = String(click.affiliate_code || "").toUpperCase();
-    clickCounts.set(code, Number(click.clicks || 0));
-  }
-  const affiliatesWithClicks = affiliates.map((affiliate: any) => ({
-    ...affiliate,
-    clicks: clickCounts.get(String(affiliate.affiliate_code || "").toUpperCase()) || 0,
-  }));
 
   const pendingCommission = affiliates.reduce(
     (sum: number, item: any) => sum + money(item.affiliate_balance),
@@ -139,7 +131,7 @@ export async function GET(request: Request) {
   );
 
   const totalCommissionGenerated = saleRows.reduce(
-    (sum: number, item: any) => sum + money(item.commission_amount || item.commission),
+    (sum: number, item: any) => sum + money(item.commission_amount ?? item.commission),
     0
   );
 
@@ -158,9 +150,6 @@ export async function GET(request: Request) {
   const chargebacks = saleRows.filter(
     (item: any) => String(item.status).toLowerCase() === "chargeback"
   ).length;
-  const refunds = saleRows.filter(
-    (item: any) => ["refunded", "partially_refunded"].includes(String(item.status).toLowerCase())
-  ).length;
 
   // Resumo mensal real baseado nas competências de affiliate_sales.
   const monthlyMap = new Map<
@@ -173,7 +162,6 @@ export async function GET(request: Request) {
       pending: number;
       failed: number;
       chargebacks: number;
-      refunds: number;
       canceled: number;
     }
   >();
@@ -190,7 +178,6 @@ export async function GET(request: Request) {
         pending: 0,
         failed: 0,
         chargebacks: 0,
-        refunds: 0,
         canceled: 0,
       });
     }
@@ -200,12 +187,11 @@ export async function GET(request: Request) {
 
     row.sales += 1;
     row.revenue += money(sale.amount);
-    row.commission += money(sale.commission_amount || sale.commission);
+    row.commission += money(sale.commission_amount ?? sale.commission);
 
-    if (status === "pending") row.pending += money(sale.commission_amount || sale.commission);
+    if (status === "pending") row.pending += money(sale.commission_amount);
     if (status === "failed") row.failed += 1;
     if (status === "chargeback") row.chargebacks += 1;
-    if (["refunded", "partially_refunded"].includes(status)) row.refunds += 1;
     if (status === "canceled") row.canceled += 1;
   }
 
@@ -224,7 +210,6 @@ export async function GET(request: Request) {
         pending: 0,
         failed: 0,
         chargebacks: 0,
-        refunds: 0,
         canceled: 0,
       });
     }
@@ -249,7 +234,6 @@ export async function GET(request: Request) {
       sales: saleRows.length,
       failedSales,
       chargebacks,
-      refunds,
       revenue: money(totalRevenue),
       commissionGenerated: money(totalCommissionGenerated),
       pendingCommission: money(pendingCommission),
@@ -257,7 +241,7 @@ export async function GET(request: Request) {
       payouts: payoutRows.length,
     },
 
-    affiliates: affiliatesWithClicks,
+    affiliates,
     sales: saleRows,
     referrals: referralRows,
     payouts: payoutRows,

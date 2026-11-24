@@ -6,7 +6,6 @@ import {
   consumeKeywordUsage,
   releaseKeywordUsage,
 } from "@/lib/tubex-backend";
-import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,24 +41,20 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    let plan = await getAuthenticatedPlan(user);
+    let plan = await getAuthenticatedPlan(user.id, user.email);
     if (["owner", "admin", "administrator"].includes(plan)) plan = "expert";
     if (plan === "member") plan = "pro";
-    if (plan === "starter" || plan === "basic") plan = "start";
-    if (!["free", "start", "pro", "expert"].includes(plan)) plan = "free";
-    // Free 10 · Start 30 · Pro 50 · Expert ilimitado (0 = sem limite).
-    const dailyLimit = plan === "free" ? 10 : plan === "start" ? 30 : plan === "pro" ? 50 : 0;
+    if (!["free", "pro", "expert"].includes(plan)) plan = "free";
+    const dailyLimit = plan === "free" ? 5 : plan === "pro" ? 50 : 0;
 
     const quota = await consumeKeywordUsage(user.id, `tags:${source}:${keyword}`, dailyLimit);
     usageReservationId = quota.usageId;
     if (!quota.allowed) {
-      // Registra o limite atingido para o painel de comportamento (quem bateu limite).
-      await recordServerProductEvent(request, user.id, "quota_exhausted", "seo_search", { feature: "tags_search", plan, reason: "daily_limit" });
       return NextResponse.json({
         code: "PLAN_LIMIT_REACHED",
         error: plan === "free"
-          ? "Você usou suas 10 análises gratuitas de hoje."
-          : `Você atingiu o limite de ${dailyLimit} análises de hoje.`,
+          ? "Você usou suas 5 análises gratuitas de hoje."
+          : "Você atingiu o limite de 50 análises de hoje.",
         usage: { used: quota.used, limit: dailyLimit, remaining: 0, plan },
       }, { status: 429 });
     }
@@ -101,8 +96,6 @@ export async function POST(request: Request) {
     // Pro e Expert recebem a lista completa, conforme o editor da extensão.
     const visibleLimit = plan === "free" ? 3 : tags.length;
     const responseTags = plan === "free" ? tags.slice(0, 13) : tags;
-
-    await recordServerProductEvent(request, user.id, "search_performed", "seo_search");
 
     return NextResponse.json({
       success: true,

@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -18,24 +17,11 @@ function getStripe() {
  * clientes/fluxos antigos. O novo checkout público deve usar
  * Pro ou Expert.
  */
-const LEGACY_PRICE_IDS: Record<string, string> = {
+const PRICE_IDS: Record<string, string> = {
   start: "price_1RpubqAQLcT2SPxrl88SGiAE",
   pro: "price_1RpucTAQLcT2SPxrSfUnRPUa",
   expert: "price_1RpudHAQLcT2SPxrJHIJsRHh",
 };
-
-// Preço mensal vindo da Vercel (STRIPE_PRICE_<PLANO>_MONTHLY, o primeiro ID da lista).
-// Sem a variável, continua usando o Price ID antigo.
-function envPrice(plan: string) {
-  const raw = process.env[`STRIPE_PRICE_${plan.toUpperCase()}_MONTHLY`] || "";
-  return raw.split(",").map((v) => v.trim()).find(Boolean) || "";
-}
-
-const PRICE_IDS: Record<string, string> = Object.fromEntries(
-  ["start", "pro", "expert", "legend"]
-    .map((plan) => [plan, envPrice(plan) || LEGACY_PRICE_IDS[plan] || ""])
-    .filter(([, id]) => id)
-);
 
 function normalizeEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
@@ -146,23 +132,6 @@ export async function POST(req: Request) {
         metadata,
       },
     });
-
-    // Record checkout creation only after Stripe successfully creates the session.
-    try {
-      if (email) {
-        const { data: user } = await supabaseAdmin.from("users").select("id").ilike("email", email).maybeSingle();
-        await supabaseAdmin.from("tubex_events").insert({
-          user_id: user?.id || null,
-          install_id: `web-${email.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0,40) || "anonymous"}`,
-          session_id: null,
-          event_name: "checkout_started",
-          module: "billing",
-          properties: { plan, source: "web_checkout", stripe_session_id: session.id }
-        });
-      }
-    } catch (analyticsError) {
-      console.warn("[TubeX analytics] checkout event not recorded", analyticsError);
-    }
 
     return NextResponse.json({
       url: session.url,

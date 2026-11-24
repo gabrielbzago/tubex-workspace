@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildTubeXKeywordAnalysis } from "@/lib/tubex-seo-engine";
 import { callTubeXBackend, getAuthenticatedPlan, getAuthenticatedUser, consumeKeywordUsage, releaseKeywordUsage } from "@/lib/tubex-backend";
-import { recordServerProductEvent } from "@/lib/tubex-server-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,25 +19,21 @@ export async function POST(request: Request) {
     const keyword = String(body?.keyword || "").trim().replace(/\s+/g, " ").slice(0, 100);
     if (keyword.length < 2) return NextResponse.json({ code: "INVALID_KEYWORD", error: "Digite uma palavra-chave com pelo menos 2 caracteres para começar." }, { status: 400 });
 
-    let plan = await getAuthenticatedPlan(user);
+    let plan = await getAuthenticatedPlan(user.id, user.email);
     if (["owner", "admin", "administrator"].includes(plan)) plan = "expert";
     if (plan === "member") plan = "pro";
-    if (plan === "starter" || plan === "basic") plan = "start";
-    if (!["free", "start", "pro", "expert"].includes(plan)) plan = "free";
-    // Free 10 · Start 30 · Pro 50 · Expert ilimitado (0 = sem limite).
-    const dailyLimit = plan === "free" ? 10 : plan === "start" ? 30 : plan === "pro" ? 50 : 0;
+    if (!["free", "pro", "expert"].includes(plan)) plan = "free";
+    const dailyLimit = plan === "free" ? 5 : plan === "pro" ? 50 : 0;
 
     // Atomic daily quota check (São Paulo timezone) before spending backend resources.
     const quota = await consumeKeywordUsage(user.id, keyword, dailyLimit);
     usageReservationId = quota.usageId;
     if (!quota.allowed) {
-      // Registra o limite atingido para o painel de comportamento (quem bateu limite).
-      await recordServerProductEvent(request, user.id, "quota_exhausted", "keyword_explorer", { feature: "keyword_search", plan, reason: "daily_limit" });
       return NextResponse.json({
         code: "PLAN_LIMIT_REACHED",
         error: plan === "free"
-          ? "Você usou suas 10 análises gratuitas de hoje."
-          : `Você atingiu o limite de ${dailyLimit} análises de hoje.`,
+          ? "Você usou suas 5 análises gratuitas de hoje."
+          : "Você atingiu o limite de 50 análises de hoje.",
         usage: { used: quota.used, limit: dailyLimit, remaining: 0, plan },
       }, { status: 429 });
     }
@@ -61,31 +56,9 @@ export async function POST(request: Request) {
       usageReservationId = null;
       return NextResponse.json({ code: "NO_RESULTS", error: "Não encontramos vídeos suficientes para analisar essa expressão. Experimente uma palavra-chave mais específica ou uma variação." }, { status: 404 });
     }
-    await recordServerProductEvent(request, user.id, "search_performed", "keyword_explorer");
-    // Free public Google Trends signals, split by Google Web Search and YouTube Search.
-    // Do not label either series as absolute search volume.
-    const trendsPayload = await Promise.allSettled([
-      callTubeXBackend("/trends", { keyword, geo: "", property: "", range: "30d" }),
-      callTubeXBackend("/trends", { keyword, geo: "", property: "youtube", range: "30d" }),
-    ]);
-    const pickTrend = (entry: PromiseSettledResult<any>) => {
-      if (entry.status !== "fulfilled") return null;
-      const value = entry.value;
-      const series = value?.trend || value?.trend30d || value?.data?.trend || [];
-      return Array.isArray(series) && series.length ? series : null;
-    };
-    const searchInterest = {
-      metric: "relative_interest_index_0_100",
-      isSearchCount: false,
-      google: pickTrend(trendsPayload[0]),
-      youtube: pickTrend(trendsPayload[1]),
-      source: "Google Trends",
-      note: "Índice relativo de interesse de 0 a 100; não representa quantidade absoluta de pesquisas.",
-    };
     return NextResponse.json({
       success: true,
       keyword,
-      searchInterest,
       analysis,
       usage: { used: quota.used, limit: dailyLimit, remaining: dailyLimit === 0 ? 0 : Math.max(0, dailyLimit - quota.used), plan },
       source: "tubex-backend-youtube",

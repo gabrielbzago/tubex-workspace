@@ -10,20 +10,41 @@ function getStripe() {
   return new Stripe(key);
 }
 
+async function sendCancellationCompletionEmail(to: string, name: string | null, periodEnd: string | null) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM_EMAIL;
+  if (!apiKey || !from || !to) {
+    console.warn("[TubeX] E-mail final de cancelamento não enviado: variáveis Resend ausentes.");
+    return;
+  }
+  const safeName = String(name || "").replace(/[&<>"]/g, "");
+  const date = periodEnd
+    ? new Date(periodEnd).toLocaleDateString("pt-BR", { dateStyle: "long", timeZone: "America/Sao_Paulo" })
+    : "fim do período contratado";
+  const html = `
+    <h2>Seu cancelamento TubeX foi concluído</h2>
+    <p>Olá${safeName ? `, ${safeName}` : ""}!</p>
+    <p>Confirmamos que sua assinatura TubeX foi encerrada. O acesso aos recursos pagos terminou conforme o fim do período já contratado${periodEnd ? ` (${date})` : ""}.</p>
+    <p>Não haverá novas renovações desta assinatura.</p>
+    <p>Obrigado por ter utilizado o TubeX. Esperamos ter a oportunidade de receber você novamente.</p>
+    <p>Equipe TubeX</p>
+  `;
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to: [to], subject: "TubeX — cancelamento concluído", html }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    console.error("[TubeX] Falha ao enviar e-mail final de cancelamento:", response.status, (await response.text().catch(() => "")).slice(0, 300));
+  }
+}
+
 const PRICE_PLAN_MAP: Record<string, string> = {
   "price_1RpubqAQLcT2SPxrl88SGiAE": "start", // legacy
   "price_1RpucTAQLcT2SPxrSfUnRPUa": "pro",
   "price_1RpudHAQLcT2SPxrJHIJsRHh": "expert",
 };
-
-// Novos preços entram pelas variáveis da Vercel (mesmos nomes do tubex-backend):
-// STRIPE_PRICE_<START|PRO|EXPERT|LEGEND>_<MONTHLY|ANNUAL>, vários IDs separados por vírgula.
-for (const plan of ["start", "pro", "expert", "legend"]) {
-  for (const cycle of ["MONTHLY", "ANNUAL"]) {
-    const raw = process.env[`STRIPE_PRICE_${plan.toUpperCase()}_${cycle}`] || "";
-    for (const id of raw.split(",").map((v) => v.trim()).filter(Boolean)) PRICE_PLAN_MAP[id] = plan;
-  }
-}
 
 const COMMISSION_RATE = 0.2;
 
@@ -66,12 +87,9 @@ function inferPlan(amount: number, priceId: string, metadataPlan?: string) {
   if (PRICE_PLAN_MAP[priceId]) return PRICE_PLAN_MAP[priceId];
   if (metadataPlan) return String(metadataPlan).toLowerCase();
 
-  // Fallback pelo valor (antigos e novos preços do TubeX, mensal e anual).
-  const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
-  if (near(amount, 19.9) || near(amount, 199)) return "start";
-  if (near(amount, 29.99) || near(amount, 29.9) || near(amount, 299.9) || near(amount, 299)) return "pro";
-  if (near(amount, 49.99) || near(amount, 49.9) || near(amount, 499.9) || near(amount, 499)) return "expert";
-  if (near(amount, 99.9) || near(amount, 999)) return "legend";
+  // Fallback only for the current TubeX annual/monthly prices.
+  if (Math.abs(amount - 29.99) < 0.02 || Math.abs(amount - 299.9) < 0.05) return "pro";
+  if (Math.abs(amount - 49.99) < 0.02 || Math.abs(amount - 499.9) < 0.05) return "expert";
 
   return "free";
 }
@@ -80,7 +98,7 @@ async function findUser(customerId: string, email: string) {
   if (customerId) {
     const { data } = await supabaseAdmin
       .from("users")
-      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id")
       .eq("stripe_customer_id", customerId)
       .maybeSingle();
     if (data) return data;
@@ -89,79 +107,13 @@ async function findUser(customerId: string, email: string) {
   if (email) {
     const { data } = await supabaseAdmin
       .from("users")
-      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
-      .ilike("email", email.replace(/[\\%_]/g, (ch) => "\\" + ch))
-      .limit(1)
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id")
+      .eq("email", email)
       .maybeSingle();
     if (data) return data;
   }
 
   return null;
-}
-
-async function syncSubscription(subscription: Stripe.Subscription) {
-  const customerId = String(subscription.customer || "").trim();
-  const price = subscription.items.data[0]?.price;
-  const priceId = String(price?.id || "");
-  const amount = Number(price?.unit_amount || 0) / 100;
-  const metadataPlan = String(subscription.metadata?.plan || price?.metadata?.plan || "");
-  const lookupPlan = String((price as any)?.lookup_key || (price as any)?.nickname || "")
-    .toLowerCase().match(/(start|pro|expert)/)?.[1] || "";
-  const plan = inferPlan(amount, priceId, metadataPlan || lookupPlan || undefined);
-  const status = subscription.status === "active" || subscription.status === "trialing"
-    ? "active"
-    : subscription.status === "past_due" || subscription.status === "unpaid"
-      ? "past_due"
-      : "inactive";
-
-  let email = normalize(subscription.metadata?.email || "");
-  if (!email && customerId) {
-    try {
-      const customer = await getStripe().customers.retrieve(customerId);
-      if (!customer.deleted) email = normalize(customer.email || "");
-    } catch (error) {
-      console.warn("⚠️ CUSTOMER EMAIL LOOKUP FAILED:", customerId, error);
-    }
-  }
-  const user = await findUser(customerId, email);
-  const patch = {
-    ...(email ? { email } : {}),
-    ...(user?.name ? {} : email ? { name: email } : {}),
-    // past_due = carência (Stripe ainda tentando cobrar): mantém o plano, igual
-    // ao webhook do backend da extensão e ao planoSB. Só inactive vira free.
-    plan: status === "active" || status === "past_due" ? plan : "free",
-    status,
-    stripe_customer_id: customerId || user?.stripe_customer_id || null,
-    stripe_subscription_id: subscription.id,
-    updated_at: new Date().toISOString(),
-  };
-  if (user) {
-    const { error } = await supabaseAdmin.from("users").update(patch).eq("id", user.id);
-    if (error) throw error;
-  } else if (email) {
-    const { error } = await supabaseAdmin.from("users").upsert(patch, { onConflict: "email" });
-    if (error) throw error;
-  } else {
-    console.warn("⚠️ SUBSCRIPTION SEM E-MAIL PARA VINCULAR:", subscription.id);
-  }
-}
-
-async function writeProductAnalytics(emailValue: string, eventName: string, module = "billing", properties: Record<string, unknown> = {}) {
-  const email = String(emailValue || "").trim().toLowerCase();
-  if (!email) return;
-  try {
-    const { data: user } = await supabaseAdmin.from("users").select("id").ilike("email", email).maybeSingle();
-    await supabaseAdmin.from("tubex_events").insert({
-      user_id: user?.id || null,
-      install_id: `web-${email.replace(/[^a-z0-9]/g, "").slice(0,40) || "anonymous"}`,
-      session_id: null,
-      event_name: eventName,
-      module,
-      properties
-    });
-  } catch (error) {
-    console.warn("[TubeX analytics] billing event not recorded", eventName, error);
-  }
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
@@ -184,24 +136,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     session.custom_fields?.find((field: any) => field.key === "nome")?.text?.value ||
     email;
 
-  let affiliateCode = normalizeCode(
-    session.metadata?.affiliate_code || session.client_reference_id || ""
+  const affiliateCode = normalizeCode(
+    session.metadata?.affiliate_code ||
+      session.client_reference_id ||
+      ""
   );
-  if (!affiliateCode && email) {
-    const { data: referredUser, error: referredUserError } = await supabaseAdmin
-      .from("users").select("referred_by").ilike("email", email).maybeSingle();
-    if (referredUserError) throw referredUserError;
-    affiliateCode = normalizeCode(referredUser?.referred_by || "");
-  }
-  if (affiliateCode) {
-    const { data: affiliateCheck, error: affiliateCheckError } = await supabaseAdmin
-      .from("users").select("email").eq("affiliate_code", affiliateCode).maybeSingle();
-    if (affiliateCheckError) throw affiliateCheckError;
-    if (!affiliateCheck || String(affiliateCheck.email || "").trim().toLowerCase() === email) {
-      console.warn("⚠️ CÓDIGO INVÁLIDO OU AUTOINDICAÇÃO BLOQUEADA:", affiliateCode);
-      affiliateCode = "";
-    }
-  }
 
   let plan = String(session.metadata?.plan || "free").toLowerCase();
 
@@ -248,31 +187,28 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     return;
   }
 
-  try {
-    const { data: authUser } = await supabaseAdmin.from("users").select("id").ilike("email", email).maybeSingle();
-    const { data: alreadyTracked } = await supabaseAdmin.from("tubex_events")
-      .select("id").eq("event_name", "subscription_activated")
-      .contains("properties", { stripe_session_id: session.id }).maybeSingle();
-    if (!alreadyTracked) await writeProductAnalytics(email, "subscription_activated", "billing", { plan, source: "stripe_webhook", stripe_session_id: session.id });
-  } catch (analyticsError) {
-    console.warn("[TubeX analytics] subscription activation not recorded", analyticsError);
-  }
-
   if (!affiliateCode || !subscriptionId) return;
 
-  const { data: affiliate, error: affiliateLookupError } = await supabaseAdmin
-    .from("users").select("id,email,affiliate_code").eq("affiliate_code", affiliateCode).maybeSingle();
-  if (affiliateLookupError) throw affiliateLookupError;
+  const { data: existingReferral } = await supabaseAdmin
+    .from("affiliate_referrals")
+    .select("id")
+    .eq("stripe_subscription_id", subscriptionId)
+    .maybeSingle();
+
+  if (existingReferral) return;
+
+  const { data: affiliate } = await supabaseAdmin
+    .from("users")
+    .select("id,email,affiliate_code")
+    .eq("affiliate_code", affiliateCode)
+    .maybeSingle();
+
   if (!affiliate) {
     console.warn("⚠️ AFILIADO NÃO ENCONTRADO NO CHECKOUT:", affiliateCode);
     return;
   }
-  if (String(affiliate.email || "").trim().toLowerCase() === email) {
-    console.warn("⚠️ AUTOINDICAÇÃO BLOQUEADA:", affiliateCode);
-    return;
-  }
 
-  const { error } = await supabaseAdmin.from("affiliate_referrals").upsert({
+  const { error } = await supabaseAdmin.from("affiliate_referrals").insert({
     affiliate_code: affiliateCode,
     referred_email: email,
     referred_name: customerName,
@@ -282,8 +218,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     stripe_subscription_id: subscriptionId,
     status: "active",
     updated_at: new Date().toISOString(),
-  }, { onConflict: "stripe_subscription_id", ignoreDuplicates: true });
-  if (error) throw error;
+  });
+
+  if (error) console.error("❌ CHECKOUT REFERRAL ERROR:", error);
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -295,11 +232,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const invoiceAny = invoice as any;
-  // Commission is based on money actually collected. A zero amount_paid
-  // (for example a 100% coupon or trial invoice) must never fall back to total.
-  const rawAmountPaid = invoiceAny.amount_paid !== null && invoiceAny.amount_paid !== undefined
-    ? Number(invoiceAny.amount_paid)
-    : Number(invoiceAny.total ?? invoiceAny.subtotal ?? 0);
+  const rawAmountPaid =
+    Number(invoiceAny.amount_paid ?? 0) ||
+    Number(invoiceAny.total ?? 0) ||
+    Number(invoiceAny.subtotal ?? 0);
 
   const amount = money(rawAmountPaid / 100);
   const priceId = getInvoicePriceId(invoice);
@@ -338,7 +274,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
         },
         { onConflict: "email" }
       )
-      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id,referred_by")
+      .select("id,email,name,plan,status,stripe_customer_id,stripe_subscription_id")
       .single();
 
     if (error) throw error;
@@ -359,13 +295,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   if (referralLookupError) throw referralLookupError;
 
   const affiliateCode = normalizeCode(
-    metadata.affiliate_code || referral?.affiliate_code || user.referred_by || ""
+    metadata.affiliate_code || referral?.affiliate_code || ""
   );
 
-  const invoicePrice = subscription.items.data[0]?.price;
-  const invoicePricePlan = String(invoicePrice?.metadata?.plan || (invoicePrice as any)?.lookup_key || (invoicePrice as any)?.nickname || "")
-    .toLowerCase().match(/(start|pro|expert)/)?.[1];
-  const userPlan = inferPlan(amount, priceId, invoicePricePlan || metadata.plan || referral?.plan || user.plan);
+  const userPlan = inferPlan(amount, priceId, metadata.plan || referral?.plan || user.plan);
 
   await supabaseAdmin
     .from("users")
@@ -399,10 +332,6 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     console.warn("⚠️ AFILIADO NÃO ENCONTRADO:", affiliateCode);
     return;
   }
-  if (String(affiliate.email || "").trim().toLowerCase() === String(user.email || email).trim().toLowerCase()) {
-    console.warn("⚠️ COMISSÃO DE AUTOINDICAÇÃO BLOQUEADA:", affiliateCode, invoice.id);
-    return;
-  }
 
   // The database function performs the invoice-level idempotency check,
   // inserts the commission and increments the affiliate balance in one
@@ -414,10 +343,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const commission = money(amount * COMMISSION_RATE);
-  const paymentIntentValue = invoiceAny.payment_intent || invoiceAny.payments?.data?.[0]?.payment?.payment_intent || "";
-  const paymentIntent = typeof paymentIntentValue === "string"
-    ? paymentIntentValue
-    : String(paymentIntentValue?.id || "");
+  const paymentIntent = String(
+    invoiceAny.payment_intent ||
+      invoiceAny.payments?.data?.[0]?.payment?.payment_intent ||
+      ""
+  );
 
   const { data: recorded, error: recordError } = await supabaseAdmin.rpc(
     "record_affiliate_sale",
@@ -454,30 +384,6 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   });
 }
 
-async function recordAnalyticsEvent(
-  userId: string,
-  eventName: string,
-  module = "billing",
-  properties: Record<string, unknown> = {},
-  installId = `web-${userId}`
-) {
-  if (!userId) return;
-  try {
-    const { error } = await supabaseAdmin.from("tubex_events").insert({
-      user_id: userId,
-      install_id: installId,
-      session_id: null,
-      event_name: eventName,
-      module,
-      properties,
-    });
-    if (error) console.warn("[TubeX analytics] event not recorded", eventName, error);
-  } catch (error) {
-    // Analytics must never cause Stripe webhook delivery to fail.
-    console.warn("[TubeX analytics] event not recorded", eventName, error);
-  }
-}
-
 async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
   const subscriptionId = subscription.id;
   const now = new Date().toISOString();
@@ -489,8 +395,6 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
 
   if (referralError) throw referralError;
 
-  const { data: canceledUser } = await supabaseAdmin
-    .from("users").select("id,plan").eq("stripe_subscription_id",subscriptionId).maybeSingle();
   const { error: userError } = await supabaseAdmin
     .from("users")
     .update({
@@ -501,85 +405,106 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
     .eq("stripe_subscription_id", subscriptionId);
 
   if (userError) throw userError;
-  if (canceledUser?.id) await recordAnalyticsEvent(canceledUser.id,"subscription_cancelled","billing",{
-    plan: canceledUser.plan || "unknown",
-    reason: subscription.cancellation_details?.reason || "not_provided",
-    feedback: subscription.cancellation_details?.feedback || "not_provided",
-    comment: String(subscription.cancellation_details?.comment || "").replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 240),
-  });
+
+  // A solicitação só fica concluída quando o Stripe confirma o fim efetivo
+  // da assinatura (após o período pago), nunca no simples agendamento.
+  const { data: completedRequest, error: cancellationError } = await supabaseAdmin
+    .from("cancellation_requests")
+    .update({
+      status: "completed",
+      completed_at: now,
+      updated_at: now,
+    })
+    .eq("stripe_subscription_id", subscriptionId)
+    .in("status", ["processing", "scheduled"])
+    .select("account_email,account_name,period_end")
+    .maybeSingle();
+
+  if (cancellationError) throw cancellationError;
+  // O filtro de status torna o envio idempotente: eventos repetidos do Stripe
+  // não disparam novamente o e-mail de conclusão.
+  if (completedRequest?.account_email) {
+    try {
+      await sendCancellationCompletionEmail(
+        completedRequest.account_email,
+        completedRequest.account_name || null,
+        completedRequest.period_end || null
+      );
+    } catch (emailError) {
+      console.error("[TubeX] E-mail final de cancelamento falhou:", emailError);
+    }
+  }
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
   const invoiceId = invoice.id;
   const customerId = String(invoice.customer || "").trim();
 
-  const { error: saleError } = await supabaseAdmin
+  await supabaseAdmin
     .from("affiliate_sales")
     .update({ status: "failed", updated_at: new Date().toISOString() })
     .eq("stripe_invoice_id", invoiceId);
-  if (saleError) throw saleError;
 
   if (customerId) {
-    const { error: userError } = await supabaseAdmin
-      .from("users").update({ status: "past_due", updated_at: new Date().toISOString() })
+    await supabaseAdmin
+      .from("users")
+      .update({ status: "past_due", updated_at: new Date().toISOString() })
       .eq("stripe_customer_id", customerId);
-    if (userError) throw userError;
-    const { error: referralError } = await supabaseAdmin
-      .from("affiliate_referrals").update({ status: "past_due", updated_at: new Date().toISOString() })
+
+    await supabaseAdmin
+      .from("affiliate_referrals")
+      .update({ status: "past_due", updated_at: new Date().toISOString() })
       .eq("stripe_customer_id", customerId);
-    if (referralError) throw referralError;
-    const { data: billedUser } = await supabaseAdmin.from("users").select("id,plan").eq("stripe_customer_id", customerId).maybeSingle();
-    if (billedUser?.id) await recordAnalyticsEvent(billedUser.id, "payment_failed", "billing", {
-      plan: billedUser.plan || "unknown",
-      invoice_id: invoiceId,
-      amount_due: invoice.amount_due,
-      currency: invoice.currency || "unknown",
-    });
   }
 }
 
-async function reverseCommission(paymentIntentValue: unknown, reason: string, eventId: string) {
-  const paymentIntent = typeof paymentIntentValue === "string"
-    ? paymentIntentValue
-    : String((paymentIntentValue as any)?.id || "");
+async function handleChargeback(dispute: Stripe.Dispute) {
+  const paymentIntent = String((dispute as any).payment_intent || "").trim();
   if (!paymentIntent) return;
-  const { data, error } = await supabaseAdmin.rpc("reverse_affiliate_sale", {
-    p_payment_intent: paymentIntent,
-    p_reason: reason,
-    p_stripe_event_id: eventId,
-  });
-  if (error) throw error;
-  console.log(data ? "✅ COMISSÃO ESTORNADA:" : "ℹ️ ESTORNO JÁ PROCESSADO OU VENDA NÃO LOCALIZADA:", paymentIntent, reason);
-}
 
-async function handleChargeback(dispute: Stripe.Dispute, eventId: string) {
-  await reverseCommission((dispute as any).payment_intent, "chargeback", eventId);
-}
+  const { data: sale, error: saleError } = await supabaseAdmin
+    .from("affiliate_sales")
+    .select("id,affiliate_code,commission_amount,status")
+    .eq("stripe_payment_intent", paymentIntent)
+    .maybeSingle();
 
-async function handleDisputeClosed(dispute: Stripe.Dispute, eventId: string) {
-  if (String(dispute.status || "").toLowerCase() !== "won") return;
-  const paymentIntentValue = (dispute as any).payment_intent;
-  const paymentIntent = typeof paymentIntentValue === "string" ? paymentIntentValue : String(paymentIntentValue?.id || "");
-  if (!paymentIntent) return;
-  const { data, error } = await supabaseAdmin.rpc("restore_affiliate_sale", {
-    p_payment_intent: paymentIntent,
-    p_stripe_event_id: eventId,
-  });
-  if (error) throw error;
-  console.log(data ? "✅ COMISSÃO RESTAURADA APÓS DISPUTA GANHA:" : "ℹ️ DISPUTA SEM COMISSÃO A RESTAURAR:", paymentIntent);
-}
+  if (saleError) throw saleError;
+  if (!sale) return;
 
-async function handleRefund(refund: Stripe.Refund, eventId: string) {
-  const paymentIntent = (refund as any).payment_intent;
-  const paymentIntentId = typeof paymentIntent === "string" ? paymentIntent : String(paymentIntent?.id || "");
-  if (!paymentIntentId || Number(refund.amount || 0) <= 0) return;
-  const { data, error } = await supabaseAdmin.rpc("reverse_affiliate_refund", {
-    p_payment_intent: paymentIntentId,
-    p_refund_amount: Number(refund.amount) / 100,
-    p_stripe_event_id: eventId,
-  });
-  if (error) throw error;
-  console.log(data ? "✅ REEMBOLSO DE COMISSÃO REGISTRADO:" : "ℹ️ REEMBOLSO JÁ PROCESSADO OU VENDA NÃO LOCALIZADA:", refund.id);
+  if (String(sale.status).toLowerCase() === "chargeback") return;
+
+  const commission = money(sale.commission_amount);
+
+  if (commission > 0) {
+    const { data: affiliate } = await supabaseAdmin
+      .from("users")
+      .select("id,affiliate_balance")
+      .eq("affiliate_code", sale.affiliate_code)
+      .maybeSingle();
+
+    if (affiliate) {
+      const newBalance = money(
+        Math.max(0, Number(affiliate.affiliate_balance || 0) - commission)
+      );
+
+      await supabaseAdmin
+        .from("users")
+        .update({
+          affiliate_balance: newBalance,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", affiliate.id);
+    }
+  }
+
+  // Preserve the original commission amount for financial history.
+  await supabaseAdmin
+    .from("affiliate_sales")
+    .update({
+      status: "chargeback",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sale.id);
 }
 
 export async function POST(req: Request) {
@@ -619,19 +544,8 @@ export async function POST(req: Request) {
       case "customer.subscription.deleted":
         await handleSubscriptionCanceled(event.data.object as Stripe.Subscription);
         break;
-      case "customer.subscription.created":
-      case "customer.subscription.updated":
-        await syncSubscription(event.data.object as Stripe.Subscription);
-        break;
       case "charge.dispute.created":
-      case "charge.dispute.funds_withdrawn":
-        await handleChargeback(event.data.object as Stripe.Dispute, event.id);
-        break;
-      case "charge.dispute.closed":
-        await handleDisputeClosed(event.data.object as Stripe.Dispute, event.id);
-        break;
-      case "refund.created":
-        await handleRefund(event.data.object as Stripe.Refund, event.id);
+        await handleChargeback(event.data.object as Stripe.Dispute);
         break;
       default:
         break;
