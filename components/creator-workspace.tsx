@@ -189,9 +189,10 @@ export default function CreatorWorkspace({ user, plan: initialPlan = "free" }: {
   const [tagUpgrade, setTagUpgrade] = useState(false);
   const [tagCopied, setTagCopied] = useState("");
 
-  const plan = ["owner", "admin", "administrator", "expert"].includes(String(initialPlan).toLowerCase())
+  const plan = ["owner", "admin", "administrator", "expert", "legend", "corporate"].includes(String(initialPlan).toLowerCase())
     ? "expert"
-    : ["pro", "member"].includes(String(initialPlan).toLowerCase()) ? "pro" : "free";
+    : ["pro", "member"].includes(String(initialPlan).toLowerCase()) ? "pro"
+    : ["start", "starter", "basic"].includes(String(initialPlan).toLowerCase()) ? "start" : "free";
   const isPro = plan === "pro" || plan === "expert";
 
   const pulseTrendRequest = useRef(0);

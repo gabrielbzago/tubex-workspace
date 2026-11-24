@@ -16,6 +16,15 @@ const PRICE_PLAN_MAP: Record<string, string> = {
   "price_1RpudHAQLcT2SPxrJHIJsRHh": "expert",
 };
 
+// Novos preços entram pelas variáveis da Vercel (mesmos nomes do tubex-backend):
+// STRIPE_PRICE_<START|PRO|EXPERT|LEGEND>_<MONTHLY|ANNUAL>, vários IDs separados por vírgula.
+for (const plan of ["start", "pro", "expert", "legend"]) {
+  for (const cycle of ["MONTHLY", "ANNUAL"]) {
+    const raw = process.env[`STRIPE_PRICE_${plan.toUpperCase()}_${cycle}`] || "";
+    for (const id of raw.split(",").map((v) => v.trim()).filter(Boolean)) PRICE_PLAN_MAP[id] = plan;
+  }
+}
+
 const COMMISSION_RATE = 0.2;
 
 function normalize(value: unknown) {
@@ -57,9 +66,12 @@ function inferPlan(amount: number, priceId: string, metadataPlan?: string) {
   if (PRICE_PLAN_MAP[priceId]) return PRICE_PLAN_MAP[priceId];
   if (metadataPlan) return String(metadataPlan).toLowerCase();
 
-  // Fallback only for the current TubeX annual/monthly prices.
-  if (Math.abs(amount - 29.99) < 0.02 || Math.abs(amount - 299.9) < 0.05) return "pro";
-  if (Math.abs(amount - 49.99) < 0.02 || Math.abs(amount - 499.9) < 0.05) return "expert";
+  // Fallback pelo valor (antigos e novos preços do TubeX, mensal e anual).
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
+  if (near(amount, 19.9) || near(amount, 199)) return "start";
+  if (near(amount, 29.99) || near(amount, 29.9) || near(amount, 299.9) || near(amount, 299)) return "pro";
+  if (near(amount, 49.99) || near(amount, 49.9) || near(amount, 499.9) || near(amount, 499)) return "expert";
+  if (near(amount, 99.9) || near(amount, 999)) return "legend";
 
   return "free";
 }

@@ -180,12 +180,13 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
   const [trendError, setTrendError] = useState("");
   const [usage, setUsage] = useState<{ used: number; limit: number; remaining: number; plan: string } | null>(null);
   const [upgradeReason, setUpgradeReason] = useState<"quota" | "trends" | "expert" | null>(null);
-  const plan = ["owner", "admin", "administrator", "expert"].includes(String(initialPlan).toLowerCase())
+  const plan = ["owner", "admin", "administrator", "expert", "legend", "corporate"].includes(String(initialPlan).toLowerCase())
     ? "expert"
-    : ["pro", "member"].includes(String(initialPlan).toLowerCase()) ? "pro" : "free";
+    : ["pro", "member"].includes(String(initialPlan).toLowerCase()) ? "pro"
+    : ["start", "starter", "basic"].includes(String(initialPlan).toLowerCase()) ? "start" : "free";
   const isPro = plan === "pro" || plan === "expert";
   const isExpert = plan === "expert";
-  const dailyLimit = plan === "free" ? 5 : plan === "pro" ? 50 : 0;
+  const dailyLimit = plan === "free" ? 10 : plan === "start" ? 30 : plan === "pro" ? 50 : 0;
   const visibleVideoLimit = isExpert ? Infinity : isPro ? 20 : 5;
 
   const trendRequestId = useRef(0);
@@ -542,8 +543,8 @@ export function UpgradeGate({ kind, plan }: { kind: "quota" | "trends" | "expert
   const target = plan === "pro" || kind === "expert" ? "expert" : "pro";
   const isExpertOffer = target === "expert";
   const checkout = isExpertOffer
-    ? "https://buy.stripe.com/dRmaEW98dggV3Z3d2mgjC02"
-    : "https://buy.stripe.com/3cI7sK7058OtdzDaUegjC01";
+    ? "https://tubex-backend.vercel.app/api/checkout?plan=expert"
+    : "https://tubex-backend.vercel.app/api/checkout?plan=pro";
   const title = isExpertOffer
     ? kind === "quota"
       ? "Continue pesquisando sem limites."
@@ -577,7 +578,7 @@ export function UpgradeGate({ kind, plan }: { kind: "quota" | "trends" | "expert
         </div>
       </div>
       <div className="flex shrink-0 flex-col gap-2 sm:min-w-[180px]">
-        <a href={checkout} target="_blank" rel="noreferrer" className="tx-btn tx-btn-primary justify-center">{isExpertOffer ? "Quero o Expert · R$49,99/mês" : "Quero o Pro · R$29,99/mês"} <ArrowUpRight size={14}/></a>
+        <a href={checkout} target="_blank" rel="noreferrer" className="tx-btn tx-btn-primary justify-center">{isExpertOffer ? "Quero o Expert · R$49,90/mês" : "Quero o Pro · R$29,90/mês"} <ArrowUpRight size={14}/></a>
         <a href="/#planos" className="text-center text-[10px] font-bold text-[var(--tx-muted)] hover:text-[var(--tx-text)]">Ver todos os benefícios</a>
       </div>
     </div>

@@ -18,11 +18,24 @@ function getStripe() {
  * clientes/fluxos antigos. O novo checkout público deve usar
  * Pro ou Expert.
  */
-const PRICE_IDS: Record<string, string> = {
+const LEGACY_PRICE_IDS: Record<string, string> = {
   start: "price_1RpubqAQLcT2SPxrl88SGiAE",
   pro: "price_1RpucTAQLcT2SPxrSfUnRPUa",
   expert: "price_1RpudHAQLcT2SPxrJHIJsRHh",
 };
+
+// Preço mensal vindo da Vercel (STRIPE_PRICE_<PLANO>_MONTHLY, o primeiro ID da lista).
+// Sem a variável, continua usando o Price ID antigo.
+function envPrice(plan: string) {
+  const raw = process.env[`STRIPE_PRICE_${plan.toUpperCase()}_MONTHLY`] || "";
+  return raw.split(",").map((v) => v.trim()).find(Boolean) || "";
+}
+
+const PRICE_IDS: Record<string, string> = Object.fromEntries(
+  ["start", "pro", "expert", "legend"]
+    .map((plan) => [plan, envPrice(plan) || LEGACY_PRICE_IDS[plan] || ""])
+    .filter(([, id]) => id)
+);
 
 function normalizeEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();

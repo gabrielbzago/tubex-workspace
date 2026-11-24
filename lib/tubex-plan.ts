@@ -53,6 +53,8 @@ export function normalizePlanName(value: unknown) {
   let plan = String(value || "free").toLowerCase().trim();
   if (plan === "basic" || plan === "starter") plan = "start";
   if (plan === "admin" || plan === "administrator") plan = "owner";
+  // Legend/Corporate (futuros) usam os recursos do Expert.
+  if (plan === "legend" || plan === "corporate") plan = "expert";
   return PLAN_RANK[plan] === undefined ? "free" : plan;
 }
 

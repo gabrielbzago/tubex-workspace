@@ -23,8 +23,10 @@ export async function POST(request: Request) {
     let plan = await getAuthenticatedPlan(user);
     if (["owner", "admin", "administrator"].includes(plan)) plan = "expert";
     if (plan === "member") plan = "pro";
-    if (!["free", "pro", "expert"].includes(plan)) plan = "free";
-    const dailyLimit = plan === "free" ? 5 : plan === "pro" ? 50 : 0;
+    if (plan === "starter" || plan === "basic") plan = "start";
+    if (!["free", "start", "pro", "expert"].includes(plan)) plan = "free";
+    // Free 10 · Start 30 · Pro 50 · Expert ilimitado (0 = sem limite).
+    const dailyLimit = plan === "free" ? 10 : plan === "start" ? 30 : plan === "pro" ? 50 : 0;
 
     // Atomic daily quota check (São Paulo timezone) before spending backend resources.
     const quota = await consumeKeywordUsage(user.id, keyword, dailyLimit);
@@ -35,8 +37,8 @@ export async function POST(request: Request) {
       return NextResponse.json({
         code: "PLAN_LIMIT_REACHED",
         error: plan === "free"
-          ? "Você usou suas 5 análises gratuitas de hoje."
-          : "Você atingiu o limite de 50 análises de hoje.",
+          ? "Você usou suas 10 análises gratuitas de hoje."
+          : `Você atingiu o limite de ${dailyLimit} análises de hoje.`,
         usage: { used: quota.used, limit: dailyLimit, remaining: 0, plan },
       }, { status: 429 });
     }
