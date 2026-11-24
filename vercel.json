@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/achievements/weekly",
+      "schedule": "0 11 * * 1"
+    }
+  ]
+}
