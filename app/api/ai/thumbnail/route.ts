@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     const imagePrompt = `Crie uma thumbnail profissional para YouTube, proporção horizontal 16:9, resolução alta, composição cinematográfica, leitura imediata em tela pequena, foco visual único, contraste forte e acabamento premium. Evite excesso de elementos, marcas d'água, logotipos inventados e textos longos. Se houver texto solicitado, escreva exatamente e corretamente em português. Brief: ${brief}. ${channel}`;
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "gpt-image-1", prompt: imagePrompt, size: "1536x1024", quality: "high", n: 1 }), cache: "no-store",
+      body: JSON.stringify({ model: "gpt-image-2.5-flare", prompt: imagePrompt, size: "1536x1024", quality: "high", n: 1 }), cache: "no-store",
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {

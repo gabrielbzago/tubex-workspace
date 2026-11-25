@@ -71,7 +71,7 @@ Os nomes e preços comerciais não são alterados automaticamente por este pacot
 ## 7. O que ainda precisa de uma etapa própria
 - Conectar dados privados reais do YouTube Analytics no servidor, com OAuth e escopos adequados.
 - Implementar function calling para o modelo acionar ferramentas de SEO, Analytics e pesquisa de concorrentes com validação server-side.
-- A geração de thumbnail continua com o provedor de imagem já configurado (OpenAI nesta versão), não com Groq. O custo é de 22 créditos compartilhados.
+- A geração de thumbnail continua usando a OpenAI (não Groq), com o modelo `gpt-image-2.5-flare` pela API de imagens. Configure `OPENAI_API_KEY` nas variáveis de ambiente da Vercel. O custo é de 22 créditos compartilhados. O modelo antigo `gpt-image-1` foi desativado pela OpenAI em 23/10/2026.
 - Criar no Stripe os preços e produtos correspondentes ao novo catálogo comercial e atualizar o webhook para persistir o identificador de plano correto.
 
 ## 8. Monitoramento
