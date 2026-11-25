@@ -148,7 +148,8 @@ export default function TubeXAIChat() {
   const [thumbnailMode, setThumbnailMode] = useState(false);
   const [thumbnailPrompt, setThumbnailPrompt] = useState("");
   const [thumbnail, setThumbnail] = useState("");
-  const [error, setError] = useState("");\n  const [upgradeRequired, setUpgradeRequired] = useState(false);
+  const [error, setError] = useState("");
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [channelContext, setChannelContext] = useState<any>(null);
   const [mode, setMode] = useState<Mode>("fast");
   const [modeOpen, setModeOpen] = useState(false);
