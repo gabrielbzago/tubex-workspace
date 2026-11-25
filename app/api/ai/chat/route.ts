@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/tubex-backend";
 import { resolveAccountPlan } from "@/lib/tubex-plan";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createHash } from "node:crypto";
 import {
   AI_CREDIT_LIMITS, AI_PLAN_LABELS, classifyChatCost,
   readCreditUsage, reserveCredits, releaseCredits,
@@ -80,10 +81,30 @@ async function settleProviderTokens(reservationId: string | null, actualTokens: 
   if (error) console.error("[TubeX AI] Não foi possível ajustar reserva Groq:", error.message);
 }
 
+async function recordChatEvent(request: Request, user: any, eventName: string, properties: Record<string, unknown> = {}) {
+  try {
+    const bearer = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    const sessionId = bearer ? createHash("sha256").update(bearer).digest("hex").slice(0, 32) : null;
+    const planInfo = await resolveAccountPlan(user).catch(() => ({ plan: "free" } as any));
+    const { error } = await supabaseAdmin.from("tubex_events").insert({
+      user_id: user.id,
+      install_id: `web-${user.id}`,
+      session_id: sessionId,
+      event_name: eventName,
+      module: "ai_chat",
+      properties: { source: "web_dashboard", plan: planInfo.plan || "free", ...properties },
+    });
+    if (error) console.warn("[TubeX AI analytics] event not recorded", error.message);
+  } catch (error: any) {
+    console.warn("[TubeX AI analytics] event not recorded", error?.message || error);
+  }
+}
+
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user) return NextResponse.json({ error: "Sessão expirada. Entre novamente." }, { status: 401 });
   try {
+    await recordChatEvent(request, user, "chat_opened");
     return NextResponse.json(await getPlanAndUsage(user));
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Falha ao consultar o plano." }, { status: 500 });
@@ -229,6 +250,14 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
 
     const used = Number(quotaRow.used || 0);
     creditReserved = false;
+    await recordChatEvent(request, user, "chat_message_sent", {
+      plan: planInfo.plan,
+      mode,
+      action: charge.action,
+      credits: reservedCost,
+      prompt_chars: lastUserMessage.length,
+      total_tokens: actualTokens || null,
+    });
     return NextResponse.json({
       answer,
       model: data.model || MODEL,

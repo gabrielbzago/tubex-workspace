@@ -8,6 +8,7 @@ type ExtensionUser={install_id:string;email:string;name:string|null;picture:stri
 type UserActivityDay={date:string;users:number};
 type UserActivity={date:string;accountKey:string;account:string;email:string|null;installId:string;actions:number;modules:{name:string;label:string;actions:number}[]};
 type MonthlyUser={accountKey:string;account:string;email:string|null;actions:number;activeDays:number;modules:{name:string;label:string;actions:number}[]};
+type ChatAnalytics={totals:{activeUsers:number;messages:number;opens:number;credits:number};users:{user_id:string;name:string|null;email:string|null;plan:string;opens:number;messages:number;credits:number;last_used:string}[];recent:{user_id:string|null;event_name:string;created_at:string;plan:string;credits:number}[]};
 type Payload={days:number;month:string;monthlyLeaderboardAvailable:boolean;monthlyTopUsers:MonthlyUser[];monthlyTopModules:{name:string;label:string;actions:number}[];totals:Record<string,number>;funnel:{name:string;value:number}[];modules:{name:string;label:string;value:number;actions:number}[];events:{name:string;value:number}[];daily:Daily[];userActivityDaily:UserActivityDay[];userActivity:UserActivity[];extensionUsers:ExtensionUser[];recent:{user_id:string|null;install_id:string;event_name:string;module:string|null;module_label:string|null;created_at:string}[]};
 const number=(v:number|undefined)=>new Intl.NumberFormat("pt-BR").format(v||0);
 function monthKey(date:Date){const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/Sao_Paulo",year:"numeric",month:"2-digit"}).formatToParts(date);return `${parts.find((part)=>part.type==="year")?.value}-${parts.find((part)=>part.type==="month")?.value}`;}
@@ -69,12 +70,15 @@ function UserUsageDailyChart({daily,selectedDate,onSelectDate}:{daily:UserActivi
  </svg></div>:<p className="rounded-xl bg-[var(--tx-surface-2)] p-4 text-sm text-[var(--tx-muted)]">Ainda não há atividade de módulos identificada neste período.</p>;
 }
 export default function AdminAnalytics(){
- const [data,setData]=useState<Payload|null>(null),[days,setDays]=useState(30),[month,setMonth]=useState(()=>monthKey(new Date())),[selectedDate,setSelectedDate]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[userFilter,setUserFilter]=useState("");
+ const [data,setData]=useState<Payload|null>(null),[chatData,setChatData]=useState<ChatAnalytics|null>(null),[days,setDays]=useState(30),[month,setMonth]=useState(()=>monthKey(new Date())),[selectedDate,setSelectedDate]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[userFilter,setUserFilter]=useState("");
  async function load(){
   setLoading(true);setError("");
   try{
    const {data:{session}}=await supabase.auth.getSession();
    if(!session?.access_token) throw new Error("Sessão expirada. Entre novamente.");
+   const chatRes=await fetch(`/api/admin/ai-analytics?days=${days}`,{headers:{Authorization:`Bearer ${session.access_token}`},cache:"no-store"});
+   const chatJson=await chatRes.json();
+   if(chatRes.ok) setChatData(chatJson); else setChatData(null);
    const res=await fetch(`/api/admin/analytics?days=${days}&month=${month}`,{headers:{Authorization:`Bearer ${session.access_token}`},cache:"no-store"});
    const json=await res.json();
    if(!res.ok) throw new Error(json.error==="forbidden"?"Acesso restrito ao proprietário.":json.error||"Falha ao carregar analytics.");
@@ -94,6 +98,16 @@ export default function AdminAnalytics(){
    <div className="flex flex-wrap gap-2"><select value={days} onChange={e=>{setDays(Number(e.target.value));setSelectedDate(null)}} aria-label="Período do histórico diário" className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-2 text-sm"><option value={7}>7 dias</option><option value={30}>30 dias</option><option value={60}>60 dias</option><option value={90}>90 dias</option></select><select value={month} onChange={e=>setMonth(e.target.value)} aria-label="Mês do ranking" className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-2 text-sm">{monthOptions().map((option)=><option key={option} value={option}>{monthLabel(option)}</option>)}</select><button onClick={load} className="tx-btn tx-btn-secondary"><RefreshCw size={14}/> Atualizar</button></div>
   </div>
   {error&&<div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"><AlertTriangle className="mr-2 inline" size={16}/>{error}</div>}
+  {chatData&&<>
+   <section className="tx-surface rounded-2xl p-5">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><p className="tx-kicker">INTELIGÊNCIA DE PRODUTO</p><h2 className="mt-1 text-xl font-black">Uso do TubeX AI Chat</h2><p className="mt-1 text-xs text-[var(--tx-muted)]">Contas autenticadas que abriram o Chat e enviaram mensagens. Nenhum conteúdo das conversas é armazenado neste relatório.</p></div><span className="rounded-full bg-[var(--tx-surface-2)] px-3 py-1 text-xs font-bold">Últimos {days} dias</span></div>
+    {chatData?<>
+     <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Usuários identificados",chatData.totals.activeUsers],["Mensagens enviadas",chatData.totals.messages],["Aberturas do Chat",chatData.totals.opens],["Créditos consumidos",chatData.totals.credits]].map(([label,value]:any)=><div key={label} className="rounded-xl border border-[var(--tx-border)] p-4"><div className="text-xs font-semibold text-[var(--tx-muted)]">{label}</div><div className="mt-2 text-2xl font-black">{number(value)}</div></div>)}</div>
+     <div className="max-h-[480px] overflow-auto rounded-xl border border-[var(--tx-border)]"><table className="w-full min-w-[760px] text-left text-xs"><thead className="sticky top-0 bg-[var(--tx-surface)] text-[var(--tx-muted)]"><tr><th className="px-3 py-3">Usuário</th><th>Plano</th><th className="text-right">Aberturas</th><th className="text-right">Mensagens</th><th className="text-right">Créditos</th><th className="px-3">Último uso</th></tr></thead><tbody>{chatData.users.map(user=><tr key={user.user_id} className="border-t border-[var(--tx-border)]"><td className="px-3 py-3"><div className="font-semibold">{user.name||"Sem nome"}</div><div className="mt-1 break-all text-[var(--tx-muted)]">{user.email||user.user_id}</div></td><td><span className="rounded-full bg-[var(--tx-surface-2)] px-2 py-1">{user.plan||"free"}</span></td><td className="text-right">{number(user.opens)}</td><td className="text-right font-bold">{number(user.messages)}</td><td className="text-right">{number(user.credits)}</td><td className="px-3 whitespace-nowrap">{user.last_used?new Date(user.last_used).toLocaleString("pt-BR"):"—"}</td></tr>)}</tbody></table></div>
+     {!chatData.users.length&&<p className="mt-3 text-sm text-[var(--tx-muted)]">Nenhum uso do Chat registrado neste período. Os eventos começam a aparecer após a publicação desta versão.</p>}
+    </>:<p className="rounded-xl bg-[var(--tx-surface-2)] p-4 text-sm text-[var(--tx-muted)]">Não foi possível carregar os dados do Chat.</p>}
+   </section>
+  </>}
   {loading?<div className="tx-surface rounded-2xl p-8 text-center text-sm">Carregando eventos...</div>:data&&<>
    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
     {[["Instalações ativas no período",data.totals.installs,Activity],["Contas com login",data.totals.logins,Users],["Eventos de pesquisa/análise",data.totals.searches,Search],["Assinaturas ativas (total atual)",data.totals.subscriptions,ShoppingCart]].map(([label,value,Icon]:any)=><div key={label} className="tx-surface rounded-2xl p-5"><div className="flex justify-between text-[var(--tx-muted)]"><span className="text-xs font-bold">{label}</span><Icon size={17}/></div><p className="mt-3 text-3xl font-black">{number(value)}</p></div>)}
