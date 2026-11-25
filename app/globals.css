@@ -1419,3 +1419,135 @@ html[data-theme] .tx-saas-shell .tx-ai-message.user{background:var(--tx-surface-
 }
 .tx-saas-shell .tx-ai-section-label,.tx-saas-shell .tx-ai-context .tx-ai-section-label{color:var(--tx-muted)!important}
 .tx-saas-shell .tx-ai-markdown ol{list-style:decimal}.tx-saas-shell .tx-ai-markdown ul{list-style:disc}.tx-saas-shell .tx-ai-markdown ol li::marker{color:var(--tx-muted);font-weight:600}
+
+
+/* ==========================================================================
+   TubeX v15 — Navy Premium (estilo da página de instalação da extensão)
+   Fundo azul-marinho profundo com brilho azul suave, cartões com borda fina,
+   rótulos pequenos em caixa alta, títulos fortes com destaque dourado,
+   botão principal azul e botão premium dourado, pontos de status verdes.
+   ========================================================================== */
+html, html.dark, html[data-theme="dark"]{
+  --tx-bg:#070b14;
+  --tx-surface:#0c121d;
+  --tx-surface-2:#111826;
+  --tx-surface-3:#162033;
+  --tx-border:rgba(148,163,184,.13);
+  --tx-border-strong:rgba(148,163,184,.22);
+  --tx-text:#f1f5fb;
+  --tx-muted:#8f9bb0;
+  --tx-accent:#f2c94c;
+  --tx-accent-strong:#f7d774;
+  --tx-accent-soft:rgba(242,201,76,.10);
+  --tx-blue:#3b82f6;
+  --tx-blue-strong:#2f6fe0;
+  --tx-blue-soft:rgba(59,130,246,.12);
+  --tx-green:#34d399;
+  --tx-green-soft:rgba(52,211,153,.12);
+  --tx-red:#f87171;
+  --tx-elevation-1:0 1px 0 rgba(255,255,255,.03) inset,0 10px 30px rgba(0,0,0,.25);
+  --tx-elevation-2:0 1px 0 rgba(255,255,255,.04) inset,0 18px 50px rgba(0,0,0,.4);
+  --tx-focus-ring:rgba(59,130,246,.3);
+  --tx-glow:radial-gradient(900px 520px at 72% -8%,rgba(37,99,235,.16),transparent 60%),radial-gradient(700px 480px at 8% 20%,rgba(29,78,216,.08),transparent 60%);
+}
+@media (prefers-color-scheme:dark){
+  html[data-theme="system"]{
+    --tx-bg:#070b14;--tx-surface:#0c121d;--tx-surface-2:#111826;--tx-surface-3:#162033;
+    --tx-border:rgba(148,163,184,.13);--tx-border-strong:rgba(148,163,184,.22);
+    --tx-text:#f1f5fb;--tx-muted:#8f9bb0;--tx-accent:#f2c94c;--tx-accent-strong:#f7d774;--tx-accent-soft:rgba(242,201,76,.10);
+    --tx-blue:#3b82f6;--tx-blue-strong:#2f6fe0;--tx-blue-soft:rgba(59,130,246,.12);
+    --tx-green:#34d399;--tx-green-soft:rgba(52,211,153,.12);--tx-red:#f87171;
+    --tx-elevation-1:0 1px 0 rgba(255,255,255,.03) inset,0 10px 30px rgba(0,0,0,.25);
+    --tx-elevation-2:0 1px 0 rgba(255,255,255,.04) inset,0 18px 50px rgba(0,0,0,.4);
+    --tx-focus-ring:rgba(59,130,246,.3);
+    --tx-glow:radial-gradient(900px 520px at 72% -8%,rgba(37,99,235,.16),transparent 60%),radial-gradient(700px 480px at 8% 20%,rgba(29,78,216,.08),transparent 60%);
+  }
+}
+html.light, html[data-theme="light"]{
+  --tx-blue:#2563eb;--tx-blue-strong:#1d4ed8;--tx-accent:#d4a017;
+  --tx-glow:radial-gradient(900px 520px at 72% -8%,rgba(37,99,235,.07),transparent 60%);
+}
+@media (prefers-color-scheme:light){ html[data-theme="system"]{ --tx-glow:radial-gradient(900px 520px at 72% -8%,rgba(37,99,235,.07),transparent 60%); } }
+
+/* Tipografia: títulos em Plus Jakarta Sans, texto em Inter */
+html body{font-family:var(--tx-font-body,Inter),ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.tx-saas-shell :is(h1,h2,h3),.tx-kpi-value,.tx-mini-stat b,.tx-saas-shell .tx-ai-welcome h1{font-family:var(--tx-font-display,var(--tx-font-body)),ui-sans-serif,system-ui,sans-serif}
+.tx-dashboard-content.is-page h1{font-weight:800!important;letter-spacing:-.035em!important}
+.tx-dashboard-content.is-page :is(h2,h3){font-weight:700!important;letter-spacing:-.02em!important}
+.tx-gold,.tx-saas-shell h1 em{font-style:normal;color:var(--tx-accent)}
+
+/* Fundo marinho com brilho azul */
+html body,html[data-theme] body,.tx-saas-shell{background:var(--tx-glow),var(--tx-bg)!important;background-attachment:fixed!important}
+.tx-app-main,.tx-dashboard-content.is-page{background:transparent!important}
+.tx-topbar,html[data-theme] .tx-topbar{background:color-mix(in srgb,var(--tx-bg) 78%,transparent)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.tx-sidebar{background:color-mix(in srgb,var(--tx-bg) 70%,var(--tx-surface))!important}
+
+/* Rótulos pequenos em caixa alta, como "CONHEÇA O ECOSSISTEMA TUBEX" */
+.tx-dashboard-content.is-page .tx-kicker,.tx-saas-shell .tx-ai-section-label,.tx-nav-heading{
+  color:var(--tx-muted)!important;font-size:11px!important;font-weight:700!important;letter-spacing:.16em!important;text-transform:uppercase}
+.tx-nav-heading{font-size:10.5px!important}
+
+/* Cartões: borda fina, cantos arredondados, leve brilho no topo */
+.tx-dashboard-content.is-page :is(.tx-surface,.tx-feature,.tx-plan,.tx-faq,.tx-chart-panel,.tx-analytics-panel,.tx-stat-card,.tx-metric-card),
+html[data-theme] .tx-dashboard-content.is-page :is(.tx-surface,.tx-chart-panel,.tx-analytics-panel),
+.tx-kpi{
+  background:linear-gradient(180deg,rgba(255,255,255,.018),transparent 120px),var(--tx-surface)!important;
+  border:1px solid var(--tx-border)!important;border-radius:18px!important;box-shadow:var(--tx-elevation-1)!important;
+}
+html.light .tx-kpi,html[data-theme="light"] .tx-kpi{background:var(--tx-surface)!important}
+.tx-dashboard-content.is-page :is(.tx-surface,.tx-chart-panel,.tx-analytics-panel):hover{border-color:var(--tx-border-strong)!important}
+.tx-insight,.tx-mini-stat{background:var(--tx-surface-2);border:1px solid var(--tx-border)}
+
+/* Botões: principal azul, premium dourado */
+.tx-dashboard-content.is-page .tx-btn-primary,.tx-btn-blue{
+  background:var(--tx-blue)!important;color:#fff!important;border:1px solid transparent!important;border-radius:10px!important;
+  box-shadow:0 6px 20px rgba(59,130,246,.25)!important;font-weight:700}
+.tx-dashboard-content.is-page .tx-btn-primary:hover,.tx-btn-blue:hover{background:var(--tx-blue-strong)!important;filter:none}
+.tx-btn-gold,.tx-saas-shell [class*="tx-premium"] .tx-btn-primary{
+  background:linear-gradient(180deg,#f7d774,#e9b93a)!important;color:#1a1405!important;border:1px solid rgba(242,201,76,.5)!important;
+  border-radius:10px!important;box-shadow:0 6px 20px rgba(242,201,76,.18)!important;font-weight:700}
+.tx-dashboard-content.is-page .tx-btn-secondary{background:var(--tx-surface-2)!important;border:1px solid var(--tx-border-strong)!important;border-radius:10px!important}
+.tx-dashboard-content.is-page :is(input,select,textarea){background:var(--tx-surface-2)!important;border-color:var(--tx-border)!important;border-radius:10px!important}
+.tx-dashboard-content.is-page :is(input,select,textarea):focus{border-color:var(--tx-blue)!important;box-shadow:0 0 0 3px var(--tx-focus-ring)!important}
+
+/* Navegação lateral: item ativo com toque azul, como "SEO Explorer" na prévia */
+.tx-nav-item.is-active{background:var(--tx-blue-soft)!important;border:1px solid color-mix(in srgb,var(--tx-blue) 35%,transparent)!important;color:var(--tx-text)!important}
+.tx-nav-item.is-active .tx-nav-icon{color:var(--tx-blue)}
+.tx-nav-active-dot{background:var(--tx-green);box-shadow:0 0 8px rgba(52,211,153,.6)}
+.tx-session-dot{background:var(--tx-green)}
+.tx-extension-link{background:var(--tx-surface)!important;border:1px solid var(--tx-border)!important}
+.tx-extension-icon{background:var(--tx-blue-soft);color:var(--tx-blue)}
+.tx-owner-pill{background:var(--tx-accent-soft);color:var(--tx-accent);border:1px solid rgba(242,201,76,.25)}
+
+/* Tabelas */
+.tx-dashboard-content.is-page table{border-color:var(--tx-border)!important;border-radius:14px}
+.tx-dashboard-content.is-page thead th{background:var(--tx-surface-2)!important;color:var(--tx-muted)!important;letter-spacing:.12em}
+
+/* Dados: azul para séries, verde para positivo, dourado para destaque */
+.tx-delta.is-up{background:var(--tx-green-soft);color:var(--tx-green)}
+
+/* TubeX AI no mesmo estilo */
+.tx-saas-shell .tx-ai-workspace{background:var(--tx-surface)!important;border-color:var(--tx-border)!important;border-radius:20px}
+.tx-saas-shell .tx-ai-history,.tx-saas-shell .tx-ai-context{background:color-mix(in srgb,var(--tx-bg) 55%,var(--tx-surface))!important}
+.tx-saas-shell .tx-ai-main,.tx-saas-shell .tx-ai-topbar,html[data-theme] .tx-saas-shell .tx-ai-topbar{background:transparent!important}
+.tx-saas-shell .tx-ai-main{background:radial-gradient(600px 320px at 50% -10%,rgba(37,99,235,.10),transparent 70%)!important}
+.tx-ai-brand-mark,.tx-saas-shell .tx-ai-orb span{background:var(--tx-blue)!important;color:#fff!important;box-shadow:0 8px 24px rgba(59,130,246,.3)!important}
+.tx-saas-shell .tx-ai-orb{background:var(--tx-blue-soft)!important}
+.tx-saas-shell .tx-ai-welcome h1{font-weight:800;letter-spacing:-.035em}
+.tx-saas-shell .tx-ai-send{background:var(--tx-blue)!important;color:#fff!important}
+.tx-saas-shell .tx-ai-send.is-stop{background:var(--tx-text)!important;color:var(--tx-bg)!important}
+.tx-saas-shell .tx-ai-generate-btn{background:var(--tx-blue);color:#fff}
+.tx-saas-shell .tx-ai-composer,html[data-theme] .tx-saas-shell .tx-ai-composer{background:var(--tx-surface-2)!important;border-color:var(--tx-border-strong)!important}
+.tx-saas-shell .tx-ai-composer:focus-within{border-color:color-mix(in srgb,var(--tx-blue) 60%,transparent)!important;box-shadow:0 0 0 3px var(--tx-focus-ring),var(--tx-elevation-2)!important}
+.tx-saas-shell .tx-ai-message.user{background:var(--tx-blue-soft)!important;border:1px solid color-mix(in srgb,var(--tx-blue) 25%,transparent)!important}
+.tx-saas-shell .tx-ai-history-item.is-active{background:var(--tx-blue-soft)!important;box-shadow:0 0 0 1px color-mix(in srgb,var(--tx-blue) 30%,transparent)}
+.tx-saas-shell .tx-ai-starter{background:var(--tx-surface-2)}
+.tx-saas-shell .tx-ai-starter:hover{border-color:color-mix(in srgb,var(--tx-blue) 45%,transparent)}
+.tx-saas-shell .tx-ai-starter-icon{background:var(--tx-blue-soft);color:var(--tx-blue)}
+.tx-saas-shell .tx-ai-markdown a{color:var(--tx-blue)}
+.tx-saas-shell .tx-ai-md-list li::marker{color:var(--tx-accent)}
+
+@media (max-width:760px){
+  html body,html[data-theme] body,.tx-saas-shell{background-attachment:scroll!important}
+  .tx-dashboard-content.is-page :is(.tx-surface,.tx-chart-panel,.tx-analytics-panel),.tx-kpi{border-radius:16px!important}
+}

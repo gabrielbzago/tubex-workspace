@@ -425,7 +425,7 @@ export default function TubeXAIChat() {
             {isFresh && (
               <div className="tx-ai-welcome">
                 <div className="tx-ai-orb"><span><Sparkles size={24}/></span></div>
-                <h1>Como posso ajudar seu canal hoje?</h1>
+                <h1>Como posso ajudar seu canal <em>hoje?</em></h1>
                 <p>Analise dados, descubra oportunidades e transforme ideias em conteúdo melhor, tudo em uma conversa.</p>
                 <div className="tx-ai-starters">
                   {starters.map(({icon: Icon,title,text}) => (
