@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowUp, Plus, Sparkles, ImagePlus, LoaderCircle, Download,
@@ -28,6 +28,116 @@ const welcome: Message = {
 };
 
 function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
+  const parts = text.split(pattern).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    return <Fragment key={index}>{part}</Fragment>;
+  });
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+}
+
+function isMarkdownTableDivider(line: string): boolean {
+  const cells = splitMarkdownTableRow(line);
+  return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
+}
+
+function AssistantMessage({ content }: { content: string }) {
+  const lines = content.replace(/\r/g, "").split("\n");
+  const blocks: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const raw = lines[i];
+    const line = raw.trim();
+    if (!line) { i++; continue; }
+
+    // GitHub-flavored Markdown table
+    if (line.includes("|") && i + 1 < lines.length && isMarkdownTableDivider(lines[i + 1].trim())) {
+      const headers = splitMarkdownTableRow(line);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim().includes("|") && lines[i].trim()) {
+        rows.push(splitMarkdownTableRow(lines[i]));
+        i++;
+      }
+      blocks.push(
+        <div className="tx-ai-table-wrap" key={key++}>
+          <table className="tx-ai-markdown-table">
+            <thead><tr>{headers.map((cell, idx) => <th key={idx}>{renderInlineMarkdown(cell)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, rowIdx) => <tr key={rowIdx}>{headers.map((_, cellIdx) => <td key={cellIdx}>{renderInlineMarkdown(row[cellIdx] || "")}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      const Tag = (level === 1 ? "h3" : level === 2 ? "h4" : "h5") as "h3" | "h4" | "h5";
+      blocks.push(<Tag className="tx-ai-md-heading" key={key++}>{renderInlineMarkdown(heading[2])}</Tag>);
+      i++;
+      continue;
+    }
+
+    if (/^[-*•]\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*•]\s+/, "").trim());
+        i++;
+      }
+      blocks.push(<ul className="tx-ai-md-list" key={key++}>{items.map((item, idx) => <li key={idx}>{renderInlineMarkdown(item)}</li>)}</ul>);
+      continue;
+    }
+
+    if (/^\d+[.)]\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+[.)]\s+/, "").trim());
+        i++;
+      }
+      blocks.push(<ol className="tx-ai-md-list" key={key++}>{items.map((item, idx) => <li key={idx}>{renderInlineMarkdown(item)}</li>)}</ol>);
+      continue;
+    }
+
+    if (line.startsWith(">")) {
+      const quote: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) {
+        quote.push(lines[i].trim().replace(/^>\s?/, ""));
+        i++;
+      }
+      blocks.push(<blockquote className="tx-ai-md-quote" key={key++}>{quote.map((part, idx) => <p key={idx}>{renderInlineMarkdown(part)}</p>)}</blockquote>);
+      continue;
+    }
+
+    const paragraph = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !/^(#{1,3})\s+/.test(lines[i].trim()) &&
+      !/^[-*•]\s+/.test(lines[i].trim()) && !/^\d+[.)]\s+/.test(lines[i].trim()) &&
+      !(lines[i].trim().includes("|") && i + 1 < lines.length && isMarkdownTableDivider(lines[i + 1].trim()))) {
+      paragraph.push(lines[i].trim());
+      i++;
+    }
+    blocks.push(<p className="tx-ai-md-paragraph" key={key++}>{renderInlineMarkdown(paragraph.join(" "))}</p>);
+  }
+
+  return <div className="tx-ai-markdown">{blocks}</div>;
+}
 
 export default function TubeXAIChat() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -206,7 +316,7 @@ export default function TubeXAIChat() {
             {messages.slice(isFresh ? 1 : 0).map((m,i) => (
               <div key={`${activeId}-${i}`} className={`tx-ai-message-row ${m.role === "user" ? "user" : "assistant"}`}>
                 {m.role === "assistant" && <span className="tx-ai-avatar"><Sparkles size={14}/></span>}
-                <div className={`tx-ai-message ${m.role === "user" ? "user" : "assistant"}`}>{m.content}</div>
+                <div className={`tx-ai-message ${m.role === "user" ? "user" : "assistant"}`}>{m.role === "assistant" ? <AssistantMessage content={m.content} /> : m.content}</div>
               </div>
             ))}
             {busy && <div className="tx-ai-message-row assistant"><span className="tx-ai-avatar"><Sparkles size={14}/></span><div className="tx-ai-thinking"><span/><span/><span/> <small>Organizando a análise</small></div></div>}
