@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity,Trophy,Rss } from "lucide-react";
+import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity,Trophy,Rss,ChevronRight,ChevronUp,TrendingUp,Eye,Video } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "./theme-toggle";
 import AffiliatePage from "./affiliate-page";
@@ -30,11 +30,14 @@ const i18n={
  "en":{dashboard:"Overview",affiliate:"Affiliates",account:"Account",billing:"Subscription",support:"Support",welcome:"Your TubeX workspace",overview:"Research keywords, compare competing videos and uncover opportunities for your next uploads.",connected:"Channel connected",notConnected:"No channel connected",plan:"Current plan",status:"Status",active:"Active",free:"Free",openExtension:"Open extension",manage:"Manage account",logout:"Sign out",affiliateTitle:"Affiliate Program",affiliateText:"Share TubeX and track sales and commissions.",supportText:"Need help? Contact support.",contact:"Contact support",subscription:"Your subscription",upgrade:"View plans",security:"Protected session",language:"Language",admin:"Admin / Affiliates",extBadge:"TubeX primary tool",extHeadline:"The TubeX extension is where everything happens.",extBody:"Use the extension to analyze videos while browsing YouTube, find tags, evaluate SEO, and work directly in YouTube Studio. This web dashboard is complementary, bringing together analytics, planning, and account management.",installExt:"Install TubeX extension",storeLabel:"Available on the Chrome Web Store",step1:"1. Install in Chrome",step1Text:"Add TubeX using the official link.",step2:"2. Pin the extension",step2Text:"Use your browser’s extensions menu.",step3:"3. Open YouTube",step3Text:"Access TubeX tools on supported pages.",complementText:"This dashboard is a companion; the extension is the central everyday YouTube experience.",webPanel:"Explore web dashboard"}
 } as const;
 
-function Logo(){return <a href="/dashboard" className="flex items-center gap-2 font-black tracking-[-.06em] text-[22px] text-[var(--tx-text)]"><span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[var(--tx-accent)] text-[10px] text-[#11151a]">TX</span>Tube<span className="text-[var(--tx-accent)]">X</span></a>}
+function Logo(){return <a href="/dashboard" className="flex items-center gap-2" aria-label="TubeX"><img src="/logo.png" alt="TubeX" className="h-9 w-auto max-w-[142px] object-contain object-left"/></a>}
 
 export default function DashboardLayout({user}:{user:any}){
  const [tab,setTab]=useState<"ai"|"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"usage"|"cancellations"|"achievements"|"feed"|"intelligence"|"account"|"billing"|"support">("ai");
  const [mobileOpen,setMobileOpen]=useState(false);
+ const [toolsOpen,setToolsOpen]=useState(false);
+ const [channelContext,setChannelContext]=useState<any>(null);
+ const [achievementSummary,setAchievementSummary]=useState<any>(null);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
  const ownerEmails = [process.env.NEXT_PUBLIC_OWNER_EMAIL || "", "gabrielbzago@gmail.com"].map(v => v.trim().toLowerCase()).filter(Boolean);
@@ -45,6 +48,13 @@ export default function DashboardLayout({user}:{user:any}){
  // O endpoint de Analytics repete a validação no servidor; a UI não é a barreira de segurança.
  const isOwner = ownerEmails.includes(userEmail);
 
+ useEffect(()=>{
+  const readContext=()=>{try{const raw=localStorage.getItem("tubex-ai-channel-context");setChannelContext(raw?JSON.parse(raw):null)}catch{setChannelContext(null)}};
+  readContext();window.addEventListener("tubex-channel-context",readContext);window.addEventListener("storage",readContext);
+  let alive=true;
+  (async()=>{try{const {data:sessionData}=await supabase.auth.getSession();const token=sessionData.session?.access_token;if(!token)return;const res=await fetch("/api/achievements",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});if(!res.ok)return;const payload=await res.json();if(alive)setAchievementSummary(payload)}catch{} })();
+  return()=>{alive=false;window.removeEventListener("tubex-channel-context",readContext);window.removeEventListener("storage",readContext)};
+ },[]);
  useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
   (async()=>{
    if(!user?.email)return;
@@ -136,8 +146,14 @@ export default function DashboardLayout({user}:{user:any}){
  }
  const plan=String(isOwner ? "expert" : (userData?.plan||"free")).toLowerCase();
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
+ const toolItems:any[]=[
+  ["intelligence",Activity,"Inteligência"],
+  ["feed",Rss,"Feed do canal"],
+  ["workspace",Search,"Workspace SEO"],
+  ["creator",Lightbulb,"Keyword Explorer"],
+ ];
  const navItems:any[]=[
-  ["ai",Activity,"TubeX AI"],["dashboard",Home,t.dashboard],["intelligence",Activity,"Inteligência"],["feed",Rss,"Feed do canal"],["workspace",Search,"Workspace SEO"],["creator",Lightbulb,"Keyword Explorer"],["achievements",Trophy,"Conquistas"],["affiliate",Users,t.affiliate],
+  ["ai",Activity,"TubeX AI"],["affiliate",Users,t.affiliate],
   ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"],["usage",Activity,"Comportamento de Uso"],["cancellations",CreditCard,"Cancelamentos"]]:[]),
   ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
  ];
@@ -153,7 +169,10 @@ export default function DashboardLayout({user}:{user:any}){
    <div className="mt-8 rounded-2xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-4"><p className="text-[9px] font-black uppercase tracking-[.15em] text-[var(--tx-accent)]">TubeX</p><p className="mt-2 text-xs font-bold">YouTube growth workspace</p><p className="mt-1 text-[10px] leading-5 text-[var(--tx-muted)]">{t.overview}</p></div>
    <a href="https://chromewebstore.google.com/detail/tubex-seo-analyzer-for-yo/lgddmmhnmkmkfhaodogcoecdecegemgk" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-[var(--tx-accent)]/45 bg-[var(--tx-accent-soft)] px-3 py-3 text-[10px] font-black text-[var(--tx-text)]"><span className="flex min-w-0 items-center gap-2"><Puzzle size={15} className="shrink-0 text-[var(--tx-accent-strong)]"/><span>Instalar extensão TubeX</span></span><ExternalLink size={12}/></a>
    <nav className="mt-5 grid gap-1">
-    {navItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[11px] font-extrabold transition ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)] hover:bg-[var(--tx-surface-2)]"}`}><Icon size={16}/><span>{label}</span>{id==="admin"&&<span className="ml-auto rounded-md bg-[var(--tx-accent)] px-1.5 py-0.5 text-[8px] font-black text-[#11151a]">OWNER</span>}</button>)}
+    {navItems.slice(0,2).map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[11px] font-extrabold transition ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)] hover:bg-[var(--tx-surface-2)]"}`}><Icon size={16}/><span>{label}</span>{id==="admin"&&<span className="ml-auto rounded-md bg-[var(--tx-accent)] px-1.5 py-0.5 text-[8px] font-black text-[#11151a]">OWNER</span>}</button>)}
+    <button onClick={()=>setToolsOpen(v=>!v)} aria-expanded={toolsOpen} className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[11px] font-extrabold text-[var(--tx-muted)] transition hover:bg-[var(--tx-surface-2)]"><Puzzle size={16}/><span className="flex-1">Ferramentas</span>{toolsOpen?<ChevronUp size={14}/>:<ChevronRight size={14}/>}</button>
+    {toolsOpen&&<div className="ml-3 grid gap-1 border-l border-[var(--tx-border)] pl-3">{toolItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[10px] font-bold ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)] hover:bg-[var(--tx-surface-2)]"}`}><Icon size={14}/>{label}</button>)}</div>}
+    {navItems.slice(2).map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[11px] font-extrabold transition ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)] hover:bg-[var(--tx-surface-2)]"}`}><Icon size={16}/><span>{label}</span>{id==="admin"&&<span className="ml-auto rounded-md bg-[var(--tx-accent)] px-1.5 py-0.5 text-[8px] font-black text-[#11151a]">OWNER</span>}</button>)}
    </nav>
    <div className="mt-auto">
     <div className="mb-3 flex items-center gap-2 rounded-xl border border-[var(--tx-border)] p-2"><div className="grid h-8 w-8 place-items-center overflow-hidden rounded-lg bg-[var(--tx-accent)] text-xs font-black text-[#11151a]">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0"><div className="flex items-center gap-1"><p className="truncate text-[11px] font-bold">{displayName}</p>{isOwner&&<span className="rounded bg-[var(--tx-accent)] px-1 py-0.5 text-[7px] font-black text-[#11151a]">OWNER</span>}</div><p className="truncate text-[9px] text-[var(--tx-muted)]">{user?.email}</p></div></div>
@@ -163,7 +182,7 @@ export default function DashboardLayout({user}:{user:any}){
   <main className="tx-app-main min-h-screen min-w-0 w-full lg:pl-[232px]">
    <header className="sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
     <div className="mx-auto flex h-[60px] w-full max-w-[1180px] min-w-0 items-center gap-2 px-3 sm:h-[66px] sm:px-4">
-     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="ai"?"TubeX AI":tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="achievements"?"Conquistas":tab==="feed"?"Feed do canal":tab==="intelligence"?"Central de Inteligência":tab==="dashboard"?t.dashboard:tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="cancellations"?"Cancelamentos":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
+     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="ai"?"TubeX AI":tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="achievements"?"Conquistas":tab==="feed"?"Feed do canal":tab==="intelligence"?"Central de Inteligência":tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="cancellations"?"Cancelamentos":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
@@ -171,13 +190,29 @@ export default function DashboardLayout({user}:{user:any}){
      </div>
     </div>
    </header>
-  {mobileOpen&&<div className="tx-mobile-menu lg:hidden max-h-[calc(100dvh-60px)] overflow-y-auto border-b border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-3"><nav className="grid grid-cols-2 gap-1">{navItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)]"}`}><Icon size={15}/><span>{label}</span>{id==="admin"&&<span className="ml-auto rounded-md bg-[var(--tx-accent)] px-1.5 py-0.5 text-[8px] font-black text-[#11151a]">OWNER</span>}</button>)}</nav></div>}
+  {mobileOpen&&<div className="tx-mobile-menu lg:hidden max-h-[calc(100dvh-60px)] overflow-y-auto border-b border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-3"><nav className="grid grid-cols-2 gap-1">{navItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)]"}`}><Icon size={15}/><span>{label}</span></button>)}<button onClick={()=>setToolsOpen(v=>!v)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold text-[var(--tx-muted)]"><Puzzle size={15}/>Ferramentas{toolsOpen?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>{toolsOpen&&toolItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-left text-[10px] text-[var(--tx-muted)]"><Icon size={13}/>{label}</button>)}</nav></div>}
    <div className="tx-dashboard-content mx-auto w-full max-w-[1320px] min-w-0 px-3 py-4 pb-28 sm:px-5 sm:py-6 lg:px-7 lg:py-8">
-    {tab==="ai"&&<TubeXAIChat/>}
+    {tab==="ai"&&<div className="space-y-4">
+     <section className="grid gap-3 xl:grid-cols-[1.45fr_.9fr]">
+      <div className="tx-surface relative overflow-hidden rounded-[22px] border border-[var(--tx-border)] p-4 sm:p-5">
+       <div className="flex items-start justify-between gap-3"><div><p className="tx-kicker">DESEMPENHO DO CANAL</p><h2 className="mt-1 text-base font-black sm:text-lg">{channelContext?.channelName||userData?.youtube_channel_name||"Seu canal no YouTube"}</h2><p className="mt-1 text-[10px] text-[var(--tx-muted)]">Indicadores sincronizados com o contexto do TubeX AI</p></div><span className="rounded-xl bg-[var(--tx-accent-soft)] p-2 text-[var(--tx-accent)]"><TrendingUp size={18}/></span></div>
+       <div className="mt-4 grid grid-cols-3 gap-2">
+        <MetricMini label="Inscritos" value={channelContext?.subscribers} icon={<Users size={13}/>}/>
+        <MetricMini label="Visualizações" value={channelContext?.totalViews} icon={<Eye size={13}/>}/>
+        <MetricMini label="Vídeos" value={channelContext?.videoCount} icon={<Video size={13}/>}/>
+       </div>
+       <div className="mt-4 rounded-xl border border-dashed border-[var(--tx-border)] bg-[var(--tx-surface-2)]/55 px-3 py-2.5"><div className="flex items-center gap-2 text-[var(--tx-accent)]"><TrendingUp size={14}/><span className="text-[10px] font-bold">Evolução de visualizações</span></div><div className="mt-2 flex h-8 items-end border-b border-l border-[var(--tx-border)] px-1" aria-hidden="true"><span className="mb-1 text-[9px] text-[var(--tx-muted)]">Aguardando histórico de métricas</span></div><p className="mt-1 text-[9px] leading-4 text-[var(--tx-muted)]">A série histórica será exibida quando houver dados de desempenho sincronizados do YouTube Analytics.</p></div>
+      </div>
+      <button onClick={()=>selectTab("achievements")} className="tx-surface group flex min-h-[170px] flex-col justify-between rounded-[22px] border border-[var(--tx-accent)]/35 bg-gradient-to-br from-[var(--tx-accent-soft)]/70 to-[var(--tx-surface)] p-4 text-left transition hover:border-[var(--tx-accent)] sm:p-5">
+       <div className="flex items-center justify-between"><span className="tx-kicker">CENTRAL DE CONQUISTAS</span><span className="rounded-xl bg-[var(--tx-accent)]/15 p-2 text-[var(--tx-accent)]"><Trophy size={18}/></span></div>
+       <div><p className="mt-3 text-sm font-black">{achievementSummary?.achievements?.filter((a:any)=>a.unlocked).length||0} conquistas desbloqueadas</p><p className="mt-1 line-clamp-2 text-[11px] text-[var(--tx-muted)]">{achievementSummary?.achievements?.filter((a:any)=>a.unlocked).sort((a:any,b:any)=>new Date(b.unlocked_at||0).getTime()-new Date(a.unlocked_at||0).getTime())[0]?.title||"Sua próxima conquista começa aqui"}</p><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--tx-border)]"><div className="h-full rounded-full bg-[var(--tx-accent)]" style={{width:`${Math.min(100,((achievementSummary?.achievements?.filter((a:any)=>a.unlocked).length||0)/Math.max(1,achievementSummary?.achievements?.length||1))*100)}%`}}/></div><div className="mt-2 flex items-center justify-between text-[9px] text-[var(--tx-muted)]"><span>Progresso geral</span><span className="font-bold text-[var(--tx-accent)]">Abrir conquistas <ArrowRight className="inline" size={11}/></span></div></div>
+      </button>
+     </section>
+     <TubeXAIChat/>
+    </div>}
     {tab==="intelligence"&&<IntelligenceCenter user={user} plan={isOwner ? "expert" : plan}/>}
     {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
     {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}{tab==="feed"&&<FeedDashboard/>}{tab==="achievements"&&<AchievementsCenter user={user}/>}
-    {tab==="dashboard"&&<Overview user={user} userData={userData} t={t} onTab={setTab} isOwner={isOwner}/>}
     {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{tab==="behavior"&&isOwner&&<AdminSubscriberBehavior/>}{tab==="usage"&&isOwner&&<AdminSubscriberBehavior segment="free"/>}{tab==="cancellations"&&isOwner&&<CancellationAdmin/>}{(tab==="admin"||tab==="analytics"||tab==="behavior"||tab==="usage"||tab==="cancellations")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
     {tab==="account"&&<Account user={user} userData={userData} t={t} isOwner={isOwner}/>}
     {tab==="billing"&&<Billing user={user} userData={userData} t={t}/>} 
@@ -186,6 +221,8 @@ export default function DashboardLayout({user}:{user:any}){
   </main>
  </div>
 }
+
+function MetricMini({label,value,icon}:any){const formatted=value===undefined||value===null?"—":new Intl.NumberFormat("pt-BR",{notation:Number(value)>999999?"compact":"standard",maximumFractionDigits:1}).format(Number(value)||0);return <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)]/70 p-3"><div className="flex items-center gap-1.5 text-[var(--tx-muted)]">{icon}<span className="text-[9px]">{label}</span></div><p className="mt-2 text-sm font-black tabular-nums sm:text-base">{formatted}</p></div>}
 
 function Overview({user,userData,t,onTab,isOwner}:any){
  const name=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
