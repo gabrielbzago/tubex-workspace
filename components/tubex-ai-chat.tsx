@@ -355,7 +355,7 @@ export default function TubeXAIChat() {
         <div className="flex items-center justify-between"><p className="tx-ai-section-label">CONTEXTO DO CANAL</p><button onClick={() => setShowContext(false)} className="tx-ai-icon-btn lg:hidden"><X size={14}/></button></div>
         {channelContext?.channelName ? <>
           <div className="tx-ai-channel-card">
-            <div className="tx-ai-channel-avatar"><Video size={20}/></div>
+            <div className="tx-ai-channel-avatar">{channelContext?.channelThumbnail ? <img src={channelContext.channelThumbnail} alt="Logo do canal"/> : <Video size={20}/>}</div>
             <div className="min-w-0"><p className="truncate text-[12px] font-bold">{channelContext.channelName}</p><p className="mt-1 text-[9px] text-emerald-400">Conectado ao TubeX</p></div>
           </div>
           <div className="tx-ai-metrics">{metrics.map(({label,value,icon: Icon}) => <div key={label}><span><Icon size={13}/>{label}</span><b>{value}</b></div>)}</div>

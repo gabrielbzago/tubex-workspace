@@ -13,10 +13,10 @@ function applyTheme(mode: Mode) {
   root.style.colorScheme = mode;
 }
 export default function ThemeToggle() {
-  const [mode, setMode] = useState<Mode>("light");
+  const [mode, setMode] = useState<Mode>("dark");
   useEffect(() => {
     const saved = localStorage.getItem(KEY);
-    const initial: Mode = saved === "dark" ? "dark" : "light";
+    const initial: Mode = saved === "light" ? "light" : "dark";
     setMode(initial);
     applyTheme(initial);
     const onSync = (event: Event) => {

@@ -112,7 +112,7 @@ export default function FeedDashboard() {
       if (typeof window !== "undefined") localStorage.setItem("tubex-feed-channel", selected.id);
       setChannel(selected);
       try {
-        const context = { channelId: selected.id, channelName: selected.title, subscribers: selected.subscribers, totalViews: selected.views, videoCount: selected.videoCount, fetchedAt: new Date().toISOString() };
+        const context = { channelId: selected.id, channelName: selected.title, channelThumbnail: selected.thumbnail, subscribers: selected.subscribers, totalViews: selected.views, videoCount: selected.videoCount, fetchedAt: new Date().toISOString() };
         localStorage.setItem("tubex-ai-channel-context", JSON.stringify(context));
         window.dispatchEvent(new Event("tubex-channel-context"));
       } catch {}
@@ -144,7 +144,7 @@ export default function FeedDashboard() {
       rows.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
       setVideos(rows);
       try {
-        const context = { channelId: selected.id, channelName: selected.title, subscribers: selected.subscribers, totalViews: selected.views, videoCount: selected.videoCount, videos: rows.slice(0, 40).map(v => ({ title: v.title, publishedAt: v.publishedAt, views: v.views, likes: v.likes, comments: v.comments, durationSeconds: v.durationSeconds })), fetchedAt: new Date().toISOString() };
+        const context = { channelId: selected.id, channelName: selected.title, channelThumbnail: selected.thumbnail, subscribers: selected.subscribers, totalViews: selected.views, videoCount: selected.videoCount, videos: rows.slice(0, 40).map(v => ({ title: v.title, publishedAt: v.publishedAt, views: v.views, likes: v.likes, comments: v.comments, durationSeconds: v.durationSeconds })), fetchedAt: new Date().toISOString() };
         localStorage.setItem("tubex-ai-channel-context", JSON.stringify(context));
         window.dispatchEvent(new Event("tubex-channel-context"));
       } catch {}
