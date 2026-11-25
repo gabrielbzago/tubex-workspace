@@ -12,11 +12,13 @@ type Builder = (from: number, to: number) => PromiseLike<{ data: any[] | null; e
 
 export async function fetchAllPages(
   build: Builder,
-  options: { maxRows?: number; concurrency?: number; total?: number | null } = {},
+  options: { maxRows?: number; concurrency?: number; total?: number | null; timeBudgetMs?: number } = {},
 ): Promise<{ rows: any[]; error: string | null; truncated: boolean }> {
   const maxRows = options.maxRows ?? 200_000;
   const concurrency = Math.max(1, options.concurrency ?? 6);
   const rows: any[] = [];
+  // Limite de tempo: devolve o que já foi carregado em vez de travar a página.
+  const deadline = Date.now() + (options.timeBudgetMs ?? 25_000);
 
   // Quando já sabemos o total, buscamos várias páginas em paralelo.
   if (typeof options.total === "number") {
@@ -24,6 +26,7 @@ export async function fetchAllPages(
     const starts: number[] = [];
     for (let from = 0; from < total; from += PAGE) starts.push(from);
     for (let i = 0; i < starts.length; i += concurrency) {
+      if (Date.now() > deadline) return { rows, error: null, truncated: true };
       const batch = await Promise.all(starts.slice(i, i + concurrency).map((from) => build(from, from + PAGE - 1)));
       for (const result of batch) {
         if (result.error) return { rows, error: result.error.message, truncated: false };
@@ -34,6 +37,7 @@ export async function fetchAllPages(
   }
 
   for (let from = 0; from < maxRows; from += PAGE) {
+    if (Date.now() > deadline) return { rows, error: null, truncated: true };
     const { data, error } = await build(from, from + PAGE - 1);
     if (error) return { rows, error: error.message, truncated: false };
     rows.push(...(data || []));
@@ -48,6 +52,7 @@ export async function fetchEventsSince(
   columns: string,
   filter?: (query: any) => any,
   maxRows = 200_000,
+  timeBudgetMs = 25_000,
 ) {
   const base = () => {
     let q: any = supabaseAdmin.from("tubex_events").select(columns).gte("created_at", sinceIso);
@@ -63,7 +68,7 @@ export async function fetchEventsSince(
   } catch { /* cai na paginação sequencial */ }
   return fetchAllPages(
     (from, to) => base().order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to),
-    { maxRows, total },
+    { maxRows, total, timeBudgetMs },
   );
 }
 

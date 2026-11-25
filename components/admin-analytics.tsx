@@ -74,16 +74,20 @@ export default function AdminAnalytics(){
  const [data,setData]=useState<Payload|null>(null),[chatData,setChatData]=useState<ChatAnalytics|null>(null),[days,setDays]=useState(30),[month,setMonth]=useState(()=>monthKey(new Date())),[selectedDate,setSelectedDate]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[userFilter,setUserFilter]=useState("");
  async function load(){
   setLoading(true);setError("");
+  // Nunca fica preso em "Carregando": cada requisição tem limite de 70s e erros aparecem na tela.
+  const timed=(url:string,token:string)=>{const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),70000);return fetch(url,{headers:{Authorization:`Bearer ${token}`},cache:"no-store",signal:ctrl.signal}).finally(()=>clearTimeout(t));};
+  const readJson=async(res:Response)=>{const text=await res.text();try{return JSON.parse(text);}catch{return {error:res.status===504?"O servidor demorou demais para responder. Tente um período menor.":`Resposta inesperada do servidor (${res.status}).`};}};
   try{
    const {data:{session}}=await supabase.auth.getSession();
    if(!session?.access_token) throw new Error("Sessão expirada. Entre novamente.");
-   const chatRes=await fetch(`/api/admin/ai-analytics?days=${days}`,{headers:{Authorization:`Bearer ${session.access_token}`},cache:"no-store"});
-   const chatJson=await chatRes.json();
-   if(chatRes.ok) setChatData(chatJson); else setChatData(null);
-   const res=await fetch(`/api/admin/analytics?days=${days}&month=${month}`,{headers:{Authorization:`Bearer ${session.access_token}`},cache:"no-store"});
-   const json=await res.json();
-   if(!res.ok) throw new Error(json.error==="forbidden"?"Acesso restrito ao proprietário.":json.error||"Falha ao carregar analytics.");
-   setData(json);
+   const [chatResult,mainResult]=await Promise.allSettled([
+    timed(`/api/admin/ai-analytics?days=${days}`,session.access_token).then(async r=>({ok:r.ok,json:await readJson(r)})),
+    timed(`/api/admin/analytics?days=${days}&month=${month}`,session.access_token).then(async r=>({ok:r.ok,json:await readJson(r)})),
+   ]);
+   setChatData(chatResult.status==="fulfilled"&&chatResult.value.ok?chatResult.value.json:null);
+   if(mainResult.status==="rejected") throw new Error(mainResult.reason?.name==="AbortError"?"O carregamento passou de 70 segundos. Tente um período menor ou clique em Atualizar.":"Falha de conexão ao carregar analytics.");
+   if(!mainResult.value.ok) throw new Error(mainResult.value.json?.error==="forbidden"?"Acesso restrito ao proprietário.":mainResult.value.json?.error||"Falha ao carregar analytics.");
+   setData(mainResult.value.json);
   }catch(e:any){setError(e.message||"Não foi possível carregar os dados.");}
   finally{setLoading(false);}
  }

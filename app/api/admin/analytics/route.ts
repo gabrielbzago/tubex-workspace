@@ -5,6 +5,7 @@ import { fetchEventsSince, fetchTable } from "@/lib/tubex-paged";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const TZ = "America/Sao_Paulo";
 const DAY = 86400000;
@@ -22,14 +23,21 @@ const labels: Record<string, string> = {
   creator_workspace: "Creator Workspace", analytics: "Analytics",
   tags: "Tags", ideas: "Ideias", scripts: "Roteiros",
 };
+// Formatadores criados uma única vez: criar Intl.DateTimeFormat a cada evento
+// deixava a rota lentíssima com dezenas de milhares de eventos.
+const dayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+const hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" });
+const dayCache = new Map<string, string>();
 function dateKey(value: string | Date) {
-  const d = new Date(value);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  if (typeof value === "string") {
+    let v = dayCache.get(value);
+    if (!v) { v = dayFmt.format(new Date(value)); if (dayCache.size > 300000) dayCache.clear(); dayCache.set(value, v); }
+    return v;
+  }
+  return dayFmt.format(value);
 }
 function monthKey(value: string | Date) {
-  const d = new Date(value);
-  const p = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "2-digit" }).formatToParts(d);
-  return `${p.find(x => x.type === "year")?.value}-${p.find(x => x.type === "month")?.value}`;
+  return dateKey(value).slice(0, 7);
 }
 function moduleLabel(name: string | null) {
   if (!name) return "Outros";
@@ -52,7 +60,7 @@ function pct(current: number, previous: number) {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 function hourKey(value: string) {
-  return Number(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date(value)));
+  return Number(hourFmt.format(new Date(value))) % 24;
 }
 function weekdayKey(value: string) {
   const [y, m, d] = dateKey(value).split("-").map(Number);
@@ -90,7 +98,7 @@ export async function GET(request: Request) {
   // Paginado: o Supabase corta cada resposta em 1.000 linhas. Antes, só os eventos
   // mais recentes (hoje) chegavam e os dias anteriores apareciam zerados.
   const [eventResult, installResult, userResult] = await Promise.all([
-    fetchEventsSince(since, "id,user_id,install_id,event_name,module,properties,created_at"),
+    fetchEventsSince(since, "id,user_id,install_id,event_name,module,email:properties->>email,created_at", undefined, 150_000, 25_000),
     fetchTable("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen", "last_seen"),
     fetchTable("users", "id,email,name,plan"),
   ]);
@@ -104,9 +112,13 @@ export async function GET(request: Request) {
   const installMap = new Map(installs.map(i => [i.install_id, i]));
   const emailMap = new Map(userRows.map(u => [String(u.email || "").toLowerCase(), u]));
   // Normaliza eventos da extensão e do site para a mesma conta sempre que houver vínculo conhecido.
-  const accountKeyFor = (row: any) => {
+  const accountKeyFor = (row: any): string => {
+    if (row.__k) return row.__k;
+    return (row.__k = computeAccountKey(row));
+  };
+  const computeAccountKey = (row: any) => {
     const install = row.install_id ? installMap.get(row.install_id) : null;
-    const propsEmail = String(row.properties?.email || "").toLowerCase();
+    const propsEmail = String(row.email || "").toLowerCase();
     const linkedUserId = row.user_id || install?.user_id || (String(row.install_id || "").startsWith("web-") ? String(row.install_id).slice(4) : null) || emailMap.get(propsEmail)?.id || null;
     return linkedUserId || install?.email?.toLowerCase() || propsEmail || row.install_id || "unknown";
   };
@@ -145,8 +157,8 @@ export async function GET(request: Request) {
     const day = dateKey(row.created_at);
     const accountKey = accountKeyFor(row);
     const installation = installMap.get(row.install_id);
-    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.properties?.email && emailMap.get(String(row.properties.email).toLowerCase())) || null;
-    const email = user?.email || installation?.email || row.properties?.email || null;
+    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.email && emailMap.get(String(row.email).toLowerCase())) || null;
+    const email = user?.email || installation?.email || row.email || null;
     const account = user?.name || installation?.name || email || String(accountKey);
     const mod = String(row.module || "other");
     const label = moduleLabel(mod);
@@ -163,8 +175,8 @@ export async function GET(request: Request) {
   for (const row of monthlyRows) {
     const accountKey = accountKeyFor(row);
     const installation = installMap.get(row.install_id);
-    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.properties?.email && emailMap.get(String(row.properties.email).toLowerCase())) || null;
-    const email = user?.email || installation?.email || row.properties?.email || null;
+    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.email && emailMap.get(String(row.email).toLowerCase())) || null;
+    const email = user?.email || installation?.email || row.email || null;
     const account = user?.name || installation?.name || email || String(accountKey);
     const day = dateKey(row.created_at);
     const mod = String(row.module || "other");
@@ -262,7 +274,7 @@ export async function GET(request: Request) {
   if (modules[0]) notes.push({ tone: "info", title: `${modules[0].label} é o módulo principal`, text: `${modules[0].value} contas e ${modules[0].actions} eventos no período.` });
   if (usageRows.length) notes.push({ tone: "info", title: `Pico às ${String(peakHour.hour).padStart(2, "0")}h, ${weekdayNames[peakWeekday.day]}`, text: `Melhor janela para comunicados, e-mails e lançamentos (horário de Brasília).` });
   if (activeAccounts && oneDayUsers / activeAccounts >= 0.5) notes.push({ tone: "warn", title: `${Math.round((oneDayUsers / activeAccounts) * 100)}% usaram só 1 dia`, text: `${oneDayUsers} contas usaram o TubeX em apenas um dia do período. O desafio principal é fazer o usuário voltar.` });
-  if (eventResult.truncated) notes.push({ tone: "warn", title: "Volume alto de eventos", text: "O período tem mais de 200 mil eventos; os números mais antigos podem estar incompletos. Use um período menor." });
+  if (eventResult.truncated) notes.push({ tone: "warn", title: "Volume alto de eventos", text: "Nem todos os eventos couberam no tempo de carregamento; os dias mais antigos podem estar incompletos. Use um período menor." });
 
   const insights = {
     previous: { installs: prevInstalls, logins: prevLoginSet.size, activeAccounts: prevActiveSet.size, searches: searchesPrev, usageEvents: prevUsage.length },
