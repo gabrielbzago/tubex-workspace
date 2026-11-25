@@ -125,7 +125,7 @@ export default function AdminAnalytics(){
          { label: "Pico de logins", item: peak("logins"), value: peak("logins").logins },
          { label: "Dia com mais contas usando", item: { date: peakAccounts.date }, value: peakAccounts.users },
        ];
-       return <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] p-3"><p className="text-[10px] font-bold text-[var(--tx-muted)]">{card.label}</p><p className="mt-1 text-xl font-black tabular-nums">{number(card.value)}</p><p className="mt-1 text-[11px] text-[var(--tx-muted)]">{card.item.date ? new Date(`${card.item.date}T12:00:00`).toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"}) : "Sem atividade no período"}</p></div>)}</div>;
+       return <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card => <div key={card.label} className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] p-3"><p className="text-[10px] font-bold text-[var(--tx-muted)]">{card.label}</p><p className="mt-1 text-xl font-black tabular-nums">{number(card.value)}</p><p className="mt-1 text-[11px] text-[var(--tx-muted)]">{card.item.date ? new Date(`${card.item.date}T12:00:00`).toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric",timeZone:"America/Sao_Paulo"}) : "Sem atividade no período"}</p></div>)}</div>;
      })()}
     </>:<p className="text-sm text-[var(--tx-muted)]">Ainda não há atividade registrada no período.</p>}
    </section>

@@ -38,10 +38,26 @@ function moduleLabel(name: string | null) {
 function isUsageEvent(row: any) {
   const event = String(row.event_name || "").toLowerCase();
   const module = String(row.module || "").toLowerCase();
-  if (excluded.has(event) || /^(login|auth_login)$/.test(event)) return false;
+  if (excluded.has(event)) return false;
   if (["billing", "auth", "system", "subscription", "installation"].includes(module)) return false;
   return true;
 }
+
+async function fetchEventsSince(since: string, maxRows = 100000) {
+  const all: any[] = [];
+  const pageSize = 1000;
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const { data, error } = await supabaseAdmin.from("tubex_events")
+      .select("id,user_id,install_id,event_name,module,properties,created_at")
+      .gte("created_at", since).order("created_at", { ascending: false })
+      .range(from, Math.min(from + pageSize - 1, maxRows - 1));
+    if (error) return { data: all, error };
+    all.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return { data: all, error: null };
+}
+
 function emptyDaily(days: number) {
   const result: any[] = [];
   const today = new Date();
@@ -70,9 +86,7 @@ export async function GET(request: Request) {
   const monthStart = new Date(`${requestedMonth}-01T00:00:00-03:00`).toISOString();
   const since = new Date(Math.min(rangeSince.getTime(), Date.parse(monthStart))).toISOString();
   const [eventResult, installResult, userResult] = await Promise.all([
-    supabaseAdmin.from("tubex_events")
-      .select("id,user_id,install_id,event_name,module,properties,created_at")
-      .gte("created_at", since).order("created_at", { ascending: false }).limit(20000),
+    fetchEventsSince(since),
     supabaseAdmin.from("tubex_installations")
       .select("install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen")
       .order("last_seen", { ascending: false }).limit(5000),
@@ -85,13 +99,6 @@ export async function GET(request: Request) {
   const userMap = new Map(userRows.map(u => [u.id, u]));
   const installMap = new Map(installs.map(i => [i.install_id, i]));
   const emailMap = new Map(userRows.map(u => [String(u.email || "").toLowerCase(), u]));
-  // Normaliza eventos da extensão e do site para a mesma conta sempre que houver vínculo conhecido.
-  const accountKeyFor = (row: any) => {
-    const install = row.install_id ? installMap.get(row.install_id) : null;
-    const propsEmail = String(row.properties?.email || "").toLowerCase();
-    const linkedUserId = row.user_id || install?.user_id || (String(row.install_id || "").startsWith("web-") ? String(row.install_id).slice(4) : null) || emailMap.get(propsEmail)?.id || null;
-    return linkedUserId || install?.email?.toLowerCase() || propsEmail || row.install_id || "unknown";
-  };
   const dailyMap = new Map<string, any>(emptyDaily(days).map(d => [d.date, d]));
   const periodRows = rows.filter(row => Date.parse(row.created_at) >= rangeSince.getTime());
   const usageRows = periodRows.filter(isUsageEvent);
@@ -106,7 +113,7 @@ export async function GET(request: Request) {
 
   for (const row of periodRows) {
     const day = dateKey(row.created_at);
-    const accountKey = accountKeyFor(row);
+    const accountKey = row.user_id || row.install_id || "unknown";
     const event = String(row.event_name || "unknown");
     eventCounts.set(event, (eventCounts.get(event) || 0) + 1);
     if (/login/i.test(event)) {
@@ -122,10 +129,10 @@ export async function GET(request: Request) {
   }
   for (const row of usageRows) {
     const day = dateKey(row.created_at);
-    const accountKey = accountKeyFor(row);
+    const accountKey = row.user_id || row.install_id || "unknown";
+    const user = row.user_id ? userMap.get(row.user_id) : null;
     const installation = installMap.get(row.install_id);
-    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.properties?.email && emailMap.get(String(row.properties.email).toLowerCase())) || null;
-    const email = user?.email || installation?.email || row.properties?.email || null;
+    const email = user?.email || installation?.email || null;
     const account = user?.name || installation?.name || email || String(accountKey);
     const mod = String(row.module || "other");
     const label = moduleLabel(mod);
@@ -140,10 +147,10 @@ export async function GET(request: Request) {
     if (/(search|seo|keyword|analysis|analy)/i.test(`${row.event_name} ${mod}`)) uniqueSearchers.add(accountKey);
   }
   for (const row of monthlyRows) {
-    const accountKey = accountKeyFor(row);
+    const accountKey = row.user_id || row.install_id || "unknown";
+    const user = row.user_id ? userMap.get(row.user_id) : null;
     const installation = installMap.get(row.install_id);
-    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.properties?.email && emailMap.get(String(row.properties.email).toLowerCase())) || null;
-    const email = user?.email || installation?.email || row.properties?.email || null;
+    const email = user?.email || installation?.email || null;
     const account = user?.name || installation?.name || email || String(accountKey);
     const day = dateKey(row.created_at);
     const mod = String(row.module || "other");

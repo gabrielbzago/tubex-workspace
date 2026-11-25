@@ -24,7 +24,7 @@ type Account = {
 };
 
 const fmt = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value)) : "Sem registro";
-const fmtDay = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value)) : "—";
+const fmtDay = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value)) : "—";
 const elapsed = (hours: number | null, days: number | null) => {
   if (hours === null || days === null) return "Sem atividade registrada";
   if (hours < 1) return "há menos de 1 hora";
