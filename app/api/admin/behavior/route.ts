@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DAY = 86_400_000;
+const TZ = "America/Sao_Paulo";
 const PAID_PLANS = new Set(["start", "member", "pro", "expert", "legend", "corporate"]);
 const VALID_STATUSES = new Set(["active", "approved", "trialing", "past_due"]);
 const OWNER_EMAILS = [
@@ -22,8 +23,11 @@ const ms = (v: any) => {
 };
 const iso = (v: any) => ms(v) ? new Date(ms(v)).toISOString() : null;
 const daysAgo = (v: any, now: number) => ms(v) ? Math.max(0, Math.floor((now - ms(v)) / DAY)) : null;
-const hoursAgo = (v: any, now: number) => ms(v) ? Math.max(0, Math.floor((now - ms(v)) / 3_600_000)) : null;
-const dateKey = (value: any) => value ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)) : "";
+const dayKey = (value: any) => {
+  const time = ms(value);
+  if (!time) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(time));
+};
 const maxDate = (...values: any[]) => {
   const valid = values.map(iso).filter(Boolean) as string[];
   return valid.sort((a, b) => ms(b) - ms(a))[0] || null;
@@ -62,12 +66,10 @@ async function getOwner(request: Request) {
   return null;
 }
 
-async function fetchAll(table: string, columns = "*", pageSize = 1000, maxRows = 100000, orderBy?: string) {
+async function fetchAll(table: string, columns = "*", pageSize = 1000, maxRows = 50000) {
   const rows: any[] = [];
   for (let from = 0; from < maxRows; from += pageSize) {
-    let query = (supabaseAdmin as any).from(table).select(columns);
-    if (orderBy) query = query.order(orderBy, { ascending: false });
-    const { data, error } = await query.range(from, from + pageSize - 1);
+    const { data, error } = await (supabaseAdmin as any).from(table).select(columns).range(from, from + pageSize - 1);
     if (error) {
       console.warn(`[admin behavior] ${table} unavailable:`, error.message);
       return rows;
@@ -133,7 +135,7 @@ export async function GET(request: Request) {
   const [userRows, authUsers, eventRows, installations, referrals, sales] = await Promise.all([
     fetchAll("users", "*"),
     fetchAuthUsers(),
-    fetchAll("tubex_events", "id,user_id,install_id,session_id,event_name,module,properties,created_at", 1000, 100000, "created_at"),
+    fetchAll("tubex_events", "id,user_id,install_id,session_id,event_name,module,properties,created_at"),
     fetchAll("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen"),
     fetchAll("affiliate_referrals", "id,referred_email,referred_name,plan,status,stripe_subscription_id,updated_at,created_at"),
     fetchAll("affiliate_sales", "id,customer_email,customer_name,plan,status,stripe_subscription_id,last_payment_date,created_at"),
@@ -239,19 +241,13 @@ export async function GET(request: Request) {
     const plan = currentSubscriber ? effectivePlan : formerSubscriber ? (PAID_PLANS.has(historicPlan) ? historicPlan : "assinante anterior") : "free";
 
     const events = bucket.events.sort((a, b) => ms(a.created_at) - ms(b.created_at));
-    const operationalEvents = new Set([
-      "login_success", "logout", "session_started", "install", "installed", "extension_installed",
-      "heartbeat", "sync", "sync_success", "payment_succeeded", "subscription_created",
-      "subscription_canceled", "webhook_received",
-    ]);
+    const nonUsageEvents = new Set(["login_success", "logout", "session_started", "install", "installed", "extension_installed", "payment_succeeded", "subscription_created", "subscription_canceled", "checkout_started", "webhook_received", "heartbeat", "sync", "sync_success"]);
     const resourceEvents = events.filter((e) => {
-      const eventName = str(e.event_name).toLowerCase();
-      const moduleName = str(e.module).toLowerCase();
-      if (operationalEvents.has(eventName)) return false;
-      if (["auth", "billing", "system", "subscription", "installation"].includes(moduleName)) return false;
-      return true;
+      const name = str(e.event_name).toLowerCase();
+      const module = str(e.module).toLowerCase();
+      return !nonUsageEvents.has(name) && !/^(login|auth_login)$/.test(name) && !["billing", "auth", "system", "subscription", "installation"].includes(module);
     });
-    const loginEvents = events.filter((e) => /login_success|auth_login/i.test(str(e.event_name)));
+    const loginEvents = events.filter((e) => /login|auth_login/i.test(str(e.event_name)));
     const usage30 = resourceEvents.filter((e) => ms(e.created_at) >= cutoff30);
     const usage7 = resourceEvents.filter((e) => ms(e.created_at) >= cutoff7);
     const moduleMap = new Map<string, { key: string; name: string; count: number; lastUsedAt: string }>();
@@ -263,11 +259,11 @@ export async function GET(request: Request) {
       moduleMap.set(key, current);
     }
     const modules = [...moduleMap.values()].sort((a, b) => b.count - a.count);
-    const days = [...new Set(resourceEvents.map((e) => dateKey(e.created_at)).filter(Boolean))];
-    const days30 = [...new Set(usage30.map((e) => dateKey(e.created_at)).filter(Boolean))];
+    const days = [...new Set(resourceEvents.map((e) => dayKey(e.created_at)).filter(Boolean))];
+    const days30 = [...new Set(usage30.map((e) => dayKey(e.created_at)).filter(Boolean))];
     const sessionsMap = new Map<string, any[]>();
     for (const event of resourceEvents) {
-      const sessionKey = str(event.session_id || `day:${dateKey(event.created_at)}`);
+      const sessionKey = str(event.session_id || `day:${dayKey(event.created_at)}`);
       if (!sessionsMap.has(sessionKey)) sessionsMap.set(sessionKey, []);
       sessionsMap.get(sessionKey)!.push(event);
     }
@@ -307,12 +303,9 @@ export async function GET(request: Request) {
     const lastLoginAt = maxDate(authLastLogin, eventLastLogin);
     const lastResourceAt = maxDate(...resourceEvents.map((x) => x.created_at));
     const latestResourceEvent = [...resourceEvents].sort((a, b) => ms(b.created_at) - ms(a.created_at))[0] || null;
-    // Sincronização da extensão não equivale a uso do produto. Mantemos login como fallback,
-    // mas a atividade de recursos sempre tem prioridade e fica identificada separadamente.
-    const lastActivityAt = maxDate(lastResourceAt, lastLoginAt);
+    const lastActivityAt = maxDate(lastResourceAt, installLastSeen, lastLoginAt);
     const firstLoginAt = minDate(auth?.created_at, ...loginEvents.map((x) => x.created_at));
     const daysSinceActivity = daysAgo(lastActivityAt, now);
-    const hoursSinceActivity = hoursAgo(lastActivityAt, now);
     const legacyOnly = resourceEvents.length === 0;
     if (legacyOnly) accountsWithoutEvents++;
     if (legacyOnly && (authLastLogin || installLastSeen)) legacyAccounts++;
@@ -332,16 +325,9 @@ export async function GET(request: Request) {
     const cancelComment = str(row.cancel_comment || row.cancellation_comment) || null;
     const cancelLabel = cancelReason || (canceledReferral.length ? "Cancelamento registrado no histórico de afiliados" : null);
 
-    // Status de relacionamento: mede recência de uso real, não quantidade de dias
-    // distintos. Uma única sessão recente já caracteriza atividade; assinantes novos
-    // recebem uma janela de onboarding para não serem rotulados como risco antes de usar.
-    const activityReference = lastResourceAt || lastLoginAt;
+    const activityReference = lastResourceAt || maxDate(installLastSeen, lastLoginAt);
     const activityDays = daysAgo(activityReference, now);
-    const subscriptionAgeDays = daysAgo(subscribedAt, now);
-    const hasRecentResourceUse = lastResourceAt !== null && activityDays !== null && activityDays <= 7;
-    const isNewValidSubscriber = currentSubscriber &&
-      VALID_STATUSES.has(billingStatus) &&
-      subscriptionAgeDays !== null && subscriptionAgeDays <= 14;
+    const hoursSinceActivity = activityReference ? Math.max(0, Math.floor((now - ms(activityReference)) / 3_600_000)) : null;
     let status: "active" | "at_risk" | "inactive" | "canceled";
     const statusReasons: string[] = [];
     if (formerSubscriber) {
@@ -349,25 +335,22 @@ export async function GET(request: Request) {
       statusReasons.push("Há evidência de assinatura anterior, mas não há assinatura válida no cadastro atual.");
     } else if (billingStatus === "past_due") {
       status = "at_risk";
-      statusReasons.push("Pagamento pendente (past_due), independentemente da recência de uso.");
-    } else if (hasRecentResourceUse) {
+      statusReasons.push("Pagamento pendente (past_due).");
+    } else if (resourceEvents.length) {
+      // Status representa recência de uso, não intenção de compra.
+      // Uma conta com uso recente não deve aparecer "em risco" só por ter usado em um único dia.
+      if ((hoursSinceActivity ?? Number.POSITIVE_INFINITY) <= 24 * 7) status = "active";
+      else if ((hoursSinceActivity ?? Number.POSITIVE_INFINITY) <= 24 * 30) status = "at_risk";
+      else status = "inactive";
+    } else if (hoursSinceActivity !== null && hoursSinceActivity <= 24 * 7) {
       status = "active";
-      statusReasons.push("Uso real de recurso registrado nos últimos 7 dias.");
-    } else if (isNewValidSubscriber) {
-      status = "active";
-      statusReasons.push("Assinatura recente: conta em período inicial de onboarding (14 dias), sem penalização por ainda ter pouco histórico.");
-    } else if (lastResourceAt && activityDays !== null && activityDays <= 30) {
+      statusReasons.push("Classificação baseada no último login/sincronização; ainda não há eventos de uso de módulos para esta conta.");
+    } else if (hoursSinceActivity !== null && hoursSinceActivity <= 24 * 30) {
       status = "at_risk";
-      statusReasons.push("Último uso real de recurso ocorreu há mais de 7 e até 30 dias.");
-    } else if (lastResourceAt) {
-      status = "inactive";
-      statusReasons.push("Sem uso real de recursos nos últimos 30 dias.");
-    } else if (currentSubscriber) {
-      status = "inactive";
-      statusReasons.push("Assinatura válida, mas ainda não há evento de uso real de recursos registrado.");
+      statusReasons.push("Último acesso conhecido há mais de 7 e até 30 dias; não há telemetria histórica de módulos.");
     } else {
       status = "inactive";
-      statusReasons.push("Nenhum evento de uso real de recursos identificado nos últimos 30 dias.");
+      statusReasons.push("Sem eventos de uso ou acesso recente identificável.");
     }
     if (legacyOnly) statusReasons.push("Conta anterior à implantação da telemetria: ações e módulos usados antes do início do Analytics não podem ser reconstruídos.");
     if (lastLoginAt) statusReasons.push(`Último login autenticado em ${lastLoginAt}.`);
@@ -388,17 +371,20 @@ export async function GET(request: Request) {
     const factors: { label: string; points: number }[] = [];
     let propensity = 0;
     const addFactor = (label: string, points: number) => { propensity += points; factors.push({ label, points }); };
-    if (quotaEvents.length) addFactor(`Atingiu limites ${quotaEvents.length} vez(es)`, Math.min(35, quotaEvents.length >= 3 ? 35 : 25));
-    if (checkoutEvents.length) addFactor("Iniciou checkout", 25);
-    if (upgradeEvents.length) addFactor("Clicou em upgrade/assinar", 15);
-    if (days30.length >= 5) addFactor("Ativo em 5 ou mais dias no mês", 15);
-    else if (days30.length >= 2) addFactor("Ativo em 2 a 4 dias no mês", 8);
-    if (actions30 >= 30) addFactor("30 ou mais ações no mês", 10);
-    if (usage7.length) addFactor("Usou nos últimos 7 dias", 5);
-    if (formerSubscriber) addFactor("Já foi assinante", 5);
-    if (activityDays !== null && activityDays > 30) addFactor("Sem uso há mais de 30 dias", -20);
+    // Intenção comercial só é calculada para contas sem assinatura válida.
+    if (!currentSubscriber) {
+      if (quotaEvents.length) addFactor(`Atingiu limites ${quotaEvents.length} vez(es)`, Math.min(35, quotaEvents.length >= 3 ? 35 : 25));
+      if (checkoutEvents.length) addFactor("Iniciou checkout", 25);
+      if (upgradeEvents.length) addFactor("Clicou em upgrade/assinar", 15);
+      if (days30.length >= 5) addFactor("Ativo em 5 ou mais dias no mês", 15);
+      else if (days30.length >= 2) addFactor("Ativo em 2 a 4 dias no mês", 8);
+      if (actions30 >= 30) addFactor("30 ou mais ações no mês", 10);
+      if (usage7.length) addFactor("Usou nos últimos 7 dias", 5);
+      if (formerSubscriber) addFactor("Já foi assinante", 5);
+      if (activityDays !== null && activityDays > 30) addFactor("Sem uso há mais de 30 dias", -20);
+    }
     propensity = Math.max(0, Math.min(100, propensity));
-    const propensityTier = propensity >= 60 ? "hot" : propensity >= 30 ? "warm" : "cold";
+    const propensityTier = currentSubscriber ? null : propensity >= 60 ? "hot" : propensity >= 30 ? "warm" : "cold";
 
     const loginCount = loginEvents.length;
     const account = {
@@ -438,7 +424,7 @@ export async function GET(request: Request) {
       lastActivityAt,
       lastResource: latestResourceEvent
         ? moduleLabel(str(latestResourceEvent.module || latestResourceEvent.event_name || "outro"))
-        : lastLoginAt ? "Login no TubeX (sem ação de recurso registrada)" : installLastSeen ? "Extensão sincronizada (não conta como uso)" : null,
+        : installLastSeen ? "Extensão — última sincronização" : lastLoginAt ? "Login no TubeX" : null,
       loginCount,
       returned: sessions.length > 1,
       returnCount: Math.max(0, sessions.length - 1),
