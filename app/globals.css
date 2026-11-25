@@ -485,3 +485,150 @@ html.light .tx-dashboard-content.is-page textarea { background:#f8fafc; }
 .tx-medal-core{position:relative;z-index:1;display:grid;width:48px;height:48px;place-items:center;border-radius:50%;border:3px solid color-mix(in srgb,var(--medal-color) 80%,#fff);background:radial-gradient(circle at 32% 25%,color-mix(in srgb,var(--medal-color) 55%,#fff),var(--medal-color) 48%,color-mix(in srgb,var(--medal-color) 55%,#161b22));color:#17191d;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25),0 0 0 4px color-mix(in srgb,var(--medal-color) 15%,transparent)}
 .tx-medal-card.is-locked .tx-medal-core{background:linear-gradient(145deg,#59636d,#303943);border-color:#77818c;color:#cbd5e1;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12)}
 .tx-medal-card.is-locked .tx-medal-ribbon{background:linear-gradient(90deg,#3d4650,#68737e,#3d4650)}
+
+
+/* =========================================================
+   TubeX Premium Visual System — glass surfaces + data colors
+   Shared by every workspace and administrative module.
+   ========================================================= */
+:root{
+  --tx-blue:#38bdf8;
+  --tx-blue-strong:#0ea5e9;
+  --tx-blue-soft:rgba(56,189,248,.12);
+  --tx-green:#22c55e;
+  --tx-green-soft:rgba(34,197,94,.12);
+  --tx-purple:#a78bfa;
+  --tx-purple-soft:rgba(167,139,250,.12);
+  --tx-orange:#fb923c;
+  --tx-red:#fb7185;
+  --viz-info:#38bdf8;
+  --viz-good:#22c55e;
+  --viz-warning:#f2c94c;
+  --viz-critical:#fb7185;
+  --viz-1:#38bdf8;
+  --viz-2:#22c55e;
+  --viz-3:#f2c94c;
+  --viz-4:#a78bfa;
+  --viz-5:#fb923c;
+  --viz-6:#f472b6;
+}
+html.dark{
+  --tx-bg:#070b10;
+  --tx-surface:rgba(15,23,32,.82);
+  --tx-surface-2:rgba(20,31,43,.76);
+  --tx-border:rgba(111,145,166,.19);
+  --tx-muted:#91a3b1;
+  --tx-accent:#f2c94c;
+  --tx-accent-strong:#ffdf70;
+  --tx-accent-soft:rgba(242,201,76,.10);
+}
+html.light,html[data-theme="light"]{
+  --tx-bg:#f3f6fa;
+  --tx-surface:rgba(255,255,255,.82);
+  --tx-surface-2:rgba(246,249,252,.82);
+  --tx-border:rgba(75,96,120,.16);
+  --tx-muted:#64748b;
+  --tx-blue:#0284c7;
+  --tx-green:#16a34a;
+}
+body{
+  background:
+    radial-gradient(ellipse at 82% 0%,rgba(56,189,248,.055),transparent 34rem),
+    radial-gradient(ellipse at 4% 18%,rgba(167,139,250,.035),transparent 28rem),
+    var(--tx-bg);
+  background-attachment:fixed;
+}
+.tx-surface,.tx-feature,.tx-plan,.tx-faq,.tx-login-card{
+  position:relative;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--tx-surface) 92%,white 2%),var(--tx-surface));
+  border-color:var(--tx-border);
+  box-shadow:0 16px 44px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.035);
+  backdrop-filter:blur(18px) saturate(135%);
+  -webkit-backdrop-filter:blur(18px) saturate(135%);
+}
+.tx-surface::after,.tx-feature::after,.tx-plan::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(120deg,rgba(255,255,255,.035),transparent 32%,transparent 72%,rgba(56,189,248,.025));
+}
+.tx-surface:hover,.tx-feature:hover,.tx-plan:hover{
+  border-color:color-mix(in srgb,var(--tx-blue) 30%,var(--tx-border));
+  box-shadow:0 20px 55px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.tx-kicker{color:var(--tx-accent);letter-spacing:.16em}
+.tx-btn-primary{background:linear-gradient(135deg,#f8d65e,#eabf2c);border-color:rgba(255,220,112,.6);box-shadow:0 7px 22px rgba(242,201,76,.14)}
+.tx-btn-secondary{background:rgba(56,189,248,.055);border-color:var(--tx-border)}
+.tx-btn-secondary:hover{border-color:rgba(56,189,248,.45);background:var(--tx-blue-soft)}
+.tx-feature-icon{background:linear-gradient(145deg,rgba(56,189,248,.16),rgba(56,189,248,.055));color:var(--tx-blue);border:1px solid rgba(56,189,248,.18)}
+.tx-plan-pop{border-color:rgba(242,201,76,.55)}
+.tx-input-wrap,input,select,textarea{
+  border-color:var(--tx-border);
+}
+.tx-input-wrap:focus-within,input:focus,select:focus,textarea:focus{
+  border-color:rgba(56,189,248,.58)!important;
+  box-shadow:0 0 0 3px rgba(56,189,248,.10);
+}
+.tx-nav:hover{background:rgba(56,189,248,.075)}
+.tx-menu button:hover{background:rgba(56,189,248,.09)}
+.tx-saas-shell::before{
+  background:
+    radial-gradient(ellipse at 70% 0%,rgba(56,189,248,.095),transparent 55%),
+    radial-gradient(ellipse at 18% 8%,rgba(167,139,250,.06),transparent 42%);
+}
+.tx-topbar{background:rgba(7,11,16,.76)!important;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%)}
+html.light .tx-topbar,html[data-theme="light"] .tx-topbar{background:rgba(248,250,252,.78)!important}
+
+/* Dashboard cards: consistent depth and restrained borders across modules. */
+.tx-dashboard-content [class*="rounded-"][class*="border"][class*="bg-"]{
+  box-shadow:0 10px 28px rgba(0,0,0,.075),inset 0 1px 0 rgba(255,255,255,.025);
+  backdrop-filter:blur(12px);
+}
+.tx-dashboard-content [class*="bg-[var(--tx-surface-2)]"]{
+  background-color:color-mix(in srgb,var(--tx-surface-2) 72%,transparent)!important;
+}
+.tx-dashboard-content [class*="border-[var(--tx-border)]"]{border-color:var(--tx-border)!important}
+
+/* Data visualization surfaces: blue is the default information series. */
+.recharts-cartesian-grid line{stroke:rgba(145,163,177,.14)!important;stroke-dasharray:3 5}
+.recharts-cartesian-axis-line,.recharts-cartesian-axis-tick-line{stroke:rgba(145,163,177,.18)!important}
+.recharts-cartesian-axis-tick-value,.recharts-legend-item-text{fill:var(--tx-muted)!important;color:var(--tx-muted)!important;font-size:10px!important}
+.recharts-tooltip-wrapper .recharts-default-tooltip{
+  background:rgba(12,19,27,.94)!important;border:1px solid rgba(56,189,248,.22)!important;
+  border-radius:12px!important;box-shadow:0 12px 34px rgba(0,0,0,.28)!important;backdrop-filter:blur(14px);
+}
+.recharts-tooltip-label{color:#eaf4fb!important;font-weight:800!important}
+.recharts-tooltip-item{color:#b9d4e5!important}
+.recharts-area-area{opacity:.16}
+.tx-data-blue{color:var(--tx-blue)!important}
+.tx-data-green{color:var(--tx-green)!important}
+.tx-data-yellow{color:var(--tx-accent)!important}
+.tx-data-red{color:var(--tx-red)!important}
+.tx-status-good{color:var(--tx-green)!important;background:var(--tx-green-soft)!important;border-color:rgba(34,197,94,.22)!important}
+.tx-status-info{color:var(--tx-blue)!important;background:var(--tx-blue-soft)!important;border-color:rgba(56,189,248,.22)!important}
+.tx-status-warning{color:var(--tx-accent)!important;background:var(--tx-accent-soft)!important}
+.tx-status-danger{color:var(--tx-red)!important;background:rgba(251,113,133,.10)!important}
+
+/* Premium charts / small panels inspired by the supplied references. */
+.tx-chart-panel{border:1px solid var(--tx-border);border-radius:16px;background:linear-gradient(150deg,rgba(56,189,248,.055),transparent 55%),var(--tx-surface-2);padding:14px}
+.tx-chart-legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--tx-muted);font-size:10px}
+.tx-chart-legend i{display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%}
+.tx-progress-track{height:7px;overflow:hidden;border-radius:999px;background:rgba(120,145,160,.16)}
+.tx-progress-fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--tx-blue),#60a5fa);box-shadow:0 0 14px rgba(56,189,248,.2)}
+.tx-progress-fill.is-good{background:linear-gradient(90deg,#16a34a,#4ade80)}
+.tx-progress-fill.is-warning{background:linear-gradient(90deg,#d6a91c,#f8d65e)}
+.tx-progress-fill.is-danger{background:linear-gradient(90deg,#e34d68,#fb7185)}
+
+/* Tables and forms should feel like one coherent application. */
+.tx-dashboard-content table{border-collapse:separate;border-spacing:0;width:100%}
+.tx-dashboard-content thead th{color:var(--tx-muted);font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+.tx-dashboard-content tbody tr:hover{background:rgba(56,189,248,.035)}
+.tx-dashboard-content input,.tx-dashboard-content select,.tx-dashboard-content textarea{
+  background:color-mix(in srgb,var(--tx-surface-2) 84%,transparent);
+  border-color:var(--tx-border);border-radius:11px;color:var(--tx-text);
+}
+@media(max-width:760px){
+  .tx-surface,.tx-feature,.tx-plan{backdrop-filter:blur(12px)}
+  .tx-dashboard-content [class*="grid-cols-"]{min-width:0}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
+}

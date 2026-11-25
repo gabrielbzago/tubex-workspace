@@ -38,23 +38,28 @@ export default function DashboardLayout({user}:{user:any}){
  const [toolsOpen,setToolsOpen]=useState(false);
  const [channelContext,setChannelContext]=useState<any>(null);
  const [achievementSummary,setAchievementSummary]=useState<any>(null);
+ const [ownerVerified,setOwnerVerified]=useState(false);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
- const ownerEmails = [process.env.NEXT_PUBLIC_OWNER_EMAIL || "", "gabrielbzago@gmail.com"].map(v => v.trim().toLowerCase()).filter(Boolean);
+ const ownerEmails = [process.env.NEXT_PUBLIC_OWNER_EMAIL || "", ...(process.env.NEXT_PUBLIC_OWNER_EMAILS || "").split(","), "gabrielbzago@gmail.com"].map(v => v.trim().toLowerCase()).filter(Boolean);
+ const ownerIds = (process.env.NEXT_PUBLIC_OWNER_USER_IDS || "").split(",").map(v => v.trim()).filter(Boolean);
  const userEmail = String(user?.email || "").trim().toLowerCase();
- // A navegação espelha apenas os sinais de autorização persistidos/allowlist.
- // O backend continua sendo a autoridade final em qualquer ação administrativa.
- // Somente a allowlist do proprietário libera a navegação administrativa.
- // O endpoint de Analytics repete a validação no servidor; a UI não é a barreira de segurança.
- const isOwner = ownerEmails.includes(userEmail);
+ // A autorização vem da identidade Supabase da conta TubeX, nunca do canal YouTube ativo.
+ // O servidor também valida a role/allowlist antes de liberar qualquer endpoint administrativo.
+ const isOwner = ownerVerified || ownerEmails.includes(userEmail) || ownerIds.includes(String(user?.id || "")) || ["owner","admin","administrator"].includes(String(userData?.role || userData?.user_role || userData?.account_role || userData?.plan || "").toLowerCase()) || userData?.is_owner === true || userData?.is_admin === true;
 
  useEffect(()=>{
+  setOwnerVerified(false);
+  setUserData(null);
   const readContext=()=>{try{const raw=localStorage.getItem("tubex-ai-channel-context");setChannelContext(raw?JSON.parse(raw):null)}catch{setChannelContext(null)}};
   readContext();window.addEventListener("tubex-channel-context",readContext);window.addEventListener("storage",readContext);
   let alive=true;
-  (async()=>{try{const {data:sessionData}=await supabase.auth.getSession();const token=sessionData.session?.access_token;if(!token)return;const res=await fetch("/api/achievements",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});if(!res.ok)return;const payload=await res.json();if(alive)setAchievementSummary(payload)}catch{} })();
+  (async()=>{try{const {data:sessionData}=await supabase.auth.getSession();const token=sessionData.session?.access_token;if(!token)return;
+    const ownerRes=await fetch("/api/account/owner-status",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+    if(ownerRes.ok){const ownerPayload=await ownerRes.json();if(alive)setOwnerVerified(ownerPayload?.isOwner===true);}
+    const res=await fetch("/api/achievements",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});if(!res.ok)return;const payload=await res.json();if(alive)setAchievementSummary(payload)}catch{} })();
   return()=>{alive=false;window.removeEventListener("tubex-channel-context",readContext);window.removeEventListener("storage",readContext)};
- },[]);
+ },[user?.id,user?.email]);
  useEffect(()=>{const saved=localStorage.getItem("tubex-language") as Lang|null;const b=navigator.language.toLowerCase();const l=saved||(b.startsWith("pt-br")?"pt-br":b.startsWith("pt")?"pt-pt":b.startsWith("es")?"es":"en");setLang(l);document.documentElement.lang=l;window.dispatchEvent(new CustomEvent("tubex-language-change",{detail:l}));
   (async()=>{
    if(!user?.email)return;

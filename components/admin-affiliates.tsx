@@ -104,7 +104,7 @@ export default function AdminAffiliates() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (response.status === 403) setMessage("Acesso Owner não confirmado pelo servidor. Confirme se o e-mail de login está em OWNER_EMAILS ou se sua conta possui role Owner na tabela users.");
+        if (response.status === 403) setMessage("Acesso Owner não confirmado pelo servidor. Confirme OWNER_EMAILS, OWNER_USER_IDS ou a role Owner da identidade Supabase na tabela users.");
         else if (response.status === 401) setMessage("Sua sessão expirou. Saia e entre novamente no TubeX.");
         else setMessage(payload?.error || t.error);
         return;
@@ -121,7 +121,7 @@ export default function AdminAffiliates() {
     } catch (error: any) {
       // A 401/403 é um estado de autorização, não uma falha de compilação.
       // Mostrar a orientação dentro do painel evita o overlay vermelho do Next.
-      if (error?.status === 403) setMessage("Acesso Owner não confirmado pelo servidor. Verifique OWNER_EMAILS ou o plano/role Owner na tabela users.");
+      if (error?.status === 403) setMessage("Acesso Owner não confirmado pelo servidor. Verifique OWNER_EMAILS, OWNER_USER_IDS ou a role Owner da identidade Supabase na tabela users.");
       else if (error?.status === 401) setMessage("Sua sessão expirou. Saia e entre novamente no TubeX.");
       else {
         console.error("Admin affiliate load error:", error);

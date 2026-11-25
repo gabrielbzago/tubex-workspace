@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { isTubeXOwner } from "@/lib/tubex-owner";
 
 /**
  * Busca de plano do TubeX — a MESMA regra da extensão (background.js 4.4.6).
@@ -197,7 +198,21 @@ export async function collectAccountEmails(user: AuthLikeUser): Promise<string[]
 }
 
 export async function resolveAccountPlan(user: AuthLikeUser): Promise<ResolvedPlan> {
-  return resolveBestPlan(await collectAccountEmails(user));
+  const checkedEmails = await collectAccountEmails(user);
+  // Owner é uma permissão da conta TubeX (Supabase Auth), não do canal YouTube ativo.
+  if (await isTubeXOwner(user)) {
+    return {
+      plan: "owner",
+      email: normalizeEmail(user.email) || checkedEmails[0] || "",
+      status: "active",
+      source: "owner_allowlist",
+      checkedEmails,
+      results: checkedEmails.map(email => ({
+        email, plan: "owner", status: "active", source: "owner_allowlist" as const, ok: true,
+      })),
+    };
+  }
+  return resolveBestPlan(checkedEmails);
 }
 
 /** Plano usado pelos recursos do site (owner/admin contam como expert). */

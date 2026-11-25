@@ -2,17 +2,11 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAuthenticatedUser } from "@/lib/tubex-backend";
+import { isTubeXOwner } from "@/lib/tubex-owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const OWNER_EMAILS = new Set(
-  [
-    "gabrielbzago@gmail.com",
-    ...(process.env.OWNER_EMAILS || "").split(","),
-    process.env.NEXT_PUBLIC_OWNER_EMAIL || "",
-  ].map((value) => String(value).trim().toLowerCase()).filter(Boolean)
-);
 
 const ALLOWED_REASONS = new Set([
   "Não estou utilizando o TubeX",
@@ -31,9 +25,6 @@ function getStripe() {
   return new Stripe(key);
 }
 
-function isOwner(email: string) {
-  return OWNER_EMAILS.has(String(email || "").trim().toLowerCase());
-}
 
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -127,7 +118,7 @@ export async function GET(request: Request) {
     const user = await getAuthenticatedUser(request);
     if (!user?.id) return NextResponse.json({ error: "Sessão inválida. Entre novamente." }, { status: 401 });
 
-    if (isOwner(user.email || "")) {
+    if (await isTubeXOwner(user)) {
       const { data, error } = await supabaseAdmin
         .from("cancellation_requests")
         .select("*")
