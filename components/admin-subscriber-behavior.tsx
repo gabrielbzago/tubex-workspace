@@ -222,6 +222,9 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
       </div>
     </header>
 
+    <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-4 py-3 text-xs leading-5 text-[var(--tx-muted)]">
+      <b className="text-[var(--tx-text)]">Dois indicadores diferentes:</b> Status (Ativo, Em risco ou Inativo) mede uso recente do produto. Chance de assinar (Quente, Morno ou Frio) estima intenção de compra. Portanto, uma conta pode estar <b>Ativa e Fria</b>: usa o TubeX, mas ainda não demonstrou sinais fortes de compra. A coluna Último uso agora mostra também a data e hora exatas, quando disponíveis.
+    </div>
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">{error}</div>}
 
     {showGuide && <section className="tx-surface rounded-2xl p-5">
@@ -336,7 +339,7 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
             <td className="px-3 py-3"><StatusPill status={row.status}/><div className="mt-1.5 max-w-[220px] text-[10px] leading-4 text-[var(--tx-muted)]">{row.statusReasons.join(" · ")}</div></td>
             <td className="px-3 py-3">{isFree ? <TierPill tier={row.propensityTier} score={row.propensity}/> : <><b>{row.plan.toUpperCase()}</b><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{row.billingStatus}</div></>}</td>
             <td className="px-3 py-3 tabular-nums">{row.quotaHits30 ? <b>{n(row.quotaHits30)}x</b> : <span className="text-[var(--tx-muted)]">—</span>}{row.quotaHits > row.quotaHits30 ? <div className="mt-1 text-[10px] text-[var(--tx-muted)]">{n(row.quotaHits)}x no total</div> : null}</td>
-            <td className="whitespace-nowrap px-3 py-3">{row.daysSinceActivity === null ? <span className="text-[var(--tx-muted)]">Nunca</span> : `há ${row.daysSinceActivity} dia(s)`}<div className="mt-1 text-[10px] text-[var(--tx-muted)]">{row.lastResource || "—"}</div></td>
+            <td className="whitespace-nowrap px-3 py-3">{row.daysSinceActivity === null ? <span className="text-[var(--tx-muted)]">Nunca</span> : `há ${row.daysSinceActivity} dia(s)`}<div className="mt-1 text-[10px] font-medium text-[var(--tx-muted)]">{row.lastActivityAt ? fmt(row.lastActivityAt) : "Data/hora não registrada"}</div><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{row.lastResource || "—"}</div></td>
             <td className="px-3 py-3"><b className="tabular-nums">{n(row.activeDays30)} dias</b><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{n(row.actions30)} ações · {n(row.searchCount)} pesquisas no total</div></td>
             <td className="px-3 py-3 text-[10px]">{isFree ? <span className="text-[var(--tx-muted)]">{n(row.upgradeClicks)} cliques em assinar · {n(row.checkoutStarts)} checkouts</span> : row.status === "canceled" ? <span><b>{row.cancelLabel || "Motivo não informado"}</b><div className="text-[var(--tx-muted)]">cancelou {fmtDay(row.canceledAt)}</div></span> : <span className="text-[var(--tx-muted)]">{row.subscribedAt ? `desde ${fmtDay(row.subscribedAt)}` : "data não registrada"}{row.paymentFailures ? ` · ${row.paymentFailures} falha(s) de pagamento` : ""}</span>}</td>
           </tr>)}</tbody>

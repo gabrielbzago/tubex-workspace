@@ -51,3 +51,12 @@ como "SEO de Pesquisa". Não há alteração de schema nem nova migration SQL.
 ## Identidade Google da extensão (v4.3.11)
 
 Para listar e-mails de usuários que entram pela extensão, execute no Supabase SQL Editor a migration `supabase/migrations/20261114_tubex_installations.sql`. A API valida o token no Google `userinfo` e só então grava e-mail verificado, nome, foto, identificador Google, instalação e última atividade. Tokens OAuth nunca são persistidos na tabela. A lista é exibida apenas no endpoint administrativo protegido pelo login do proprietário. Usuários precisam autenticar a extensão e enviar ao menos um evento após a publicação para aparecerem; não há recuperação retroativa de e-mails para instalações antigas sem login Google verificado.
+
+
+## Histórico administrativo (v4.4.19)
+- A rota `app/api/admin/analytics` agrega eventos de `tubex_events` por dia no fuso `America/Sao_Paulo`, preserva dias sem eventos com zero e retorna atividade por conta/módulo e ranking mensal.
+- A rota exige sessão Supabase válida e `isTubeXOwner`; resposta é `private, no-store`.
+- Execute a migration `supabase/migrations/20261125_tubex_admin_analytics_history.sql` para índices auxiliares.
+- A tabela de comportamento distingue status de uso (Ativo/Em risco/Inativo) de propensão de compra (Quente/Morno/Frio). São dimensões independentes.
+- A data/hora exata do último uso é exibida quando a API de comportamento fornece `lastActivityAt`. Registros antigos sem timestamp permanecem como “Data/hora não registrada”; não são inventados.
+- Os eventos anteriores à instrumentação não podem ser reconstruídos retroativamente. O histórico só começa na data em que os eventos foram efetivamente gravados.
