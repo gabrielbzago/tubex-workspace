@@ -27,7 +27,13 @@ type Payload = {
 const fmt = (value: number) => new Intl.NumberFormat("pt-BR", { notation: value > 99999 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value || 0);
 const categoryLabels: Record<string, string> = { subscribers: "Inscritos", views: "Visualizações", publishing: "Publicações", performance: "Desempenho", growth: "Crescimento" };
 const tierLabels: Record<string, string> = { bronze: "Bronze", silver: "Prata", gold: "Ouro", platinum: "Platina" };
-const tierColors: Record<string, string> = { bronze: "text-orange-500", silver: "text-slate-400", gold: "text-amber-500", platinum: "text-cyan-500" };
+const tierColors: Record<string, string> = { bronze: "text-[#D98A52]", silver: "text-[#CBD5E1]", gold: "text-[#F5C84B]", platinum: "text-[#67D7F5]" };
+const tierPalette: Record<string, { main: string; soft: string; glow: string; label: string }> = {
+  bronze: { main: "#D98A52", soft: "rgba(217,138,82,.13)", glow: "rgba(217,138,82,.24)", label: "Bronze" },
+  silver: { main: "#CBD5E1", soft: "rgba(203,213,225,.12)", glow: "rgba(203,213,225,.2)", label: "Prata" },
+  gold: { main: "#F5C84B", soft: "rgba(245,200,75,.14)", glow: "rgba(245,200,75,.28)", label: "Ouro" },
+  platinum: { main: "#67D7F5", soft: "rgba(103,215,245,.13)", glow: "rgba(103,215,245,.25)", label: "Platina" },
+};
 
 export default function AchievementsCenter({ user }: { user: any }) {
   const [data, setData] = useState<Payload | null>(null);
@@ -287,11 +293,15 @@ ${avatarMarkup}
     <section className="tx-surface rounded-2xl p-5">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="tx-kicker">Biblioteca</p><h2 className="text-xl font-black">Todas as conquistas</h2></div><div className="flex flex-wrap gap-2">{[["all","Todas"],["unlocked","Desbloqueadas"],["locked","Bloqueadas"],["subscribers","Inscritos"],["views","Visualizações"],["publishing","Publicações"]].map(([value,label])=><button key={value} onClick={()=>setFilter(value)} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${filter===value?"border-[var(--tx-accent)] bg-[var(--tx-accent-soft)]":"border-[var(--tx-border)] text-[var(--tx-muted)]"}`}>{label}</button>)}</div></div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {filtered.map(item=><article key={item.code} className={`rounded-2xl border p-4 ${item.unlocked?"border-[var(--tx-accent)]/50 bg-[var(--tx-accent-soft)]/30":"border-[var(--tx-border)] bg-[var(--tx-surface-2)] opacity-85"}`}>
-          <div className="flex items-start justify-between gap-2"><div className={`grid h-11 w-11 place-items-center rounded-xl ${item.unlocked?"bg-[var(--tx-accent-soft)]":"bg-[var(--tx-surface)]"}`}><Award className={tierColors[item.tier] || "text-[var(--tx-muted)]"} size={23}/></div><span className={`text-[10px] font-black uppercase ${tierColors[item.tier] || "text-[var(--tx-muted)]"}`}>{tierLabels[item.tier] || item.tier}</span></div>
-          <h3 className="mt-3 font-black">{item.title}</h3><p className="mt-1 min-h-10 text-xs leading-5 text-[var(--tx-muted)]">{item.description}</p>
-          {item.unlocked ? <p className="mt-3 flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={14}/> Conquistada {item.unlocked_at ? new Date(item.unlocked_at).toLocaleDateString("pt-BR") : ""}</p> : <><Progress value={item.progress}/><p className="mt-2 text-[10px] text-[var(--tx-muted)]">{fmt(item.current_value)} / {fmt(item.threshold)} · {item.points} pontos</p></>}
-        </article>)}
+        {filtered.map(item=>{ const medal = tierPalette[item.tier] || tierPalette.bronze; return <article key={item.code} className={`tx-medal-card group relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 ${item.unlocked ? "is-unlocked" : "is-locked"}`} style={{ ["--medal-color" as any]: medal.main, ["--medal-soft" as any]: medal.soft, ["--medal-glow" as any]: medal.glow } as React.CSSProperties}>
+          <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full opacity-70 blur-3xl" style={{ background: medal.glow }}/>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="tx-medal-emblem"><div className="tx-medal-ribbon"/><div className="tx-medal-core"><Award size={25} strokeWidth={1.8}/></div></div>
+            <div className="flex flex-col items-end gap-1"><span className="rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[.14em]" style={{ color: medal.main, background: medal.soft, border: `1px solid ${medal.main}44` }}>{tierLabels[item.tier] || item.tier}</span><span className={`text-[9px] font-bold uppercase tracking-wider ${item.unlocked ? "text-emerald-400" : "text-[var(--tx-muted)]"}`}>{item.unlocked ? "Desbloqueada" : "Em progresso"}</span></div>
+          </div>
+          <h3 className="relative mt-4 text-sm font-black tracking-tight">{item.title}</h3><p className="relative mt-1 min-h-10 text-xs leading-5 text-[var(--tx-muted)]">{item.description}</p>
+          {item.unlocked ? <div className="relative mt-4 flex items-center justify-between border-t border-white/10 pt-3"><p className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-400"><CheckCircle2 size={14}/> Conquistada</p><span className="text-[10px] text-[var(--tx-muted)]">{item.unlocked_at ? new Date(item.unlocked_at).toLocaleDateString("pt-BR") : "Hoje"}</span></div> : <div className="relative mt-4 border-t border-white/10 pt-3"><div className="mb-2 flex items-center justify-between text-[10px]"><span className="font-bold text-[var(--tx-muted)]">PROGRESSO</span><strong style={{ color: medal.main }}>{Math.round(item.progress)}%</strong></div><Progress value={item.progress}/><p className="mt-2 text-[10px] text-[var(--tx-muted)]">{fmt(item.current_value)} / {fmt(item.threshold)} · {item.points} pontos</p></div>}
+        </article>})}
       </div>
       {!filtered.length && <p className="py-8 text-center text-sm text-[var(--tx-muted)]">Nenhuma conquista nesta categoria.</p>}
     </section>

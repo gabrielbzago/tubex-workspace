@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Premium visualization palette — explicit tokens keep SVG charts vivid in every theme. */
+:root{
+  --viz-good:#22C55E;--viz-warning:#F5B82E;--viz-serious:#F97316;--viz-critical:#F43F5E;--viz-neutral:#64748B;
+  --viz-1:#F2C94C;--viz-2:#38BDF8;--viz-3:#A78BFA;--viz-4:#34D399;--viz-5:#FB7185;--viz-6:#F97316;
+  --viz-seq-1:#38BDF8;--viz-seq-2:#EAB308;--viz-seq-3:#F97316;
+}
+
+
 :root{
   --tx-bg:#080c0f;
   --tx-surface:#10171b;
@@ -465,3 +473,15 @@ html.light .tx-dashboard-content.is-page textarea { background:#f8fafc; }
 .tx-ai-home > section:first-child > button .h-1 { box-shadow:0 0 10px rgba(242,201,76,.3); }
 .tx-ai-workspace:not(:has(> .tx-ai-context)) { grid-template-columns:205px minmax(0,1fr); }
 @media(min-width:1500px) { .tx-ai-workspace:not(:has(> .tx-ai-context)) { grid-template-columns:218px minmax(0,1fr); } }
+
+
+/* Collector-grade medal cards: metallic rim, ribbon and tier-specific light. */
+.tx-medal-card{background:linear-gradient(145deg,color-mix(in srgb,var(--tx-surface) 94%,var(--medal-color) 6%),var(--tx-surface-2));border-color:color-mix(in srgb,var(--medal-color) 35%,var(--tx-border));box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 12px 30px rgba(0,0,0,.12)}
+.tx-medal-card.is-unlocked{box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 12px 34px color-mix(in srgb,var(--medal-glow) 55%,transparent)}
+.tx-medal-card.is-locked{filter:saturate(.62);background:linear-gradient(145deg,var(--tx-surface),var(--tx-surface-2))}
+.tx-medal-card:hover{transform:translateY(-3px);border-color:var(--medal-color);box-shadow:0 18px 38px color-mix(in srgb,var(--medal-glow) 65%,transparent)}
+.tx-medal-emblem{position:relative;display:grid;width:58px;height:66px;place-items:start center;filter:drop-shadow(0 7px 10px color-mix(in srgb,var(--medal-glow) 60%,transparent))}
+.tx-medal-ribbon{position:absolute;top:33px;left:10px;width:38px;height:31px;background:linear-gradient(90deg,color-mix(in srgb,var(--medal-color) 60%,#5b6472),var(--medal-color),color-mix(in srgb,var(--medal-color) 65%,#fff));clip-path:polygon(0 0,100% 0,82% 100%,50% 78%,18% 100%);opacity:.9}
+.tx-medal-core{position:relative;z-index:1;display:grid;width:48px;height:48px;place-items:center;border-radius:50%;border:3px solid color-mix(in srgb,var(--medal-color) 80%,#fff);background:radial-gradient(circle at 32% 25%,color-mix(in srgb,var(--medal-color) 55%,#fff),var(--medal-color) 48%,color-mix(in srgb,var(--medal-color) 55%,#161b22));color:#17191d;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25),0 0 0 4px color-mix(in srgb,var(--medal-color) 15%,transparent)}
+.tx-medal-card.is-locked .tx-medal-core{background:linear-gradient(145deg,#59636d,#303943);border-color:#77818c;color:#cbd5e1;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12)}
+.tx-medal-card.is-locked .tx-medal-ribbon{background:linear-gradient(90deg,#3d4650,#68737e,#3d4650)}

@@ -31,19 +31,19 @@ const DAY = 86400000;
 
 // Cada status com o significado e os parâmetros exatos que o calculam (mesmas regras da API).
 const STATUS: Record<Status, { label: string; color: string; Icon: any; meaning: string; rule: string; tone: string }> = {
-  active: { label: "Ativo", color: "var(--viz-good)", Icon: CheckCircle2, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  active: { label: "Ativo", color: "#22C55E", Icon: CheckCircle2, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     meaning: "Usa o TubeX com frequência. É a base saudável.", rule: "Usou recursos em 2 ou mais dias diferentes nos últimos 30 dias e o último uso foi há no máximo 14 dias. Para assinantes, sem pagamento pendente." },
-  at_risk: { label: "Em risco", color: "var(--viz-warning)", Icon: AlertTriangle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  at_risk: { label: "Em risco", color: "#F5B82E", Icon: AlertTriangle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
     meaning: "Ainda usou no último mês, mas o uso está caindo ou o pagamento travou.", rule: "Teve uso nos últimos 30 dias, porém sem uso há mais de 14 dias, ou só 1 dia com uso no período, ou pagamento pendente (past_due)." },
-  inactive: { label: "Inativo", color: "var(--viz-serious)", Icon: Moon, tone: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  inactive: { label: "Inativo", color: "#F97316", Icon: Moon, tone: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
     meaning: "Parou de usar. Para assinante, é o risco mais alto de cancelar.", rule: "Nenhum uso de recurso nos últimos 30 dias (ou nunca usou)." },
-  canceled: { label: "Cancelado", color: "var(--viz-critical)", Icon: UserRoundX, tone: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  canceled: { label: "Cancelado", color: "#F43F5E", Icon: UserRoundX, tone: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
     meaning: "Já foi assinante e não tem assinatura válida hoje.", rule: "Evento de cancelamento do Stripe, ou status canceled/inactive em uma conta que já teve assinatura." },
 };
 const TIER: Record<Tier, { label: string; color: string; Icon: any; rule: string }> = {
-  hot: { label: "Quente", color: "var(--viz-seq-3)", Icon: Flame, rule: "Pontuação 60 a 100. Chame agora: oferta, cupom ou contato direto." },
-  warm: { label: "Morno", color: "var(--viz-seq-2)", Icon: TrendingUp, rule: "Pontuação 30 a 59. Mostra interesse; vale nutrir com avisos de upgrade." },
-  cold: { label: "Frio", color: "var(--viz-seq-1)", Icon: Moon, rule: "Pontuação abaixo de 30. Pouco sinal de compra por enquanto." },
+  hot: { label: "Quente", color: "#F97316", Icon: Flame, rule: "Pontuação 60 a 100. Chame agora: oferta, cupom ou contato direto." },
+  warm: { label: "Morno", color: "#EAB308", Icon: TrendingUp, rule: "Pontuação 30 a 59. Mostra interesse; vale nutrir com avisos de upgrade." },
+  cold: { label: "Frio", color: "#38BDF8", Icon: Moon, rule: "Pontuação abaixo de 30. Pouco sinal de compra por enquanto." },
 };
 const SCORE_RULES: [string, string][] = [
   ["Bateu o limite do plano nos últimos 30 dias", "+25 (1 ou 2 vezes) · +35 (3 ou mais)"],
@@ -56,7 +56,7 @@ const SCORE_RULES: [string, string][] = [
   ["Já foi assinante", "+5"],
   ["Sem uso há mais de 30 dias", "−20"],
 ];
-const CATEGORICAL = ["var(--viz-1)", "var(--viz-2)", "var(--viz-3)", "var(--viz-4)", "var(--viz-5)", "var(--viz-6)"];
+const CATEGORICAL = ["#F2C94C", "#38BDF8", "#A78BFA", "#34D399", "#FB7185", "#F97316"];
 
 type Slice = { key: string; label: string; value: number; color: string; Icon?: any };
 
@@ -185,7 +185,7 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
     .map((key) => ({ key, label: key === "canceled" && isFree ? "Ex-assinante" : STATUS[key].label, value: stats[key], color: STATUS[key].color, Icon: STATUS[key].Icon }));
   const tierSlices: Slice[] = (["hot", "warm", "cold"] as Tier[]).map((key) => ({ key: `tier:${key}`, label: TIER[key].label, value: stats.tiers[key], color: TIER[key].color, Icon: TIER[key].Icon }));
   const planSlices: Slice[] = [...stats.planCounts.entries()].sort((a, b) => b[1] - a[1]).map(([plan, value], index) => ({ key: `plan:${plan}`, label: plan, value, color: CATEGORICAL[index % CATEGORICAL.length] }));
-  const reasonSlices: Slice[] = stats.reasonSlices.map(([label, value], index) => ({ key: `reason:${label}`, label, value, color: label === "Outros" ? "var(--viz-neutral)" : CATEGORICAL[index] }));
+  const reasonSlices: Slice[] = stats.reasonSlices.map(([label, value], index) => ({ key: `reason:${label}`, label, value, color: label === "Outros" ? "#64748B" : CATEGORICAL[index % CATEGORICAL.length] }));
 
   const toggle = (key: string) => setFilter((current) => current === key ? "all" : key);
   const visible = useMemo(() => {
@@ -264,16 +264,16 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
             <h3 className="text-sm font-black">Limites e intenção de compra</h3>
             <p className="mt-1 text-[11px] leading-5 text-[var(--tx-muted)]">Quanto da base free já esbarrou no plano. Clique para filtrar a lista.</p>
             <div className="mt-5 space-y-4">
-              <button type="button" onClick={() => toggle("quota")} className={`block w-full rounded-lg p-1 text-left ${filter === "quota" ? "ring-1 ring-[var(--tx-accent)]" : ""}`}><Meter label="Bateram o limite (30 dias)" value={stats.quota30.length} total={accounts.length} color="var(--viz-1)"/></button>
-              <Meter label="Bateram o limite alguma vez" value={stats.quotaEver.length} total={accounts.length} color="var(--viz-1)"/>
-              <Meter label="Abriram o checkout" value={stats.checkoutAbandon} total={accounts.length} color="var(--viz-1)"/>
-              <Meter label="Clicaram em assinar" value={accounts.filter((r) => r.upgradeClicks > 0).length} total={accounts.length} color="var(--viz-1)"/>
+              <button type="button" onClick={() => toggle("quota")} className={`block w-full rounded-lg p-1 text-left ${filter === "quota" ? "ring-1 ring-[var(--tx-accent)]" : ""}`}><Meter label="Bateram o limite (30 dias)" value={stats.quota30.length} total={accounts.length} color="#F2C94C"/></button>
+              <Meter label="Bateram o limite alguma vez" value={stats.quotaEver.length} total={accounts.length} color="#F2C94C"/>
+              <Meter label="Abriram o checkout" value={stats.checkoutAbandon} total={accounts.length} color="#F2C94C"/>
+              <Meter label="Clicaram em assinar" value={accounts.filter((r) => r.upgradeClicks > 0).length} total={accounts.length} color="#F2C94C"/>
             </div>
           </section>
         </> : <>
           <Donut title="Saúde da base" subtitle="Todos que já assinaram, pelo status de uso e de assinatura." slices={statusSlices} centerLabel="contas" onSelect={toggle} selected={filter}/>
           <Donut title="Assinantes por plano" subtitle="Somente assinaturas válidas hoje (active, trialing ou past_due)." slices={planSlices} centerLabel="assinantes" onSelect={toggle} selected={filter}/>
-          <Donut title="Por que cancelaram" subtitle="Motivo informado no Stripe ao cancelar. Clique para ver quem." slices={reasonSlices.length ? reasonSlices : [{ key: "none", label: "Sem cancelamentos", value: 0, color: "var(--viz-neutral)" }]} centerLabel="cancelamentos" onSelect={toggle} selected={filter}/>
+          <Donut title="Por que cancelaram" subtitle="Motivo informado no Stripe ao cancelar. Clique para ver quem." slices={reasonSlices.length ? reasonSlices : [{ key: "none", label: "Sem cancelamentos", value: 0, color: "#64748B" }]} centerLabel="cancelamentos" onSelect={toggle} selected={filter}/>
         </>}
       </div>
 
