@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description:
     "TubeX: extensão de crescimento no YouTube com SEO, IA, tendências e ferramentas para creators.",
   applicationName: "TubeX",
-  icons: { icon: "/favicon.ico" },
+  icons: { icon: "/icon.png" },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
