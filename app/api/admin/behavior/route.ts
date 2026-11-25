@@ -332,8 +332,16 @@ export async function GET(request: Request) {
     const cancelComment = str(row.cancel_comment || row.cancellation_comment) || null;
     const cancelLabel = cancelReason || (canceledReferral.length ? "Cancelamento registrado no histórico de afiliados" : null);
 
+    // Status de relacionamento: mede recência de uso real, não quantidade de dias
+    // distintos. Uma única sessão recente já caracteriza atividade; assinantes novos
+    // recebem uma janela de onboarding para não serem rotulados como risco antes de usar.
     const activityReference = lastResourceAt || lastLoginAt;
     const activityDays = daysAgo(activityReference, now);
+    const subscriptionAgeDays = daysAgo(subscribedAt, now);
+    const hasRecentResourceUse = lastResourceAt !== null && activityDays !== null && activityDays <= 7;
+    const isNewValidSubscriber = currentSubscriber &&
+      VALID_STATUSES.has(billingStatus) &&
+      subscriptionAgeDays !== null && subscriptionAgeDays <= 14;
     let status: "active" | "at_risk" | "inactive" | "canceled";
     const statusReasons: string[] = [];
     if (formerSubscriber) {
@@ -341,20 +349,25 @@ export async function GET(request: Request) {
       statusReasons.push("Há evidência de assinatura anterior, mas não há assinatura válida no cadastro atual.");
     } else if (billingStatus === "past_due") {
       status = "at_risk";
-      statusReasons.push("Pagamento pendente (past_due).");
-    } else if (resourceEvents.length) {
-      if (days30.length >= 2 && (activityDays ?? 9999) <= 14) status = "active";
-      else if (usage30.length || (activityDays !== null && activityDays <= 30)) status = "at_risk";
-      else status = "inactive";
-    } else if (activityDays !== null && activityDays <= 14) {
+      statusReasons.push("Pagamento pendente (past_due), independentemente da recência de uso.");
+    } else if (hasRecentResourceUse) {
       status = "active";
-      statusReasons.push("Classificação baseada no último login/sincronização; ainda não há eventos de uso de módulos para esta conta.");
-    } else if (activityDays !== null && activityDays <= 30) {
+      statusReasons.push("Uso real de recurso registrado nos últimos 7 dias.");
+    } else if (isNewValidSubscriber) {
+      status = "active";
+      statusReasons.push("Assinatura recente: conta em período inicial de onboarding (14 dias), sem penalização por ainda ter pouco histórico.");
+    } else if (lastResourceAt && activityDays !== null && activityDays <= 30) {
       status = "at_risk";
-      statusReasons.push("Último acesso conhecido entre 15 e 30 dias; não há telemetria histórica de módulos.");
+      statusReasons.push("Último uso real de recurso ocorreu há mais de 7 e até 30 dias.");
+    } else if (lastResourceAt) {
+      status = "inactive";
+      statusReasons.push("Sem uso real de recursos nos últimos 30 dias.");
+    } else if (currentSubscriber) {
+      status = "inactive";
+      statusReasons.push("Assinatura válida, mas ainda não há evento de uso real de recursos registrado.");
     } else {
       status = "inactive";
-      statusReasons.push("Sem eventos de uso ou acesso recente identificável.");
+      statusReasons.push("Nenhum evento de uso real de recursos identificado nos últimos 30 dias.");
     }
     if (legacyOnly) statusReasons.push("Conta anterior à implantação da telemetria: ações e módulos usados antes do início do Analytics não podem ser reconstruídos.");
     if (lastLoginAt) statusReasons.push(`Último login autenticado em ${lastLoginAt}.`);

@@ -39,11 +39,11 @@ const DAY = 86400000;
 // Cada status com o significado e os parâmetros exatos que o calculam (mesmas regras da API).
 const STATUS: Record<Status, { label: string; color: string; Icon: any; meaning: string; rule: string; tone: string }> = {
   active: { label: "Ativo", color: "#22C55E", Icon: CheckCircle2, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    meaning: "Usa o TubeX com frequência. É a base saudável.", rule: "Teve evento de uso nos últimos 7 dias. Para assinantes, sem pagamento pendente." },
+    meaning: "Teve uso real recente ou está no período inicial de uma assinatura válida. Uma sessão recente já conta como atividade.", rule: "Ativo: pelo menos um evento real de recurso nos últimos 7 dias. Assinatura válida com até 14 dias também fica ativa durante o onboarding. Pagamento past_due prevalece como alerta." },
   at_risk: { label: "Em risco", color: "#F5B82E", Icon: AlertTriangle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    meaning: "Ainda usou no último mês, mas o uso está caindo ou o pagamento travou.", rule: "Último evento de uso há mais de 7 e até 30 dias, ou pagamento pendente (past_due)." },
+    meaning: "Não há uso real recente (últimos 7 dias), ou existe pendência de pagamento.", rule: "Último uso real há mais de 7 e até 30 dias, ou pagamento pendente (past_due). Não depende da quantidade de dias distintos de uso." },
   inactive: { label: "Inativo", color: "#F97316", Icon: Moon, tone: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-    meaning: "Parou de usar. Para assinante, é o risco mais alto de cancelar.", rule: "Nenhum uso de recurso nos últimos 30 dias (ou nunca usou)." },
+    meaning: "Não há uso real registrado nos últimos 30 dias. Para assinantes, merece acompanhamento.", rule: "Último uso real há mais de 30 dias, ou nenhum uso real registrado. Assinantes novos têm 14 dias de onboarding." },
   canceled: { label: "Cancelado", color: "#F43F5E", Icon: UserRoundX, tone: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
     meaning: "Já foi assinante e não tem assinatura válida hoje.", rule: "Evento de cancelamento do Stripe, ou status canceled/inactive em uma conta que já teve assinatura." },
 };
@@ -230,7 +230,7 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
     </header>
 
     <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-4 py-3 text-xs leading-5 text-[var(--tx-muted)]">
-      <b className="text-[var(--tx-text)]">Dois indicadores diferentes:</b> Status (Ativo, Em risco ou Inativo) mede uso recente do produto. Chance de assinar (Quente, Morno ou Frio) estima intenção de compra. Portanto, uma conta pode estar <b>Ativa e Fria</b>: usa o TubeX, mas ainda não demonstrou sinais fortes de compra. A coluna Último uso mostra o tempo decorrido e a data/hora exata, no fuso local do navegador.
+      <b className="text-[var(--tx-text)]">Dois indicadores diferentes:</b> Status (Ativo, Em risco ou Inativo) mede a recência do uso real do produto e considera uma janela de onboarding para novas assinaturas. Chance de assinar (Quente, Morno ou Frio) estima intenção de compra. Portanto, uma conta pode estar <b>Ativa e Fria</b>: usa o TubeX, mas ainda não demonstrou sinais fortes de compra. A coluna Último uso mostra o tempo decorrido e a data/hora exata, no fuso local do navegador.
     </div>
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">{error}</div>}
 
