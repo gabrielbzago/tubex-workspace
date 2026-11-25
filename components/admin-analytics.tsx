@@ -73,33 +73,48 @@ export default function AdminAnalytics(){
  const [data,setData]=useState<Payload|null>(null),[chatData,setChatData]=useState<ChatAnalytics|null>(null),[days,setDays]=useState(30),[month,setMonth]=useState(()=>monthKey(new Date())),[selectedDate,setSelectedDate]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[chatError,setChatError]=useState(""),[userFilter,setUserFilter]=useState("");
  async function load(){
   setLoading(true);setError("");setChatError("");
-  const timeoutFetch = (url:string, token:string) => fetch(url, {
-   headers:{Authorization:`Bearer ${token}`}, cache:"no-store", signal:AbortSignal.timeout(20000),
+  // Não cancelar consultas de Analytics por tempo artificial: aguardar a API responder.
+  const analyticsFetch = (url:string, token:string) => fetch(url, {
+   headers:{Authorization:`Bearer ${token}`, Accept:"application/json"}, cache:"no-store",
   });
+  const readApiResponse = async (response:Response, label:string) => {
+   const raw = await response.text();
+   const contentType = response.headers.get("content-type") || "";
+   if (!contentType.toLowerCase().includes("application/json")) {
+    const preview = raw.replace(/\s+/g," ").slice(0,180);
+    throw new Error(`${label}: o servidor retornou HTML ou conteúdo inesperado (HTTP ${response.status}). Verifique se a rota da API foi publicada no deploy. ${preview}`);
+   }
+   let body:any;
+   try { body = raw ? JSON.parse(raw) : {}; }
+   catch { throw new Error(`${label}: a API respondeu com JSON inválido (HTTP ${response.status}).`); }
+   if (!response.ok) throw new Error(body?.error || `${label}: falha HTTP ${response.status}.`);
+   return body;
+  };
   try{
    const {data:{session}}=await supabase.auth.getSession();
    if(!session?.access_token) throw new Error("Sessão expirada. Entre novamente.");
    // Os dois relatórios são independentes: carregar em paralelo evita que o Chat
    // bloqueie o Analytics (ou vice-versa).
    const [mainResult, chatResult] = await Promise.allSettled([
-    timeoutFetch(`/api/admin/analytics?days=${days}&month=${month}`, session.access_token),
-    timeoutFetch(`/api/admin/ai-analytics?days=${days}`, session.access_token),
+    analyticsFetch(`/api/admin/analytics?days=${days}&month=${month}`, session.access_token),
+    analyticsFetch(`/api/admin/ai-analytics?days=${days}`, session.access_token),
    ]);
    if(mainResult.status === "rejected") throw new Error(mainResult.reason?.name === "TimeoutError" ? "O Analytics demorou mais de 20 segundos para responder. Tente atualizar; se persistir, verifique os logs da API." : mainResult.reason?.message || "Falha de conexão ao carregar Analytics.");
-   const res=mainResult.value;
-   const json=await res.json().catch(()=>({error:"A API de Analytics retornou uma resposta inválida."}));
-   if(!res.ok) throw new Error(json.error||`Falha ao carregar Analytics (HTTP ${res.status}).`);
+   const json=await readApiResponse(mainResult.value,"TubeX Analytics");
    setData(json);
    if(chatResult.status === "fulfilled"){
-    const chatRes=chatResult.value;
-    const chatJson=await chatRes.json().catch(()=>({error:"Resposta inválida do relatório AI Chat."}));
-    if(chatRes.ok) setChatData(chatJson);
-    else { setChatData(null); setChatError(chatJson.error||`Relatório AI Chat indisponível (HTTP ${chatRes.status}).`); console.warn("[TubeX Analytics] AI Chat:",chatJson.error||chatRes.status); }
+    try {
+     const chatJson=await readApiResponse(chatResult.value,"TubeX AI Chat");
+     setChatData(chatJson);
+    } catch(chatFailure:any) {
+     setChatData(null); setChatError(chatFailure?.message || "Não foi possível carregar o relatório AI Chat.");
+     console.warn("[TubeX Analytics] AI Chat:",chatFailure);
+    }
    } else {
-    setChatData(null); setChatError("O relatório AI Chat não respondeu em até 20 segundos. O restante do Analytics continua disponível.");
+    setChatData(null); setChatError(chatResult.reason?.message || "Não foi possível conectar ao relatório AI Chat.");
     console.warn("[TubeX Analytics] AI Chat indisponível:",chatResult.reason);
    }
-  }catch(e:any){setError(e.name === "TimeoutError" ? "A consulta excedeu o tempo limite de 20 segundos. Tente novamente." : e.message||"Não foi possível carregar os dados.");}
+  }catch(e:any){setError(e.message||"Não foi possível carregar os dados.");}
   finally{setLoading(false);}
  }
  useEffect(()=>{load();},[days,month]);
