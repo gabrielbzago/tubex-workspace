@@ -36,7 +36,8 @@ export async function POST(request: Request) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "Groq ainda não configurada. Cadastre GROQ_API_KEY nas variáveis de ambiente da Vercel." }, { status: 503 });
 
-  let reserved = false;\n  let reservedCost = 0;
+  let reserved = false;
+  let reservedCost = 0;
   try {
     const body = await request.json();
     const messages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
