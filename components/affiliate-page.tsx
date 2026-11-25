@@ -35,7 +35,7 @@ const copy = {
     copy:"Copiar enlace",copied:"Copiado",earned:"Ganancias acumuladas",open:"Pendiente de pago",sales:"Ventas",clicks:"Clics",conversion:"Conversión",
     pix:"Datos PIX",pixDesc:"Usa estos datos para recibir tus comisiones.",cpf:"CPF",pixType:"Tipo PIX",pixKey:"Clave PIX",save:"Guardar datos",saved:"Datos guardados.",
     history:"Historial",historyTitle:"Ventas referidas",date:"Fecha",commission:"Comisión",status:"Estado",empty:"Aún no hay ventas registradas.",
-    activate:"Activa tu programa de afiliados",activateDesc:"Genera tu código único para empezar a recomendar TubeX y recibir comisiones recurrentes.",generate:"Generar mi código",generating:"Generando...",codeCreated:"Código de afiliado creado.",clickNote:"El seguimiento de clics aún no está habilitado.",loadError:"No se pudieron cargar tus datos de afiliado."
+    activate:"Activa tu programa de afiliados",activateDesc:"Genera tu código único para empezar a recomendar TubeX y recibir comisiones recurrentes.",generate:"Generar mi código",generating:"Generando...",codeCreated:"Código creado y vinculado permanentemente a tu cuenta. Contacta con soporte para solicitar un cambio.",locked:"Tu código es único y no se puede cambiar desde el panel. Contacta con soporte si necesitas una corrección.",clickNote:"El seguimiento de clics aún no está habilitado.",loadError:"No se pudieron cargar tus datos de afiliado."
   },
   en: {
     kicker:"TUBEX / AFFILIATES", title:"Affiliate Program", desc:"Share TubeX and track your sales and recurring commissions.",

@@ -941,3 +941,164 @@ html[data-theme="light"] main.bg-black.text-white {
   html[data-theme="system"] main[class*="bg-[#0b0f"] .text-white {color:var(--tx-text)!important}
   html[data-theme="system"] main[class*="bg-[#0b0f"] .text-zinc-400 {color:var(--tx-muted)!important}
 }
+
+
+/* ==========================================================================
+   TubeX Unified Premium Workspace — shared skin for every main module
+   The navigation/sidebar is the visual reference; all page modules now share
+   its spacing, glass surfaces, blue interaction states and semantic accents.
+   ========================================================================== */
+:root{
+  --tx-glass:rgba(15,25,34,.78);
+  --tx-glass-strong:rgba(17,29,39,.92);
+  --tx-glass-highlight:rgba(255,255,255,.045);
+  --tx-elevation-1:0 8px 26px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.035);
+  --tx-elevation-2:0 18px 48px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.045);
+  --tx-focus-ring:rgba(56,189,248,.18);
+}
+html[data-theme="light"],html[data-theme="system"]{
+  --tx-glass:rgba(255,255,255,.78);
+  --tx-glass-strong:rgba(255,255,255,.94);
+  --tx-glass-highlight:rgba(255,255,255,.72);
+  --tx-elevation-1:0 8px 24px rgba(35,55,75,.055),inset 0 1px 0 rgba(255,255,255,.8);
+  --tx-elevation-2:0 18px 46px rgba(35,55,75,.09),inset 0 1px 0 rgba(255,255,255,.9);
+}
+@media(prefers-color-scheme:dark){
+  html[data-theme="system"]{
+    --tx-glass:rgba(15,25,34,.78);
+    --tx-glass-strong:rgba(17,29,39,.92);
+    --tx-glass-highlight:rgba(255,255,255,.045);
+    --tx-elevation-1:0 8px 26px rgba(0,0,0,.12),inset 0 1px 0 rgba(255,255,255,.035);
+    --tx-elevation-2:0 18px 48px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.045);
+  }
+}
+.tx-dashboard-content.is-page{
+  position:relative;
+  isolation:isolate;
+  background:
+    radial-gradient(ellipse at 82% 0%,rgba(56,189,248,.055),transparent 34rem),
+    radial-gradient(ellipse at 7% 28%,rgba(34,197,94,.025),transparent 27rem);
+}
+.tx-dashboard-content.is-page > *{position:relative;z-index:1}
+.tx-dashboard-content.is-page :is(.tx-surface,.tx-feature,.tx-plan,.tx-faq,.tx-chart-panel,.tx-analytics-panel){
+  background:linear-gradient(145deg,var(--tx-glass-highlight),transparent 54%),var(--tx-glass)!important;
+  border-color:var(--tx-border)!important;
+  box-shadow:var(--tx-elevation-1);
+  backdrop-filter:blur(18px) saturate(125%);
+  -webkit-backdrop-filter:blur(18px) saturate(125%);
+  transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease;
+}
+.tx-dashboard-content.is-page :is(.tx-surface,.tx-feature,.tx-plan,.tx-chart-panel,.tx-analytics-panel):hover{
+  border-color:color-mix(in srgb,var(--tx-blue) 30%,var(--tx-border))!important;
+  box-shadow:var(--tx-elevation-2);
+}
+.tx-dashboard-content.is-page :is(section,article) > :is(.tx-surface,.tx-chart-panel,.tx-analytics-panel){
+  min-width:0;
+}
+.tx-dashboard-content.is-page :is(div,article,section)[class*="rounded-"][class*="border"][class*="bg-"]:not([class*="rounded-full"]):not([class*="rounded-lg"]){
+  border-color:var(--tx-border);
+  box-shadow:var(--tx-elevation-1);
+  backdrop-filter:blur(12px) saturate(118%);
+}
+.tx-dashboard-content.is-page :is(h1,h2,h3){
+  color:var(--tx-text);
+  letter-spacing:-.035em;
+  text-wrap:balance;
+}
+.tx-dashboard-content.is-page h1{font-weight:900;line-height:1.12}
+.tx-dashboard-content.is-page h2{font-weight:850;line-height:1.2}
+.tx-dashboard-content.is-page h3{font-weight:800;line-height:1.25}
+.tx-dashboard-content.is-page :is(.tx-kicker,.tx-eyebrow){
+  color:var(--tx-accent);
+}
+.tx-dashboard-content.is-page .tx-kicker{
+  letter-spacing:.15em;
+}
+.tx-dashboard-content.is-page :is(button,a).tx-btn,
+.tx-dashboard-content.is-page button[class*="rounded-"][class*="border"]{
+  transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease;
+}
+.tx-dashboard-content.is-page .tx-btn-primary{
+  background:linear-gradient(135deg,#f6d45a,#e9bb2c)!important;
+  border-color:rgba(235,190,50,.55)!important;
+  color:#141a20!important;
+  box-shadow:0 6px 20px rgba(218,174,35,.13);
+}
+.tx-dashboard-content.is-page .tx-btn-secondary{
+  background:linear-gradient(135deg,rgba(56,189,248,.09),rgba(56,189,248,.025))!important;
+  border-color:color-mix(in srgb,var(--tx-blue) 20%,var(--tx-border))!important;
+  color:var(--tx-text)!important;
+}
+.tx-dashboard-content.is-page :is(button,a).tx-btn:hover{
+  transform:translateY(-1px);
+}
+.tx-dashboard-content.is-page :is(input,select,textarea){
+  border-radius:11px!important;
+  border-color:var(--tx-border)!important;
+  background:color-mix(in srgb,var(--tx-surface-2) 86%,transparent)!important;
+  color:var(--tx-text)!important;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.035);
+}
+.tx-dashboard-content.is-page :is(input,select,textarea):focus{
+  border-color:var(--tx-blue)!important;
+  box-shadow:0 0 0 3px var(--tx-focus-ring)!important;
+  outline:0!important;
+}
+.tx-dashboard-content.is-page :is(input,select,textarea)::placeholder{color:var(--tx-muted)!important;opacity:.8}
+.tx-dashboard-content.is-page table{
+  border-collapse:separate;
+  border-spacing:0;
+  overflow:hidden;
+  border:1px solid var(--tx-border);
+  border-radius:14px;
+}
+.tx-dashboard-content.is-page thead th{
+  background:color-mix(in srgb,var(--tx-blue) 7%,var(--tx-surface-2));
+  color:var(--tx-muted);
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+}
+.tx-dashboard-content.is-page tbody tr:nth-child(even){background:color-mix(in srgb,var(--tx-surface-2) 34%,transparent)}
+.tx-dashboard-content.is-page tbody tr:hover{background:var(--tx-blue-soft)!important}
+.tx-dashboard-content.is-page hr{border-color:var(--tx-border);opacity:.8}
+/* Keep yellow for the brand's small emphasis; blue and green carry data meaning. */
+.tx-dashboard-content.is-page [class*="border-[var(--tx-accent)]"]{border-color:color-mix(in srgb,var(--tx-accent) 28%,var(--tx-border))}
+.tx-dashboard-content.is-page :is(.tx-data-blue,.tx-status-info){color:var(--tx-blue)!important}
+.tx-dashboard-content.is-page .tx-status-good{color:var(--tx-green)!important;background:var(--tx-green-soft)!important}
+.tx-dashboard-content.is-page .tx-status-warning{color:var(--tx-accent-strong)!important;background:var(--tx-accent-soft)!important}
+.tx-dashboard-content.is-page .tx-status-danger{color:var(--tx-red)!important;background:rgba(251,113,133,.10)!important}
+.tx-dashboard-content.is-page :is(.tx-chart-panel,.tx-analytics-panel){
+  border-radius:17px!important;
+}
+.tx-dashboard-content.is-page :is(.recharts-cartesian-grid line,.recharts-cartesian-axis line,.recharts-cartesian-axis-tick line){
+  stroke:var(--tx-border)!important;
+}
+.tx-dashboard-content.is-page :is(.recharts-cartesian-axis-tick-value,.recharts-legend-item-text){
+  fill:var(--tx-muted)!important;color:var(--tx-muted)!important;
+}
+.tx-dashboard-content.is-page :is(.recharts-tooltip-wrapper .recharts-default-tooltip){
+  border:1px solid var(--tx-border)!important;border-radius:12px!important;
+  background:var(--tx-glass-strong)!important;color:var(--tx-text)!important;
+  box-shadow:var(--tx-elevation-2)!important;backdrop-filter:blur(18px);
+}
+.tx-dashboard-content.is-page :is(.recharts-tooltip-label,.recharts-tooltip-item,.recharts-default-tooltip *){color:var(--tx-text)!important}
+.tx-dashboard-content.is-page :is(.tx-medal-card,.tx-chart-panel){backdrop-filter:blur(16px) saturate(125%)}
+.tx-dashboard-content.is-page :is(.tx-medal-card.is-unlocked,.tx-medal-card[data-unlocked="true"]){
+  border-color:rgba(34,197,94,.28)!important;
+  background:linear-gradient(145deg,rgba(34,197,94,.09),transparent 65%),var(--tx-glass)!important;
+}
+.tx-dashboard-content.is-page :is(.tx-medal-card.is-locked,.tx-medal-card[data-unlocked="false"]){opacity:.78}
+.tx-dashboard-content.is-page :is(.tx-stat-card,.tx-metric-card){
+  background:linear-gradient(145deg,var(--tx-glass-highlight),transparent 70%),var(--tx-glass)!important;
+  border:1px solid var(--tx-border);
+  border-radius:16px;
+  box-shadow:var(--tx-elevation-1);
+}
+@media(max-width:760px){
+  .tx-dashboard-content.is-page :is(.tx-surface,.tx-feature,.tx-plan,.tx-chart-panel,.tx-analytics-panel){border-radius:15px!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .tx-dashboard-content.is-page *{transition:none!important;animation:none!important}
+}
