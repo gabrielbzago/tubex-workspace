@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isTubeXOwner } from "@/lib/tubex-owner";
+import { fetchEventsSince } from "@/lib/tubex-paged";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,16 +17,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days") || 30)));
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const { data: events, error } = await supabaseAdmin
-    .from("tubex_events")
-    .select("user_id,session_id,event_name,properties,created_at")
-    .eq("module", "ai_chat")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(10000);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const rows = events || [];
+  // Paginado: o Supabase devolve no máximo 1.000 linhas por requisição.
+  const { rows, error } = await fetchEventsSince(since, "id,user_id,session_id,event_name,properties,created_at", (q: any) => q.eq("module", "ai_chat"), 50_000);
+  if (error) return NextResponse.json({ error }, { status: 500 });
   const userIds = [...new Set(rows.map((row: any) => row.user_id).filter(Boolean))] as string[];
   const profiles = new Map<string, any>();
   await Promise.all(userIds.map(async (id) => {

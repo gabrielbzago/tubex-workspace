@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isTubeXOwner } from "@/lib/tubex-owner";
+import { fetchEventsSince, fetchTable } from "@/lib/tubex-paged";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,21 @@ function isUsageEvent(row: any) {
   if (["billing", "auth", "system", "subscription", "installation"].includes(module)) return false;
   return true;
 }
+function isLoginEvent(event: string) {
+  return /^(login_success|auth_login|login)$/i.test(event);
+}
+const SEARCH_RE = /(search|seo|keyword|analysis|analy)/i;
+function pct(current: number, previous: number) {
+  if (!previous) return current ? null : 0;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+function hourKey(value: string) {
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date(value)));
+}
+function weekdayKey(value: string) {
+  const [y, m, d] = dateKey(value).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+}
 function emptyDaily(days: number) {
   const result: any[] = [];
   const today = new Date();
@@ -66,22 +82,24 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days") || 30)));
   const requestedMonth = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "") ? url.searchParams.get("month")! : monthKey(new Date());
-  const rangeSince = new Date(Date.now() - days * DAY);
+  const now = Date.now();
+  const rangeSince = new Date(now - days * DAY);
+  const prevSince = new Date(now - 2 * days * DAY);
   const monthStart = new Date(`${requestedMonth}-01T00:00:00-03:00`).toISOString();
-  const since = new Date(Math.min(rangeSince.getTime(), Date.parse(monthStart))).toISOString();
+  const since = new Date(Math.min(prevSince.getTime(), Date.parse(monthStart))).toISOString();
+  // Paginado: o Supabase corta cada resposta em 1.000 linhas. Antes, só os eventos
+  // mais recentes (hoje) chegavam e os dias anteriores apareciam zerados.
   const [eventResult, installResult, userResult] = await Promise.all([
-    supabaseAdmin.from("tubex_events")
-      .select("id,user_id,install_id,event_name,module,properties,created_at")
-      .gte("created_at", since).order("created_at", { ascending: false }).limit(20000),
-    supabaseAdmin.from("tubex_installations")
-      .select("install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen")
-      .order("last_seen", { ascending: false }).limit(5000),
-    supabaseAdmin.from("users").select("id,email,name,plan").limit(10000),
+    fetchEventsSince(since, "id,user_id,install_id,event_name,module,properties,created_at"),
+    fetchTable("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen", "last_seen"),
+    fetchTable("users", "id,email,name,plan"),
   ]);
-  if (eventResult.error) return NextResponse.json({ error: eventResult.error.message }, { status: 500 });
-  const rows: any[] = eventResult.data || [];
-  const installs: any[] = installResult.data || [];
-  const userRows: any[] = userResult.data || [];
+  if (eventResult.error) return NextResponse.json({ error: eventResult.error }, { status: 500 });
+  const allRows: any[] = eventResult.rows;
+  const prevRows = allRows.filter(row => { const t = Date.parse(row.created_at); return t >= prevSince.getTime() && t < rangeSince.getTime(); });
+  const rows: any[] = allRows;
+  const installs: any[] = installResult.rows;
+  const userRows: any[] = userResult.rows;
   const userMap = new Map(userRows.map(u => [u.id, u]));
   const installMap = new Map(installs.map(i => [i.install_id, i]));
   const emailMap = new Map(userRows.map(u => [String(u.email || "").toLowerCase(), u]));
@@ -103,15 +121,18 @@ export async function GET(request: Request) {
   const uniqueLogins = new Set<string>();
   const uniqueSearchers = new Set<string>();
   const seenInstallToday = new Set<string>();
+  const dailyLoginKeys = new Set<string>();
 
   for (const row of periodRows) {
     const day = dateKey(row.created_at);
     const accountKey = accountKeyFor(row);
     const event = String(row.event_name || "unknown");
     eventCounts.set(event, (eventCounts.get(event) || 0) + 1);
-    if (/login/i.test(event)) {
+    if (isLoginEvent(event)) {
       uniqueLogins.add(accountKey);
-      const d = dailyMap.get(day); if (d) d.logins++;
+      const dayKey = `${day}:${accountKey}`;
+      const d = dailyMap.get(day);
+      if (d && !dailyLoginKeys.has(dayKey)) { dailyLoginKeys.add(dayKey); d.logins++; }
     }
   }
   for (const inst of installs) {
@@ -176,10 +197,98 @@ export async function GET(request: Request) {
   });
   const daily = [...dailyMap.values()];
   const installsInPeriod = installs.filter(i => i.first_seen && Date.parse(i.first_seen) >= Date.now() - days * DAY).length;
-  const activeAccounts = new Set(usageRows.map(r => r.user_id || r.install_id).filter(Boolean)).size;
+  const activeAccountSet = new Set(usageRows.map(accountKeyFor).filter(k => k !== "unknown"));
+  const activeAccounts = activeAccountSet.size;
+
+  // ---------- Insights: período atual x período anterior de mesmo tamanho ----------
+  const prevUsage = prevRows.filter(isUsageEvent);
+  const prevActiveSet = new Set(prevUsage.map(accountKeyFor).filter(k => k !== "unknown"));
+  const prevLoginSet = new Set(prevRows.filter(r => isLoginEvent(String(r.event_name || ""))).map(accountKeyFor));
+  const prevInstalls = installs.filter(i => { const t = Date.parse(i.first_seen || ""); return t >= prevSince.getTime() && t < rangeSince.getTime(); }).length;
+  const searchesNow = usageRows.filter(r => SEARCH_RE.test(`${r.event_name} ${r.module}`)).length;
+  const searchesPrev = prevUsage.filter(r => SEARCH_RE.test(`${r.event_name} ${r.module}`)).length;
+  const retained = [...prevActiveSet].filter(k => activeAccountSet.has(k));
+  const newActive = [...activeAccountSet].filter(k => !prevActiveSet.has(k));
+  const churned = [...prevActiveSet].filter(k => !activeAccountSet.has(k));
+  // Conversão instalação -> login: instalações do período já vinculadas a uma conta ou com login registrado.
+  const loginInstallIds = new Set(periodRows.filter(r => isLoginEvent(String(r.event_name || ""))).map(r => r.install_id).filter(Boolean));
+  const periodInstalls = installs.filter(i => i.first_seen && Date.parse(i.first_seen) >= rangeSince.getTime());
+  const convertedInstalls = periodInstalls.filter(i => i.user_id || loginInstallIds.has(i.install_id) || emailMap.has(String(i.email || "").toLowerCase())).length;
+  const activatedLogins = [...uniqueLogins].filter(k => activeAccountSet.has(k)).length;
+  const dauSeries = userActivityDaily.map(d => d.users);
+  const avgDau = dauSeries.length ? dauSeries.reduce((a, b) => a + b, 0) / dauSeries.length : 0;
+  const last7 = new Set(usageRows.filter(r => Date.parse(r.created_at) >= now - 7 * DAY).map(accountKeyFor));
+  const prevModuleActions = new Map<string, number>();
+  for (const r of prevUsage) { const m = String(r.module || "other"); prevModuleActions.set(m, (prevModuleActions.get(m) || 0) + 1); }
+  const moduleTrends = modules.map(m => ({ name: m.name, label: m.label, users: m.value, actions: m.actions, previous: prevModuleActions.get(m.name) || 0, change: pct(m.actions, prevModuleActions.get(m.name) || 0) }));
+  for (const [name, previous] of prevModuleActions) if (!moduleStats.has(name)) moduleTrends.push({ name, label: moduleLabel(name), users: 0, actions: 0, previous, change: -100 });
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, actions: 0 }));
+  const weekdays = Array.from({ length: 7 }, (_, day) => ({ day, actions: 0 }));
+  for (const r of usageRows) { hours[hourKey(r.created_at)].actions++; weekdays[weekdayKey(r.created_at)].actions++; }
+  const actionsPerAccount = activeAccounts ? usageRows.length / activeAccounts : 0;
+  const accountDays = new Map<string, Set<string>>();
+  for (const r of usageRows) { const k = accountKeyFor(r); if (!accountDays.has(k)) accountDays.set(k, new Set()); accountDays.get(k)!.add(dateKey(r.created_at)); }
+  const powerUsers = [...accountDays.values()].filter(set => set.size >= Math.max(3, Math.ceil(days / 7))).length;
+  const oneDayUsers = [...accountDays.values()].filter(set => set.size === 1).length;
+  const labelFor = (key: string) => {
+    const user = userMap.get(key) || emailMap.get(key);
+    const inst = installs.find(i => i.user_id === key || String(i.email || "").toLowerCase() === key || i.install_id === key);
+    return { accountKey: key, account: user?.name || inst?.name || user?.email || inst?.email || key, email: user?.email || inst?.email || null, plan: user?.plan || null };
+  };
+  const lastSeenByAccount = new Map<string, string>();
+  for (const r of prevUsage) { const k = accountKeyFor(r); if (!lastSeenByAccount.has(k)) lastSeenByAccount.set(k, r.created_at); }
+  const atRisk = churned.map(k => ({ ...labelFor(k), lastActivityAt: lastSeenByAccount.get(k) || null }))
+    .sort((a, b) => (Number(["start","member","pro","expert"].includes(String(b.plan || "").toLowerCase())) - Number(["start","member","pro","expert"].includes(String(a.plan || "").toLowerCase()))) || String(b.lastActivityAt).localeCompare(String(a.lastActivityAt)))
+    .slice(0, 12);
+  const weekdayNames = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  const peakHour = hours.reduce((a, b) => (b.actions > a.actions ? b : a), hours[0]);
+  const peakWeekday = weekdays.reduce((a, b) => (b.actions > a.actions ? b : a), weekdays[0]);
+  const fmtPct = (v: number | null) => v === null ? "novo" : `${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR")}%`;
+  const notes: { tone: "good" | "warn" | "bad" | "info"; title: string; text: string }[] = [];
+  const activeChange = pct(activeAccounts, prevActiveSet.size);
+  if (activeChange !== null && activeChange !== 0) notes.push({ tone: activeChange > 0 ? "good" : "bad", title: `Contas ativas ${fmtPct(activeChange)}`, text: `${activeAccounts} contas usaram recursos nos últimos ${days} dias, contra ${prevActiveSet.size} no período anterior.` });
+  if (prevActiveSet.size) {
+    const rate = Math.round((retained.length / prevActiveSet.size) * 100);
+    notes.push({ tone: rate >= 40 ? "good" : rate >= 20 ? "warn" : "bad", title: `Retenção de ${rate}%`, text: `${retained.length} de ${prevActiveSet.size} contas ativas no período anterior voltaram a usar. ${churned.length} não voltaram e estão listadas como em risco.` });
+  }
+  if (periodInstalls.length) {
+    const conv = Math.round((convertedInstalls / periodInstalls.length) * 100);
+    notes.push({ tone: conv >= 50 ? "good" : conv >= 25 ? "warn" : "bad", title: `${conv}% das instalações viraram conta`, text: `${convertedInstalls} de ${periodInstalls.length} instalações novas fizeram login ou estão vinculadas a uma conta.${conv < 50 ? " Vale reforçar o onboarding da extensão para levar o usuário ao login." : ""}` });
+  }
+  const growing = moduleTrends.filter(m => m.previous >= 5 && (m.change ?? 0) >= 25).sort((a, b) => (b.change ?? 0) - (a.change ?? 0))[0];
+  const falling = moduleTrends.filter(m => m.previous >= 5 && (m.change ?? 0) <= -25).sort((a, b) => (a.change ?? 0) - (b.change ?? 0))[0];
+  if (growing) notes.push({ tone: "good", title: `${growing.label} em alta (${fmtPct(growing.change)})`, text: `${growing.actions} eventos agora contra ${growing.previous} no período anterior.` });
+  if (falling) notes.push({ tone: "warn", title: `${falling.label} em queda (${fmtPct(falling.change)})`, text: `${falling.actions} eventos agora contra ${falling.previous} no período anterior. Verifique se há erro ou perda de interesse.` });
+  if (modules[0]) notes.push({ tone: "info", title: `${modules[0].label} é o módulo principal`, text: `${modules[0].value} contas e ${modules[0].actions} eventos no período.` });
+  if (usageRows.length) notes.push({ tone: "info", title: `Pico às ${String(peakHour.hour).padStart(2, "0")}h, ${weekdayNames[peakWeekday.day]}`, text: `Melhor janela para comunicados, e-mails e lançamentos (horário de Brasília).` });
+  if (activeAccounts && oneDayUsers / activeAccounts >= 0.5) notes.push({ tone: "warn", title: `${Math.round((oneDayUsers / activeAccounts) * 100)}% usaram só 1 dia`, text: `${oneDayUsers} contas usaram o TubeX em apenas um dia do período. O desafio principal é fazer o usuário voltar.` });
+  if (eventResult.truncated) notes.push({ tone: "warn", title: "Volume alto de eventos", text: "O período tem mais de 200 mil eventos; os números mais antigos podem estar incompletos. Use um período menor." });
+
+  const insights = {
+    previous: { installs: prevInstalls, logins: prevLoginSet.size, activeAccounts: prevActiveSet.size, searches: searchesPrev, usageEvents: prevUsage.length },
+    current: { installs: installsInPeriod, logins: uniqueLogins.size, activeAccounts, searches: searchesNow, usageEvents: usageRows.length },
+    change: {
+      installs: pct(installsInPeriod, prevInstalls), logins: pct(uniqueLogins.size, prevLoginSet.size),
+      activeAccounts: activeChange, searches: pct(searchesNow, searchesPrev), usageEvents: pct(usageRows.length, prevUsage.length),
+    },
+    conversion: {
+      installToLogin: periodInstalls.length ? convertedInstalls / periodInstalls.length : null,
+      loginToActive: uniqueLogins.size ? activatedLogins / uniqueLogins.size : null,
+      convertedInstalls, periodInstalls: periodInstalls.length,
+    },
+    engagement: {
+      avgDau: Math.round(avgDau * 10) / 10, wau: last7.size, periodActive: activeAccounts,
+      stickiness: activeAccounts ? avgDau / activeAccounts : null,
+      actionsPerAccount: Math.round(actionsPerAccount * 10) / 10, powerUsers, oneDayUsers,
+    },
+    retention: { previousActive: prevActiveSet.size, retained: retained.length, newActive: newActive.length, churned: churned.length, rate: prevActiveSet.size ? retained.length / prevActiveSet.size : null },
+    moduleTrends: moduleTrends.sort((a, b) => b.actions - a.actions).slice(0, 12),
+    hours, weekdays, atRisk, notes,
+    eventsLoaded: allRows.length, truncated: eventResult.truncated,
+  };
   return NextResponse.json({
     days, month: requestedMonth, monthlyLeaderboardAvailable: true,
-    totals: { installs: installsInPeriod, logins: uniqueLogins.size, searches: usageRows.filter(r => /(search|seo|keyword|analysis|analy)/i.test(`${r.event_name} ${r.module}`)).length, subscriptions: userRows.filter(u => ["start","member","pro","expert"].includes(String(u.plan || "").toLowerCase())).length, activeAccounts },
+    totals: { installs: installsInPeriod, logins: uniqueLogins.size, searches: searchesNow, subscriptions: userRows.filter(u => ["start","member","pro","expert"].includes(String(u.plan || "").toLowerCase())).length, activeAccounts },
     funnel: [
       { name: "Instalações identificadas", value: installsInPeriod },
       { name: "Contas com login", value: uniqueLogins.size },
@@ -187,7 +296,7 @@ export async function GET(request: Request) {
       { name: "Contas com pesquisa/análise", value: uniqueSearchers.size },
     ],
     modules, events: [...eventCounts.entries()].map(([name, value]) => ({ name, value })).sort((a,b)=>b.value-a.value),
-    daily, userActivityDaily, userActivity,
+    daily, userActivityDaily, userActivity, insights,
     monthlyTopUsers, monthlyTopModules: [...monthlyMod.entries()].map(([name, actions]) => ({ name, label: moduleLabel(name), actions })).sort((a,b)=>b.actions-a.actions).slice(0,15),
     extensionUsers,
     recent: rows.slice(0, 100).map(row => ({ user_id: row.user_id, install_id: row.install_id, event_name: row.event_name, module: row.module, module_label: moduleLabel(row.module), created_at: row.created_at })),
