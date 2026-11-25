@@ -1,82 +1,90 @@
-import { NextResponse } from "next/server";
-import { randomBytes } from "node:crypto";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function getAuthenticatedUser(request: Request) {
-  const authorization = request.headers.get("authorization") || "";
-  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-  if (!token) return null;
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data.user?.id) return null;
-  return data.user;
+import { randomBytes } from "node:crypto";
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAuthenticatedUser } from "@/lib/tubex-backend";
+
+async function authenticated(request: Request) {
+  return await getAuthenticatedUser(request);
 }
 
 export async function GET(request: Request) {
-  const authUser = await getAuthenticatedUser(request);
-  if (!authUser) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+  const user = await authenticated(request);
+  if (!user) return NextResponse.json({ error: "Sua sessão expirou. Entre novamente." }, { status: 401 });
 
-  if (!authUser.email) return NextResponse.json({ error: "Conta sem e-mail autenticado." }, { status: 400 });
-  const { data: user, error: userError } = await supabaseAdmin
+  const { data: profile, error: profileError } = await supabaseAdmin
     .from("users")
-    .select("id,email,name,affiliate_code,affiliate_balance,affiliate_paid,cpf,pix_type,pix_key")
-    .ilike("email", authUser.email)
+    .select("id,name,email,affiliate_code,affiliate_balance,affiliate_paid,cpf,pix_type,pix_key")
+    .eq("id", user.id)
     .maybeSingle();
-  if (userError) return NextResponse.json({ error: userError.message }, { status: 500 });
-  if (!user) return NextResponse.json({ error: "Perfil TubeX não encontrado para esta conta." }, { status: 404 });
 
-  if (!user.affiliate_code) {
-    return NextResponse.json({ user, sales: [], clicks: 0 });
+  if (profileError || !profile) {
+    console.error("[Affiliate] profile read:", profileError);
+    return NextResponse.json({ error: "Não foi possível carregar seu perfil de afiliado." }, { status: 500 });
+  }
+
+  const code = String(profile.affiliate_code || "").trim().toUpperCase();
+  if (!code) {
+    return NextResponse.json({ user: profile, sales: [], clicks: 0 }, {
+      headers: { "Cache-Control": "private, no-store, max-age=0" },
+    });
   }
 
   const [salesResult, clicksResult] = await Promise.all([
     supabaseAdmin.from("affiliate_sales")
-      .select("id,commission_amount,commission,status,created_at,amount,stripe_invoice_id")
-      .eq("affiliate_code", user.affiliate_code)
+      .select("id,commission_amount,commission,status,created_at,last_payment_date,plan")
+      .ilike("affiliate_code", code)
       .order("created_at", { ascending: false })
-      .limit(500),
+      .limit(100),
     supabaseAdmin.from("affiliate_clicks")
       .select("id", { count: "exact", head: true })
-      .eq("affiliate_code", user.affiliate_code),
+      .ilike("affiliate_code", code),
   ]);
 
-  if (salesResult.error) return NextResponse.json({ error: salesResult.error.message }, { status: 500 });
-  if (clicksResult.error) return NextResponse.json({ error: clicksResult.error.message }, { status: 500 });
+  if (salesResult.error || clicksResult.error) {
+    console.error("[Affiliate] stats read:", salesResult.error || clicksResult.error);
+    return NextResponse.json({ error: "Não foi possível carregar os dados de desempenho." }, { status: 500 });
+  }
 
-  return NextResponse.json({ user, sales: salesResult.data || [], clicks: clicksResult.count || 0 });
+  return NextResponse.json({
+    user: profile,
+    sales: salesResult.data || [],
+    clicks: clicksResult.count || 0,
+  }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
 }
 
 export async function POST(request: Request) {
-  const authUser = await getAuthenticatedUser(request);
-  if (!authUser) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+  const user = await authenticated(request);
+  if (!user) return NextResponse.json({ error: "Sua sessão expirou. Entre novamente." }, { status: 401 });
 
-  if (!authUser.email) return NextResponse.json({ error: "Conta sem e-mail autenticado." }, { status: 400 });
-  const { data: user, error: userError } = await supabaseAdmin
-    .from("users").select("id,email,name,affiliate_code").ilike("email", authUser.email).maybeSingle();
-  if (userError) return NextResponse.json({ error: userError.message }, { status: 500 });
-  if (!user) return NextResponse.json({ error: "Perfil TubeX não encontrado." }, { status: 404 });
-  if (user.affiliate_code) return NextResponse.json({ affiliate_code: user.affiliate_code });
+  // The database RPC locks the user's row. Concurrent requests cannot create
+  // multiple codes, and a code already assigned to this account is never replaced.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const candidate = `TX${randomBytes(5).toString("hex").toUpperCase()}`;
+    const { data, error } = await supabaseAdmin.rpc("generate_tubex_affiliate_code_once", {
+      p_user_id: user.id,
+      p_code: candidate,
+    });
 
-  const base = String(user.name || user.email || "TUBEX")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "TUBEX";
-
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const candidate = `${base}${randomBytes(3).toString("hex").toUpperCase()}`;
-    const { data: updated, error } = await supabaseAdmin
-      .from("users").update({ affiliate_code: candidate, updated_at: new Date().toISOString() })
-      .eq("id", user.id).is("affiliate_code", null)
-      .select("affiliate_code").maybeSingle();
-
-    if (!error && updated?.affiliate_code) return NextResponse.json({ affiliate_code: updated.affiliate_code });
-    if (error && !String(error.code || "").includes("23505")) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error("[Affiliate] code generation:", error);
+      return NextResponse.json({ error: "Não foi possível gerar seu código agora. Tente novamente." }, { status: 500 });
     }
-    const { data: current } = await supabaseAdmin.from("users").select("affiliate_code").eq("id", user.id).maybeSingle();
-    if (current?.affiliate_code) return NextResponse.json({ affiliate_code: current.affiliate_code });
+
+    const result = Array.isArray(data) ? data[0] : data;
+    const assigned = String(result?.affiliate_code || "").trim().toUpperCase();
+    if (assigned) {
+      return NextResponse.json({
+        success: true,
+        affiliate_code: assigned,
+        created: Boolean(result.created),
+        locked: true,
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
+    // Null means the randomly generated candidate collided with another user.
   }
 
-  return NextResponse.json({ error: "Não foi possível reservar um código único. Tente novamente." }, { status: 409 });
+  return NextResponse.json({ error: "Não foi possível reservar um código exclusivo. Tente novamente." }, { status: 503 });
 }

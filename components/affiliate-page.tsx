@@ -21,14 +21,14 @@ const copy = {
     copy:"Copiar link",copied:"Copiado",earned:"Ganhos acumulados",open:"Em aberto para pagamento",sales:"Vendas",clicks:"Cliques",conversion:"Conversão",
     pix:"Dados PIX",pixDesc:"Use estes dados para receber suas comissões.",cpf:"CPF",pixType:"Tipo PIX",pixKey:"Chave PIX",save:"Salvar dados",saved:"Dados salvos.",
     history:"Histórico",historyTitle:"Vendas indicadas",date:"Data",commission:"Comissão",status:"Status",empty:"Nenhuma venda registrada ainda.",
-    activate:"Ative seu programa de afiliados",activateDesc:"Gere seu código único para começar a indicar o TubeX e receber comissões recorrentes.",generate:"Gerar meu código",generating:"Gerando...",codeCreated:"Código de afiliado criado.",clickNote:"O rastreamento de cliques ainda não está habilitado.",loadError:"Não foi possível carregar seus dados de afiliado."
+    activate:"Ative seu programa de afiliados",activateDesc:"Gere seu código único para começar a indicar o TubeX e receber comissões recorrentes.",generate:"Gerar meu código",generating:"Gerando...",codeCreated:"Código criado e vinculado permanentemente à sua conta. Para solicitar alteração, entre em contato com o suporte.",locked:"Seu código é único e não pode ser alterado pelo painel. Se precisar de uma correção, fale com o suporte.",clickNote:"O rastreamento de cliques ainda não está habilitado.",loadError:"Não foi possível carregar seus dados de afiliado."
   },
   "pt-pt": {
     kicker:"TUBEX / AFILIADOS", title:"Programa de Afiliados", desc:"Partilhe o TubeX e acompanhe vendas e comissões recorrentes.",
     copy:"Copiar link",copied:"Copiado",earned:"Ganhos acumulados",open:"Em aberto para pagamento",sales:"Vendas",clicks:"Cliques",conversion:"Conversão",
     pix:"Dados PIX",pixDesc:"Use estes dados para receber as suas comissões.",cpf:"NIF/CPF",pixType:"Tipo PIX",pixKey:"Chave PIX",save:"Guardar dados",saved:"Dados guardados.",
     history:"Histórico",historyTitle:"Vendas indicadas",date:"Data",commission:"Comissão",status:"Estado",empty:"Nenhuma venda registada.",
-    activate:"Ative o seu programa de afiliados",activateDesc:"Gere o seu código único para começar a indicar o TubeX e receber comissões recorrentes.",generate:"Gerar o meu código",generating:"A gerar...",codeCreated:"Código de afiliado criado.",clickNote:"O rastreamento de cliques ainda não está habilitado.",loadError:"Não foi possível carregar os seus dados de afiliado."
+    activate:"Ative o seu programa de afiliados",activateDesc:"Gere o seu código único para começar a indicar o TubeX e receber comissões recorrentes.",generate:"Gerar o meu código",generating:"A gerar...",codeCreated:"Código criado e associado permanentemente à sua conta. Para solicitar alteração, contacte o suporte.",locked:"O seu código é único e não pode ser alterado no painel. Contacte o suporte se precisar de uma correção.",clickNote:"O rastreamento de cliques ainda não está habilitado.",loadError:"Não foi possível carregar os seus dados de afiliado."
   },
   es: {
     kicker:"TUBEX / AFILIADOS", title:"Programa de Afiliados", desc:"Comparte TubeX y controla tus ventas y comisiones recurrentes.",
@@ -42,7 +42,7 @@ const copy = {
     copy:"Copy link",copied:"Copied",earned:"Total earnings",open:"Open for payment",sales:"Sales",clicks:"Clicks",conversion:"Conversion",
     pix:"PIX details",pixDesc:"Use these details to receive your commissions.",cpf:"CPF",pixType:"PIX type",pixKey:"PIX key",save:"Save details",saved:"Details saved.",
     history:"History",historyTitle:"Referred sales",date:"Date",commission:"Commission",status:"Status",empty:"No sales registered yet.",
-    activate:"Activate your affiliate program",activateDesc:"Generate your unique code to start referring TubeX and earning recurring commissions.",generate:"Generate my code",generating:"Generating...",codeCreated:"Affiliate code created.",clickNote:"Click tracking is not enabled yet.",loadError:"Could not load your affiliate data."
+    activate:"Activate your affiliate program",activateDesc:"Generate your unique code to start referring TubeX and earning recurring commissions.",generate:"Generate my code",generating:"Generating...",codeCreated:"Your code has been created and permanently linked to your account. Contact support to request a change.",locked:"Your code is unique and cannot be changed from the dashboard. Contact support if a correction is needed.",clickNote:"Click tracking is not enabled yet.",loadError:"Could not load your affiliate data."
   }
 } as const;
 
@@ -74,7 +74,7 @@ export default function AffiliatePage({ userData }: { userData: any }) {
 
   useEffect(() => {
     setState(userData || {});
-    if (userData?.id && code) load();
+    if (userData?.id) load();
   }, [userData?.id, code]);
 
   async function load() {
@@ -174,7 +174,7 @@ export default function AffiliatePage({ userData }: { userData: any }) {
         </div>
       </section>
 
-      {!code && (
+      {!code ? (
         <section className="tx-surface rounded-[20px] p-6">
           <p className="tx-kicker">ATIVAÇÃO</p>
           <h2 className="mt-1 text-xl font-black">{t.activate}</h2>
@@ -182,7 +182,12 @@ export default function AffiliatePage({ userData }: { userData: any }) {
           <button onClick={generateCode} disabled={loading} className="tx-btn tx-btn-primary mt-5">
             {loading ? t.generating : t.generate}
           </button>
+          <p className="mt-3 text-[11px] leading-5 text-[var(--tx-muted)]">Atenção: o código é gerado uma única vez e fica vinculado à sua conta. Para qualquer alteração posterior, será necessário solicitar ao suporte.</p>
         </section>
+      ) : (
+        <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] px-4 py-3 text-xs leading-5 text-[var(--tx-muted)]">
+          <strong className="text-[var(--tx-text)]">Código permanente.</strong> {t.locked}
+        </div>
       )}
 
       {message && <div className="tx-surface rounded-xl px-4 py-3 text-xs font-semibold text-[var(--tx-muted)]">{message}</div>}
