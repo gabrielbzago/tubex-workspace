@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/tubex-backend";
 import { resolveAccountPlan } from "@/lib/tubex-plan";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   AI_CREDIT_LIMITS, AI_PLAN_LABELS, classifyChatCost,
   readCreditUsage, reserveCredits, releaseCredits,
@@ -10,6 +11,9 @@ export const runtime = "nodejs";
 export const maxDuration = 45;
 
 const MODEL = process.env.GROQ_CHAT_MODEL || "openai/gpt-oss-20b";
+const TPM_LIMIT = Math.max(1000, Number(process.env.GROQ_TPM_LIMIT || 6800));
+const WINDOW_SECONDS = 60;
+const PROMPT_CHAR_BUDGET = 14000;
 
 async function getPlanAndUsage(user: any) {
   const resolved = await resolveAccountPlan(user);
@@ -17,6 +21,63 @@ async function getPlanAndUsage(user: any) {
   const limit = AI_CREDIT_LIMITS[plan];
   const used = await readCreditUsage(user.id);
   return { plan, planLabel: AI_PLAN_LABELS[plan], used, limit, remaining: Math.max(0, limit - used) };
+}
+
+function trimMessages(input: any[]) {
+  const recent = input.slice(-8).filter((m: any) =>
+    ["user", "assistant"].includes(m?.role) && typeof m?.content === "string"
+  );
+  let remaining = PROMPT_CHAR_BUDGET;
+  const output: { role: "user" | "assistant"; content: string }[] = [];
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const content = recent[i].content.slice(-Math.min(5000, remaining));
+    if (!content || remaining <= 0) continue;
+    output.unshift({ role: recent[i].role, content });
+    remaining -= content.length;
+  }
+  return output;
+}
+
+function estimateTokens(value: unknown) {
+  // Estimativa conservadora para português, JSON e instruções. A reserva é ajustada
+  // para o uso real retornado pelo provedor quando a chamada termina.
+  const chars = JSON.stringify(value).length;
+  return Math.ceil(chars / 3.5);
+}
+
+async function reserveProviderTokens(tokens: number) {
+  const { data, error } = await supabaseAdmin.rpc("reserve_tubex_groq_tokens", {
+    p_model: MODEL,
+    p_token_limit: TPM_LIMIT,
+    p_requested_tokens: tokens,
+    p_window_seconds: WINDOW_SECONDS,
+  });
+  if (error) throw new Error(`Falha no limitador global da IA: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error("O limitador global da IA não retornou uma reserva.");
+  return {
+    allowed: Boolean(row.allowed),
+    reservationId: row.reservation_id ? String(row.reservation_id) : null,
+    usedTokens: Number(row.used_tokens || 0),
+    waitSeconds: Math.max(1, Number(row.wait_seconds || 1)),
+  };
+}
+
+async function releaseProviderTokens(reservationId: string | null) {
+  if (!reservationId) return;
+  const { error } = await supabaseAdmin.rpc("release_tubex_groq_tokens", {
+    p_reservation_id: reservationId,
+  });
+  if (error) console.error("[TubeX AI] Não foi possível liberar reserva Groq:", error.message);
+}
+
+async function settleProviderTokens(reservationId: string | null, actualTokens: number) {
+  if (!reservationId || !Number.isFinite(actualTokens) || actualTokens <= 0) return;
+  const { error } = await supabaseAdmin.rpc("settle_tubex_groq_tokens", {
+    p_reservation_id: reservationId,
+    p_actual_tokens: Math.ceil(actualTokens),
+  });
+  if (error) console.error("[TubeX AI] Não foi possível ajustar reserva Groq:", error.message);
 }
 
 export async function GET(request: Request) {
@@ -36,17 +97,24 @@ export async function POST(request: Request) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "Groq ainda não configurada. Cadastre GROQ_API_KEY nas variáveis de ambiente da Vercel." }, { status: 503 });
 
-  let reserved = false;
+  let creditReserved = false;
   let reservedCost = 0;
+  let providerReservationId: string | null = null;
+
   try {
     const body = await request.json();
-    const messages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
-    const context = body.channelContext && typeof body.channelContext === "object" ? body.channelContext : {};
-    const mode = body.mode === "deep" ? "deep" : "fast";
+    const rawMessages = Array.isArray(body.messages) ? body.messages : [];
+    if (!rawMessages.length || rawMessages.length > 40 || rawMessages.some((m: any) =>
+      !["user", "assistant"].includes(m?.role) || typeof m?.content !== "string" || m.content.length > 12000
+    )) {
+      return NextResponse.json({ error: "Envie uma conversa válida. Cada mensagem pode ter até 12.000 caracteres." }, { status: 400 });
+    }
 
-    if (!messages.length || messages.length > 12 || messages.some((m: any) =>
-      !["user", "assistant"].includes(m.role) || typeof m.content !== "string" || m.content.length > 8000
-    )) return NextResponse.json({ error: "Envie uma conversa válida. Cada mensagem pode ter até 8.000 caracteres." }, { status: 400 });
+    const messages = trimMessages(rawMessages);
+    const context = body.channelContext && typeof body.channelContext === "object" ? body.channelContext : {};
+    const compactContext = JSON.stringify(context).slice(0, 4000);
+    const mode = body.mode === "deep" ? "deep" : "fast";
+    const maxCompletionTokens = mode === "deep" ? 900 : 600;
 
     const planInfo = await getPlanAndUsage(user);
     const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
@@ -60,60 +128,107 @@ export async function POST(request: Request) {
         quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used, limit: planInfo.limit, remaining: Math.max(0, planInfo.limit - used), cost: charge.cost },
       }, { status: 429 });
     }
-    reserved = true;
+    creditReserved = true;
     reservedCost = charge.cost;
 
-        const system = `Você é o TubeX AI, copiloto especialista em crescimento de canais do YouTube. Responda em português do Brasil, com clareza, precisão e apresentação profissional. Não prometa viralização. Diferencie fatos fornecidos, hipóteses e recomendações. Nunca invente métricas, concorrentes, tendências ou acesso a ferramentas. O contexto recebido pode estar incompleto; informe claramente quando faltarem dados. Use números apenas quando estiverem presentes no contexto.
+    const system = `Você é o TubeX AI, copiloto especialista em crescimento de canais do YouTube. Responda em português do Brasil, com clareza, precisão e apresentação profissional. Não prometa viralização. Diferencie fatos fornecidos, hipóteses e recomendações. Nunca invente métricas, concorrentes, tendências ou acesso a ferramentas. O contexto recebido pode estar incompleto; informe claramente quando faltarem dados. Use números apenas quando estiverem presentes no contexto.
 
-FORMATAÇÃO OBRIGATÓRIA:
-- Escreva em Markdown simples e válido: use títulos curtos com ##, negrito com **texto**, listas com - ou 1., e parágrafos curtos.
-- Não escreva tabelas com barras verticais, a menos que uma comparação realmente exija tabela.
-- Nunca mostre delimitadores de tabela, separadores, sintaxe ou instruções de formatação como texto.
-- Evite blocos longos. Organize a resposta em seções pequenas e escaneáveis.
-- Não use mais de 2 níveis de títulos. Não repita a pergunta do usuário.
-- Comece pela resposta ou recomendação principal, sem introduções genéricas.
+FORMATAÇÃO:
+- Markdown simples: títulos curtos com ##, negrito, listas e parágrafos curtos.
+- Evite tabelas salvo quando forem realmente úteis.
+- Não mostre sintaxe ou instruções de formatação como texto.
+- Não repita a pergunta. Comece pela resposta principal.
 
-PADRÃO PARA PEDIDOS DE TÍTULOS:
-- Entregue de 5 a 10 opções numeradas, a menos que o usuário peça outra quantidade.
-- Cada opção deve ter o título em negrito e, abaixo, uma justificativa curta com o ângulo (descoberta, curiosidade, problema, transformação ou prova).
-- Destaque apenas uma opção como "Minha aposta" e explique brevemente o motivo.
-- Não invente dados de desempenho nem diga que um título terá CTR garantido.
-- Evite títulos genéricos, repetitivos ou que prometam resultados não comprovados.
+PEDIDOS DE TÍTULOS:
+- Entregue de 5 a 10 opções, salvo quantidade diferente solicitada.
+- Títulos específicos, emocionais e não genéricos; explique brevemente o ângulo.
+- Destaque uma aposta principal sem prometer CTR ou viralização.
 
 ${mode === "deep"
-      ? "MODO PROFUNDO: organize a análise em diagnóstico, evidências disponíveis, hipóteses, prioridades e próximos passos. Avalie limitações dos dados."
-      : "MODO RÁPIDO: responda de forma concisa, priorizando as ações mais importantes."}
+      ? "MODO PROFUNDO: diagnóstico, evidências, hipóteses, prioridades e próximos passos."
+      : "MODO RÁPIDO: resposta concisa e orientada à ação."}
 
-CONTEXTO DISPONÍVEL DO CANAL:
-${JSON.stringify(context).slice(0, 12000)}
+CONTEXTO DO CANAL:
+${compactContext}
 
-CAPACIDADES ATUAIS:
-Você pode analisar o contexto enviado pelo Workspace, explicar métricas, sugerir títulos, pautas, roteiros e estratégias. Se pedirem dados privados que não aparecem no contexto, não diga que consultou o YouTube Analytics; solicite a conexão/permissão necessária. Não afirme que gerou uma thumbnail: geração de imagem é um serviço separado.`;
+CAPACIDADES:
+Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteiros e estratégias. Se faltarem dados privados, solicite conexão/permissão. Não afirme que gerou thumbnail; geração de imagem é serviço separado.`;
+
+    const requestBody = {
+      model: MODEL,
+      messages: [{ role: "system", content: system }, ...messages],
+      max_completion_tokens: maxCompletionTokens,
+      temperature: 0.4,
+      stream: false,
+    };
+
+    const requestedTokens = Math.ceil(estimateTokens(requestBody) * 1.12) + 60;
+    if (requestedTokens > TPM_LIMIT) {
+      await releaseCredits(user.id, reservedCost);
+      creditReserved = false;
+      return NextResponse.json({
+        error: "Esta conversa contém contexto demais para a capacidade atual da IA. Inicie uma nova conversa ou reduza o histórico e tente novamente.",
+        code: "PROMPT_TOO_LARGE",
+      }, { status: 413 });
+    }
+
+    const providerQuota = await reserveProviderTokens(requestedTokens);
+    if (!providerQuota.allowed) {
+      await releaseCredits(user.id, reservedCost);
+      creditReserved = false;
+      return NextResponse.json({
+        error: `O TubeX AI está processando outras solicitações. Aguarde aproximadamente ${providerQuota.waitSeconds} segundos e tente novamente. Seus créditos não foram consumidos.`,
+        code: "AI_CAPACITY_BUSY",
+        retryAfterSeconds: providerQuota.waitSeconds,
+      }, {
+        status: 429,
+        headers: { "Retry-After": String(providerQuota.waitSeconds) },
+      });
+    }
+    providerReservationId = providerQuota.reservationId;
 
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: "system", content: system }, ...messages.map((m: any) => ({ role: m.role, content: m.content }))],
-        max_completion_tokens: mode === "deep" ? 1800 : 1000,
-        temperature: 0.4,
-        stream: false,
-      }),
+      body: JSON.stringify(requestBody),
       cache: "no-store",
+      signal: AbortSignal.timeout(38000),
     });
     const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-      if (reserved) {
+      await releaseProviderTokens(providerReservationId);
+      providerReservationId = null;
+      if (creditReserved) {
         await releaseCredits(user.id, reservedCost);
-        reserved = false;
+        creditReserved = false;
       }
+      const providerMessage = String(data?.error?.message || "");
+      const retryMatch = providerMessage.match(/(?:try again in|retry after)\s*([\d.]+)\s*s?/i);
+      const retryAfter = response.status === 429 ? Math.max(2, Math.ceil(Number(retryMatch?.[1] || 10))) : undefined;
       const status = response.status === 429 ? 503 : response.status;
-      return NextResponse.json({ error: data?.error?.message || `Groq respondeu com erro (${response.status}). Tente novamente em instantes.` }, { status });
+      return NextResponse.json({
+        error: response.status === 429
+          ? `A capacidade da Groq está temporariamente ocupada. Tente novamente em ${retryAfter} segundos. Seus créditos foram devolvidos.`
+          : providerMessage || `Groq respondeu com erro (${response.status}). Tente novamente em instantes.`,
+        code: response.status === 429 ? "GROQ_RATE_LIMIT" : "GROQ_PROVIDER_ERROR",
+        ...(retryAfter ? { retryAfterSeconds: retryAfter } : {}),
+      }, {
+        status,
+        headers: retryAfter ? { "Retry-After": String(retryAfter) } : undefined,
+      });
     }
+
     const answer = data?.choices?.[0]?.message?.content?.trim();
     if (!answer) throw new Error("Groq não retornou uma resposta válida.");
+
+    const actualTokens = Number(data?.usage?.total_tokens || 0);
+    if (actualTokens > 0) await settleProviderTokens(providerReservationId, actualTokens);
+    // A reserva permanece na janela compartilhada por até 60s após a resposta.
+    providerReservationId = null;
+
     const used = Number(quotaRow.used || 0);
+    creditReserved = false;
     return NextResponse.json({
       answer,
       model: data.model || MODEL,
@@ -121,9 +236,14 @@ Você pode analisar o contexto enviado pelo Workspace, explicar métricas, suger
       usage: data.usage || null,
     });
   } catch (error: any) {
-    if (reserved) {
+    await releaseProviderTokens(providerReservationId);
+    if (creditReserved) {
       try { await releaseCredits(user.id, reservedCost); } catch {}
     }
-    return NextResponse.json({ error: error?.message || "Não foi possível processar sua mensagem." }, { status: 500 });
+    const isTimeout = error?.name === "TimeoutError" || error?.name === "AbortError";
+    return NextResponse.json({
+      error: isTimeout ? "A IA demorou mais que o esperado. Seus créditos foram devolvidos; tente novamente." : error?.message || "Não foi possível processar sua mensagem.",
+      code: isTimeout ? "AI_TIMEOUT" : "AI_REQUEST_FAILED",
+    }, { status: isTimeout ? 504 : 500 });
   }
 }

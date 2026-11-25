@@ -76,3 +76,23 @@ Os nomes e preços comerciais não são alterados automaticamente por este pacot
 
 ## 8. Monitoramento
 Acompanhe consumo e limites no Groq Console. A API tem limites por organização/modelo (RPM, RPD e TPM); respostas 429 devem ser tratadas como indisponibilidade temporária e não como crédito do usuário. Veja https://console.groq.com/docs/rate-limits.
+
+
+## 9. Proteção global de TPM (produção)
+A rota `/api/ai/chat` usa um limitador distribuído no Supabase para compartilhar a capacidade da Groq entre todos os usuários e instâncias serverless da Vercel.
+
+**Antes do deploy:**
+1. No Supabase SQL Editor, execute `supabase/migrations/20261125_tubex_groq_tpm_guard.sql`.
+2. Na Vercel, configure `GROQ_TPM_LIMIT=6800` para o modelo com limite de 8.000 TPM. O valor reserva margem de segurança para variações de tokenização e outras chamadas.
+3. Faça deploy da aplicação depois da migração.
+
+O endpoint agora:
+- Reserva tokens globalmente numa janela móvel de 60 segundos, com trava transacional no Postgres.
+- Recusa temporariamente chamadas concorrentes que ultrapassariam o orçamento compartilhado e informa `Retry-After`.
+- Limita histórico e contexto enviados ao modelo para evitar prompts gigantes.
+- Ajusta a reserva para o consumo real retornado pela Groq.
+- Devolve os créditos do usuário quando a chamada não é executada por falta de capacidade, erro do provedor ou timeout.
+
+A reserva global é por modelo. Se o limite da organização mudar, ajuste `GROQ_TPM_LIMIT` na Vercel. O limite padrão no código é 6.800 TPM para uma conta com 8.000 TPM.
+
+**Importante:** a migração SQL é obrigatória. Sem ela, o endpoint não terá o limitador distribuído e as chamadas falharão de forma segura. Esta proteção cobre o endpoint de chat deste projeto; se outros projetos/serviços usarem a mesma organização Groq e modelo, eles também consomem a cota da Groq e precisam compartilhar o mesmo limitador ou ter orçamento separado.
