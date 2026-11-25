@@ -723,8 +723,8 @@ function TubeXMetricBar({
         ? value >= 85 ? "Muito Baixa" : value >= 60 ? "Baixa" : value >= 40 ? "Média" : value >= 30 ? "Alta" : "Muito Alta"
         : value >= 75 ? "Forte" : value >= 50 ? "Boa" : value >= 35 ? "Moderada" : "Baixa";
 
-  // Barras mantêm o amarelo característico do layout de referência.
-  const barColor = "#FACC15";
+  // Azul comunica leitura de dados; verde destaca uma métrica forte; âmbar fica reservado a alertas intermediários.
+  const barColor = value >= 75 ? "#22c55e" : value >= 45 ? "#38bdf8" : value >= 25 ? "#f2c94c" : "#fb7185";
 
   return (
     <div>
@@ -746,7 +746,7 @@ function TubeXMetricBar({
   );
 }
 
-function TrendChart({ points, color = "var(--tx-accent)" }: { points: { label: string; value: number }[]; color?: string }) {
+function TrendChart({ points, color = "var(--tx-blue)" }: { points: { label: string; value: number }[]; color?: string }) {
   const width = 760, height = 190, padX = 12, padY = 14;
   const gradientId = `tubex-trend-fill-${color.replace(/[^a-z0-9]/gi, "")}`;
   const coords = points.map((point, index) => `${padX + (index / Math.max(1, points.length - 1)) * (width - padX * 2)},${height - padY - (point.value / 100) * (height - padY * 2)}`).join(" ");
