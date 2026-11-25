@@ -163,8 +163,8 @@ export default function DashboardLayout({user}:{user:any}){
   return()=>window.removeEventListener("tubex-navigate-tab",handleNavigate);
  },[]);
  function selectTab(next:any){setTab(next);setMobileOpen(false);const moduleByTab:Record<string,string>={ai:"ai",dashboard:"dashboard",intelligence:"intelligence_center",feed:"channel_feed",workspace:"seo_explorer",creator:"creator_workspace",achievements:"achievements",affiliate:"affiliate",account:"account",billing:"billing",support:"support",cancellations:"cancellations"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,next==="billing"?"pricing_viewed":"module_opened",module))}
- return <div className="tx-saas-shell min-h-screen bg-[var(--tx-bg)] text-[var(--tx-text)]">
-  <aside className="fixed inset-y-0 left-0 hidden w-[232px] border-r border-[var(--tx-border)] bg-[var(--tx-surface)] p-4 lg:flex lg:flex-col">
+ return <div className={`tx-saas-shell ${tab === "ai" ? "tx-shell-ai" : "tx-shell-page"} bg-[var(--tx-bg)] text-[var(--tx-text)]`}>
+  <aside className="tx-sidebar fixed inset-y-0 left-0 hidden w-[216px] border-r border-[var(--tx-border)] bg-[var(--tx-surface)] p-4 lg:flex lg:flex-col">
    <Logo/>
    <div className="mt-8 rounded-2xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-4"><p className="text-[9px] font-black uppercase tracking-[.15em] text-[var(--tx-accent)]">TubeX</p><p className="mt-2 text-xs font-bold">YouTube growth workspace</p><p className="mt-1 text-[10px] leading-5 text-[var(--tx-muted)]">{t.overview}</p></div>
    <a href="https://chromewebstore.google.com/detail/tubex-seo-analyzer-for-yo/lgddmmhnmkmkfhaodogcoecdecegemgk" target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-[var(--tx-accent)]/45 bg-[var(--tx-accent-soft)] px-3 py-3 text-[10px] font-black text-[var(--tx-text)]"><span className="flex min-w-0 items-center gap-2"><Puzzle size={15} className="shrink-0 text-[var(--tx-accent-strong)]"/><span>Instalar extensão TubeX</span></span><ExternalLink size={12}/></a>
@@ -179,9 +179,9 @@ export default function DashboardLayout({user}:{user:any}){
     <button onClick={logout} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-[var(--tx-muted)] hover:bg-[var(--tx-surface-2)]"><LogOut size={15}/>{t.logout}</button>
    </div>
   </aside>
-  <main className="tx-app-main min-h-screen min-w-0 w-full lg:pl-[232px]">
-   <header className="sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
-    <div className="mx-auto flex h-[60px] w-full max-w-[1180px] min-w-0 items-center gap-2 px-3 sm:h-[66px] sm:px-4">
+  <main className="tx-app-main min-w-0 w-full lg:pl-[216px]">
+   <header className="tx-topbar sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
+    <div className="mx-auto flex h-[60px] w-full min-w-0 items-center gap-2 px-4 sm:h-[66px] sm:px-6 lg:px-8">
      <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="ai"?"TubeX AI":tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="achievements"?"Conquistas":tab==="feed"?"Feed do canal":tab==="intelligence"?"Central de Inteligência":tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="cancellations"?"Cancelamentos":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
@@ -191,8 +191,8 @@ export default function DashboardLayout({user}:{user:any}){
     </div>
    </header>
   {mobileOpen&&<div className="tx-mobile-menu lg:hidden max-h-[calc(100dvh-60px)] overflow-y-auto border-b border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-3"><nav className="grid grid-cols-2 gap-1">{navItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold ${tab===id?"bg-[var(--tx-accent-soft)] text-[var(--tx-text)]":"text-[var(--tx-muted)]"}`}><Icon size={15}/><span>{label}</span></button>)}<button onClick={()=>setToolsOpen(v=>!v)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-[11px] font-extrabold text-[var(--tx-muted)]"><Puzzle size={15}/>Ferramentas{toolsOpen?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>{toolsOpen&&toolItems.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-left text-[10px] text-[var(--tx-muted)]"><Icon size={13}/>{label}</button>)}</nav></div>}
-   <div className="tx-dashboard-content mx-auto w-full max-w-[1320px] min-w-0 px-3 py-4 pb-28 sm:px-5 sm:py-6 lg:px-7 lg:py-8">
-    {tab==="ai"&&<div className="space-y-4">
+   <div className={`tx-dashboard-content mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
+    {tab==="ai"&&<div className="tx-ai-home">
      <section className="grid gap-2 xl:grid-cols-[1.15fr_.85fr]">
       <div className="tx-surface flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--tx-border)] px-3 py-2.5 sm:px-4">
        <div className="tx-channel-summary-avatar" title={channelContext?.channelName||userData?.youtube_channel_name||"Seu canal"}>{(channelContext?.channelThumbnail||achievementSummary?.profile?.channel_thumbnail)?<img src={channelContext?.channelThumbnail||achievementSummary?.profile?.channel_thumbnail} alt="Logo do canal conectado"/>:<span className="tx-channel-summary-avatar-fallback">{String(channelContext?.channelName||userData?.youtube_channel_name||"Y").slice(0,1).toUpperCase()}</span>}</div>
