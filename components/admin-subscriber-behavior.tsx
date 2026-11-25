@@ -17,14 +17,21 @@ type Account = {
   upgradeClicks: number; checkoutStarts: number; paymentFailures: number;
   propensity: number; propensityTier: Tier | null; propensityFactors: { label: string; points: number }[];
   subscribeDrivers: { quotaHitsBefore: number; topModules: { name: string; count: number }[] };
-  daysSinceActivity: number | null;
+  daysSinceActivity: number | null; hoursSinceActivity: number | null;
   firstLoginAt: string | null; lastLoginAt: string | null; lastActivityAt: string | null; lastResource: string | null;
   loginCount: number; returned: boolean; returnCount: number; activeDays: number; activeDays30: number; searchCount: number;
   totalActions: number; actions30: number; highUse: boolean; modules: ModuleUsage[]; sessions: UsageSession[]; paymentJourney: PaymentEvent[];
 };
 
-const fmt = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Sem registro";
+const fmt = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value)) : "Sem registro";
 const fmtDay = (value: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(value)) : "—";
+const elapsed = (hours: number | null, days: number | null) => {
+  if (hours === null || days === null) return "Sem atividade registrada";
+  if (hours < 1) return "há menos de 1 hora";
+  if (hours < 24) return `há ${hours} hora${hours === 1 ? "" : "s"}`;
+  if (days === 1) return "há 1 dia";
+  return `há ${days} dias`;
+};
 const n = (value: number) => new Intl.NumberFormat("pt-BR").format(value);
 const pct = (part: number, total: number) => total ? `${Math.round((part / total) * 100)}%` : "0%";
 const DAY = 86400000;
@@ -32,9 +39,9 @@ const DAY = 86400000;
 // Cada status com o significado e os parâmetros exatos que o calculam (mesmas regras da API).
 const STATUS: Record<Status, { label: string; color: string; Icon: any; meaning: string; rule: string; tone: string }> = {
   active: { label: "Ativo", color: "#22C55E", Icon: CheckCircle2, tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    meaning: "Usa o TubeX com frequência. É a base saudável.", rule: "Usou recursos em 2 ou mais dias diferentes nos últimos 30 dias e o último uso foi há no máximo 14 dias. Para assinantes, sem pagamento pendente." },
+    meaning: "Usa o TubeX com frequência. É a base saudável.", rule: "Teve evento de uso nos últimos 7 dias. Para assinantes, sem pagamento pendente." },
   at_risk: { label: "Em risco", color: "#F5B82E", Icon: AlertTriangle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    meaning: "Ainda usou no último mês, mas o uso está caindo ou o pagamento travou.", rule: "Teve uso nos últimos 30 dias, porém sem uso há mais de 14 dias, ou só 1 dia com uso no período, ou pagamento pendente (past_due)." },
+    meaning: "Ainda usou no último mês, mas o uso está caindo ou o pagamento travou.", rule: "Último evento de uso há mais de 7 e até 30 dias, ou pagamento pendente (past_due)." },
   inactive: { label: "Inativo", color: "#F97316", Icon: Moon, tone: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
     meaning: "Parou de usar. Para assinante, é o risco mais alto de cancelar.", rule: "Nenhum uso de recurso nos últimos 30 dias (ou nunca usou)." },
   canceled: { label: "Cancelado", color: "#F43F5E", Icon: UserRoundX, tone: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
@@ -223,7 +230,7 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
     </header>
 
     <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-4 py-3 text-xs leading-5 text-[var(--tx-muted)]">
-      <b className="text-[var(--tx-text)]">Dois indicadores diferentes:</b> Status (Ativo, Em risco ou Inativo) mede uso recente do produto. Chance de assinar (Quente, Morno ou Frio) estima intenção de compra. Portanto, uma conta pode estar <b>Ativa e Fria</b>: usa o TubeX, mas ainda não demonstrou sinais fortes de compra. A coluna Último uso agora mostra também a data e hora exatas, quando disponíveis.
+      <b className="text-[var(--tx-text)]">Dois indicadores diferentes:</b> Status (Ativo, Em risco ou Inativo) mede uso recente do produto. Chance de assinar (Quente, Morno ou Frio) estima intenção de compra. Portanto, uma conta pode estar <b>Ativa e Fria</b>: usa o TubeX, mas ainda não demonstrou sinais fortes de compra. A coluna Último uso mostra o tempo decorrido e a data/hora exata, no fuso local do navegador.
     </div>
     {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">{error}</div>}
 
@@ -339,7 +346,7 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
             <td className="px-3 py-3"><StatusPill status={row.status}/><div className="mt-1.5 max-w-[220px] text-[10px] leading-4 text-[var(--tx-muted)]">{row.statusReasons.join(" · ")}</div></td>
             <td className="px-3 py-3">{isFree ? <TierPill tier={row.propensityTier} score={row.propensity}/> : <><b>{row.plan.toUpperCase()}</b><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{row.billingStatus}</div></>}</td>
             <td className="px-3 py-3 tabular-nums">{row.quotaHits30 ? <b>{n(row.quotaHits30)}x</b> : <span className="text-[var(--tx-muted)]">—</span>}{row.quotaHits > row.quotaHits30 ? <div className="mt-1 text-[10px] text-[var(--tx-muted)]">{n(row.quotaHits)}x no total</div> : null}</td>
-            <td className="whitespace-nowrap px-3 py-3">{row.daysSinceActivity === null ? <span className="text-[var(--tx-muted)]">Nunca</span> : `há ${row.daysSinceActivity} dia(s)`}<div className="mt-1 text-[10px] font-medium text-[var(--tx-muted)]">{row.lastActivityAt ? fmt(row.lastActivityAt) : "Data/hora não registrada"}</div><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{row.lastResource || "—"}</div></td>
+            <td className="whitespace-nowrap px-3 py-3"><span className={row.lastActivityAt ? "font-semibold" : "text-[var(--tx-muted)]"}>{elapsed(row.hoursSinceActivity, row.daysSinceActivity)}</span><div className="mt-1 text-[10px] font-medium text-[var(--tx-muted)]">{row.lastActivityAt ? fmt(row.lastActivityAt) : "Data/hora não registrada"}</div><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{row.lastResource || "—"}</div></td>
             <td className="px-3 py-3"><b className="tabular-nums">{n(row.activeDays30)} dias</b><div className="mt-1 text-[10px] text-[var(--tx-muted)]">{n(row.actions30)} ações · {n(row.searchCount)} pesquisas no total</div></td>
             <td className="px-3 py-3 text-[10px]">{isFree ? <span className="text-[var(--tx-muted)]">{n(row.upgradeClicks)} cliques em assinar · {n(row.checkoutStarts)} checkouts</span> : row.status === "canceled" ? <span><b>{row.cancelLabel || "Motivo não informado"}</b><div className="text-[var(--tx-muted)]">cancelou {fmtDay(row.canceledAt)}</div></span> : <span className="text-[var(--tx-muted)]">{row.subscribedAt ? `desde ${fmtDay(row.subscribedAt)}` : "data não registrada"}{row.paymentFailures ? ` · ${row.paymentFailures} falha(s) de pagamento` : ""}</span>}</td>
           </tr>)}</tbody>

@@ -38,7 +38,7 @@ function moduleLabel(name: string | null) {
 function isUsageEvent(row: any) {
   const event = String(row.event_name || "").toLowerCase();
   const module = String(row.module || "").toLowerCase();
-  if (excluded.has(event)) return false;
+  if (excluded.has(event) || /^(login|auth_login)$/.test(event)) return false;
   if (["billing", "auth", "system", "subscription", "installation"].includes(module)) return false;
   return true;
 }
@@ -85,6 +85,13 @@ export async function GET(request: Request) {
   const userMap = new Map(userRows.map(u => [u.id, u]));
   const installMap = new Map(installs.map(i => [i.install_id, i]));
   const emailMap = new Map(userRows.map(u => [String(u.email || "").toLowerCase(), u]));
+  // Normaliza eventos da extensão e do site para a mesma conta sempre que houver vínculo conhecido.
+  const accountKeyFor = (row: any) => {
+    const install = row.install_id ? installMap.get(row.install_id) : null;
+    const propsEmail = String(row.properties?.email || "").toLowerCase();
+    const linkedUserId = row.user_id || install?.user_id || (String(row.install_id || "").startsWith("web-") ? String(row.install_id).slice(4) : null) || emailMap.get(propsEmail)?.id || null;
+    return linkedUserId || install?.email?.toLowerCase() || propsEmail || row.install_id || "unknown";
+  };
   const dailyMap = new Map<string, any>(emptyDaily(days).map(d => [d.date, d]));
   const periodRows = rows.filter(row => Date.parse(row.created_at) >= rangeSince.getTime());
   const usageRows = periodRows.filter(isUsageEvent);
@@ -99,7 +106,7 @@ export async function GET(request: Request) {
 
   for (const row of periodRows) {
     const day = dateKey(row.created_at);
-    const accountKey = row.user_id || row.install_id || "unknown";
+    const accountKey = accountKeyFor(row);
     const event = String(row.event_name || "unknown");
     eventCounts.set(event, (eventCounts.get(event) || 0) + 1);
     if (/login/i.test(event)) {
@@ -115,10 +122,10 @@ export async function GET(request: Request) {
   }
   for (const row of usageRows) {
     const day = dateKey(row.created_at);
-    const accountKey = row.user_id || row.install_id || "unknown";
-    const user = row.user_id ? userMap.get(row.user_id) : null;
+    const accountKey = accountKeyFor(row);
     const installation = installMap.get(row.install_id);
-    const email = user?.email || installation?.email || null;
+    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.properties?.email && emailMap.get(String(row.properties.email).toLowerCase())) || null;
+    const email = user?.email || installation?.email || row.properties?.email || null;
     const account = user?.name || installation?.name || email || String(accountKey);
     const mod = String(row.module || "other");
     const label = moduleLabel(mod);
@@ -133,10 +140,10 @@ export async function GET(request: Request) {
     if (/(search|seo|keyword|analysis|analy)/i.test(`${row.event_name} ${mod}`)) uniqueSearchers.add(accountKey);
   }
   for (const row of monthlyRows) {
-    const accountKey = row.user_id || row.install_id || "unknown";
-    const user = row.user_id ? userMap.get(row.user_id) : null;
+    const accountKey = accountKeyFor(row);
     const installation = installMap.get(row.install_id);
-    const email = user?.email || installation?.email || null;
+    const user = (row.user_id && userMap.get(row.user_id)) || (installation?.user_id && userMap.get(installation.user_id)) || (row.properties?.email && emailMap.get(String(row.properties.email).toLowerCase())) || null;
+    const email = user?.email || installation?.email || row.properties?.email || null;
     const account = user?.name || installation?.name || email || String(accountKey);
     const day = dateKey(row.created_at);
     const mod = String(row.module || "other");
