@@ -43,7 +43,7 @@ function isUsageEvent(row: any) {
   return true;
 }
 
-async function fetchEventsSince(since: string, maxRows = 100000) {
+async function fetchEventsSince(since: string, maxRows = 30000) {
   const all: any[] = [];
   const pageSize = 1000;
   for (let from = 0; from < maxRows; from += pageSize) {

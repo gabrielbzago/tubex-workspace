@@ -28,15 +28,15 @@ export async function GET(request: Request) {
   const rows = events || [];
   const userIds = [...new Set(rows.map((row: any) => row.user_id).filter(Boolean))] as string[];
   const profiles = new Map<string, any>();
-  await Promise.all(userIds.map(async (id) => {
-    try {
-      const [{ data: authUser }, { data: profile }] = await Promise.all([
-        supabaseAdmin.auth.admin.getUserById(id),
-        supabaseAdmin.from("users").select("name,email,plan").eq("id", id).maybeSingle(),
-      ]);
-      profiles.set(id, { name: profile?.name || authUser?.user?.user_metadata?.name || null, email: profile?.email || authUser?.user?.email || null, plan: profile?.plan || "free" });
-    } catch { profiles.set(id, { name: null, email: null, plan: "free" }); }
-  }));
+  // Uma única consulta de perfis substitui até 20.000 chamadas individuais.
+  if (userIds.length) {
+    const { data: profileRows, error: profileError } = await supabaseAdmin
+      .from("users").select("id,name,email,plan").in("id", userIds);
+    if (profileError) console.warn("[TubeX AI analytics] profiles unavailable", profileError.message);
+    for (const profile of profileRows || []) {
+      profiles.set(profile.id, { name: profile.name || null, email: profile.email || null, plan: profile.plan || "free" });
+    }
+  }
 
   const byUser = new Map<string, any>();
   for (const event of rows as any[]) {

@@ -70,20 +70,36 @@ function UserUsageDailyChart({daily,selectedDate,onSelectDate}:{daily:UserActivi
  </svg></div>:<p className="rounded-xl bg-[var(--tx-surface-2)] p-4 text-sm text-[var(--tx-muted)]">Ainda não há atividade de módulos identificada neste período.</p>;
 }
 export default function AdminAnalytics(){
- const [data,setData]=useState<Payload|null>(null),[chatData,setChatData]=useState<ChatAnalytics|null>(null),[days,setDays]=useState(30),[month,setMonth]=useState(()=>monthKey(new Date())),[selectedDate,setSelectedDate]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[userFilter,setUserFilter]=useState("");
+ const [data,setData]=useState<Payload|null>(null),[chatData,setChatData]=useState<ChatAnalytics|null>(null),[days,setDays]=useState(30),[month,setMonth]=useState(()=>monthKey(new Date())),[selectedDate,setSelectedDate]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[chatError,setChatError]=useState(""),[userFilter,setUserFilter]=useState("");
  async function load(){
-  setLoading(true);setError("");
+  setLoading(true);setError("");setChatError("");
+  const timeoutFetch = (url:string, token:string) => fetch(url, {
+   headers:{Authorization:`Bearer ${token}`}, cache:"no-store", signal:AbortSignal.timeout(20000),
+  });
   try{
    const {data:{session}}=await supabase.auth.getSession();
    if(!session?.access_token) throw new Error("Sessão expirada. Entre novamente.");
-   const chatRes=await fetch(`/api/admin/ai-analytics?days=${days}`,{headers:{Authorization:`Bearer ${session.access_token}`},cache:"no-store"});
-   const chatJson=await chatRes.json();
-   if(chatRes.ok) setChatData(chatJson); else setChatData(null);
-   const res=await fetch(`/api/admin/analytics?days=${days}&month=${month}`,{headers:{Authorization:`Bearer ${session.access_token}`},cache:"no-store"});
-   const json=await res.json();
-   if(!res.ok) throw new Error(json.error==="forbidden"?"Acesso restrito ao proprietário.":json.error||"Falha ao carregar analytics.");
+   // Os dois relatórios são independentes: carregar em paralelo evita que o Chat
+   // bloqueie o Analytics (ou vice-versa).
+   const [mainResult, chatResult] = await Promise.allSettled([
+    timeoutFetch(`/api/admin/analytics?days=${days}&month=${month}`, session.access_token),
+    timeoutFetch(`/api/admin/ai-analytics?days=${days}`, session.access_token),
+   ]);
+   if(mainResult.status === "rejected") throw new Error(mainResult.reason?.name === "TimeoutError" ? "O Analytics demorou mais de 20 segundos para responder. Tente atualizar; se persistir, verifique os logs da API." : mainResult.reason?.message || "Falha de conexão ao carregar Analytics.");
+   const res=mainResult.value;
+   const json=await res.json().catch(()=>({error:"A API de Analytics retornou uma resposta inválida."}));
+   if(!res.ok) throw new Error(json.error||`Falha ao carregar Analytics (HTTP ${res.status}).`);
    setData(json);
-  }catch(e:any){setError(e.message||"Não foi possível carregar os dados.");}
+   if(chatResult.status === "fulfilled"){
+    const chatRes=chatResult.value;
+    const chatJson=await chatRes.json().catch(()=>({error:"Resposta inválida do relatório AI Chat."}));
+    if(chatRes.ok) setChatData(chatJson);
+    else { setChatData(null); setChatError(chatJson.error||`Relatório AI Chat indisponível (HTTP ${chatRes.status}).`); console.warn("[TubeX Analytics] AI Chat:",chatJson.error||chatRes.status); }
+   } else {
+    setChatData(null); setChatError("O relatório AI Chat não respondeu em até 20 segundos. O restante do Analytics continua disponível.");
+    console.warn("[TubeX Analytics] AI Chat indisponível:",chatResult.reason);
+   }
+  }catch(e:any){setError(e.name === "TimeoutError" ? "A consulta excedeu o tempo limite de 20 segundos. Tente novamente." : e.message||"Não foi possível carregar os dados.");}
   finally{setLoading(false);}
  }
  useEffect(()=>{load();},[days,month]);
@@ -98,6 +114,7 @@ export default function AdminAnalytics(){
    <div className="flex flex-wrap gap-2"><select value={days} onChange={e=>{setDays(Number(e.target.value));setSelectedDate(null)}} aria-label="Período do histórico diário" className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-2 text-sm"><option value={7}>7 dias</option><option value={30}>30 dias</option><option value={60}>60 dias</option><option value={90}>90 dias</option></select><select value={month} onChange={e=>setMonth(e.target.value)} aria-label="Mês do ranking" className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] px-3 py-2 text-sm">{monthOptions().map((option)=><option key={option} value={option}>{monthLabel(option)}</option>)}</select><button onClick={load} className="tx-btn tx-btn-secondary"><RefreshCw size={14}/> Atualizar</button></div>
   </div>
   {error&&<div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"><AlertTriangle className="mr-2 inline" size={16}/>{error}</div>}
+  {chatError&&<div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">{chatError}</div>}
   {chatData&&<>
    <section className="tx-surface rounded-2xl p-5">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><p className="tx-kicker">INTELIGÊNCIA DE PRODUTO</p><h2 className="mt-1 text-xl font-black">Uso do TubeX AI Chat</h2><p className="mt-1 text-xs text-[var(--tx-muted)]">Contas autenticadas que abriram o Chat e enviaram mensagens. Nenhum conteúdo das conversas é armazenado neste relatório.</p></div><span className="rounded-full bg-[var(--tx-surface-2)] px-3 py-1 text-xs font-bold">Últimos {days} dias</span></div>
@@ -108,7 +125,7 @@ export default function AdminAnalytics(){
     </>:<p className="rounded-xl bg-[var(--tx-surface-2)] p-4 text-sm text-[var(--tx-muted)]">Não foi possível carregar os dados do Chat.</p>}
    </section>
   </>}
-  {loading?<div className="tx-surface rounded-2xl p-8 text-center text-sm">Carregando eventos...</div>:data&&<>
+  {loading?<div className="tx-surface rounded-2xl p-8 text-center text-sm">Carregando Analytics... (limite de 20 segundos)</div>:data&&<>
    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
     {[["Instalações ativas no período",data.totals.installs,Activity],["Contas com login",data.totals.logins,Users],["Eventos de pesquisa/análise",data.totals.searches,Search],["Assinaturas ativas (total atual)",data.totals.subscriptions,ShoppingCart]].map(([label,value,Icon]:any)=><div key={label} className="tx-surface rounded-2xl p-5"><div className="flex justify-between text-[var(--tx-muted)]"><span className="text-xs font-bold">{label}</span><Icon size={17}/></div><p className="mt-3 text-3xl font-black">{number(value)}</p></div>)}
    </div>
@@ -156,5 +173,6 @@ export default function AdminAnalytics(){
     <section className="tx-surface rounded-2xl p-5"><h2 className="text-lg font-black">Eventos por tipo</h2><div className="mt-4 max-h-[420px] overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="text-[var(--tx-muted)]"><th className="py-2">Evento</th><th className="text-right">Quantidade</th></tr></thead><tbody>{data.events.map(x=><tr key={x.name} className="border-t border-[var(--tx-border)]"><td className="py-2">{x.name}</td><td className="text-right font-bold">{number(x.value)}</td></tr>)}</tbody></table></div></section>
    </div>
   </>}
+  {!loading&&!data&&!error&&<div className="tx-surface rounded-2xl p-6 text-sm text-[var(--tx-muted)]">Nenhum dado retornado pela API.</div>}
  </div>;
 }
