@@ -12,7 +12,7 @@ import {
 type Message = { role: "user" | "assistant"; content: string };
 type ChatSession = { id: string; title: string; updatedAt: number; messages: Message[] };
 type Mode = "fast" | "deep";
-type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number };
+type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number; cost?: number };
 
 const STORAGE_KEY = "tubex-ai-conversations-v2";
 const starters = [
@@ -148,7 +148,7 @@ export default function TubeXAIChat() {
   const [thumbnailMode, setThumbnailMode] = useState(false);
   const [thumbnailPrompt, setThumbnailPrompt] = useState("");
   const [thumbnail, setThumbnail] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");\n  const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [channelContext, setChannelContext] = useState<any>(null);
   const [mode, setMode] = useState<Mode>("fast");
   const [modeOpen, setModeOpen] = useState(false);
@@ -212,7 +212,7 @@ export default function TubeXAIChat() {
   async function send(text = prompt) {
     const value = text.trim(); if (!value || busy || !active) return;
     const next: Message[] = [...messages, { role: "user", content: value }];
-    updateMessages(next); setPrompt(""); setBusy(true); setError(""); setThumbnail("");
+    updateMessages(next); setPrompt(""); setBusy(true); setError(""); setUpgradeRequired(false); setThumbnail("");
     try {
       const { data } = await supabase.auth.getSession(); const token = data.session?.access_token;
       const response = await fetch("/api/ai/chat", {
@@ -221,16 +221,16 @@ export default function TubeXAIChat() {
         body: JSON.stringify({ messages: next.slice(-12), channelContext, mode }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Não foi possível responder.");
-      updateMessages([...next, { role: "assistant", content: payload.answer }]);
       if (payload.quota) setQuota(payload.quota);
+      if (!response.ok) { setUpgradeRequired(Boolean(payload.upgradeRequired)); throw new Error(payload.error || "Não foi possível responder."); }
+      updateMessages([...next, { role: "assistant", content: payload.answer }]);
     } catch (e: any) { setError(e?.message || "Falha ao conversar com a IA."); }
     finally { setBusy(false); }
   }
 
   async function generateThumbnail() {
     if (thumbnailPrompt.trim().length < 5 || imageBusy) return;
-    setImageBusy(true); setError(""); setThumbnail("");
+    setImageBusy(true); setError(""); setUpgradeRequired(false); setThumbnail("");
     try {
       const { data } = await supabase.auth.getSession(); const token = data.session?.access_token;
       const response = await fetch("/api/ai/thumbnail", {
@@ -239,7 +239,8 @@ export default function TubeXAIChat() {
         body: JSON.stringify({ prompt: thumbnailPrompt, channelContext }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Não foi possível gerar a imagem.");
+      if (payload.quota) setQuota(payload.quota);
+      if (!response.ok) { setUpgradeRequired(Boolean(payload.upgradeRequired)); throw new Error(payload.error || "Não foi possível gerar a imagem."); }
       setThumbnail(payload.image);
       updateMessages([...messages, { role: "user", content: `Criar thumbnail: ${thumbnailPrompt}` }, { role: "assistant", content: "Sua thumbnail foi gerada. Você pode visualizar e salvar a imagem abaixo." }]);
       setThumbnailMode(false); setThumbnailPrompt("");
@@ -288,7 +289,7 @@ export default function TubeXAIChat() {
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden items-center gap-1.5 rounded-full border border-[var(--tx-border)] px-3 py-1.5 text-[9px] text-[var(--tx-muted)] sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Groq AI</span>
-            {quota && <span title={`Plano ${quota.planLabel}: ${quota.used} de ${quota.limit} mensagens usadas neste mês`} className="hidden rounded-full border border-[var(--tx-border)] px-3 py-1.5 text-[9px] text-[var(--tx-muted)] md:inline-flex">{quota.planLabel} · {quota.used}/{quota.limit} créditos</span>}
+            {quota && <span title={`Plano ${quota.planLabel}: ${quota.used} de ${quota.limit} créditos utilizados neste mês`} className="hidden rounded-full border border-[var(--tx-border)] px-3 py-1.5 text-[9px] text-[var(--tx-muted)] md:inline-flex">{quota.planLabel} · {quota.remaining ?? Math.max(0, quota.limit - quota.used)} créditos</span>}
             <button onClick={() => setShowContext(v => !v)} className="tx-ai-icon-btn" title="Painel do canal">{showContext ? <PanelRightClose size={16}/> : <PanelRightOpen size={16}/>}</button>
           </div>
         </header>
@@ -321,14 +322,15 @@ export default function TubeXAIChat() {
             ))}
             {busy && <div className="tx-ai-message-row assistant"><span className="tx-ai-avatar"><Sparkles size={14}/></span><div className="tx-ai-thinking"><span/><span/><span/> <small>Organizando a análise</small></div></div>}
             {thumbnail && <div className="tx-ai-generated"><img src={thumbnail} alt="Thumbnail gerada pelo TubeX AI"/><a href={thumbnail} download="tubex-thumbnail.png"><Download size={14}/> Salvar imagem</a></div>}
-            {error && <div className="tx-ai-error"><span>{error}</span><button onClick={() => setError("")}><X size={14}/></button></div>}
+            {error && <div className="tx-ai-error"><span>{error}</span><button onClick={() => { setError(""); setUpgradeRequired(false); }}><X size={14}/></button></div>}
+            {upgradeRequired && <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-400/30 bg-violet-500/10 p-3"><div><p className="text-[11px] font-bold">Precisa de mais créditos?</p><p className="text-[10px] text-[var(--tx-muted)]">Faça upgrade para ampliar sua franquia mensal do TubeX AI.</p></div><a href="/plans" className="rounded-lg bg-violet-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-violet-500">Ver planos e fazer upgrade</a></div>}
           </div>
 
           <div className="tx-ai-composer-wrap">
             {thumbnailMode && <div className="tx-ai-tool-panel">
               <div className="flex items-center justify-between"><div className="flex items-center gap-2 text-[11px] font-bold"><ImagePlus size={15} className="text-violet-400"/> Criar thumbnail</div><button onClick={() => setThumbnailMode(false)} className="tx-ai-icon-btn"><X size={14}/></button></div>
               <textarea value={thumbnailPrompt} onChange={e => setThumbnailPrompt(e.target.value)} placeholder="Descreva o vídeo, o conceito visual, texto da capa e elementos que deseja incluir..." rows={3}/>
-              <div className="flex justify-end"><button onClick={generateThumbnail} disabled={imageBusy || thumbnailPrompt.trim().length < 5} className="tx-ai-generate-btn">{imageBusy ? <LoaderCircle size={14} className="animate-spin"/> : <WandSparkles size={14}/>} Gerar thumbnail</button></div>
+              <div className="flex justify-end"><button onClick={generateThumbnail} disabled={imageBusy || thumbnailPrompt.trim().length < 5} className="tx-ai-generate-btn">{imageBusy ? <LoaderCircle size={14} className="animate-spin"/> : <WandSparkles size={14}/>} Gerar thumbnail · 22 créditos</button></div>
             </div>}
             <form onSubmit={e => { e.preventDefault(); void send(); }} className="tx-ai-composer">
               <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} rows={1} placeholder="Pergunte ao TubeX AI..." />
@@ -343,7 +345,7 @@ export default function TubeXAIChat() {
                 <button type="submit" disabled={!prompt.trim() || busy} className="tx-ai-send" aria-label="Enviar"><ArrowUp size={17}/></button>
               </div>
             </form>
-            <p className="tx-ai-disclaimer">{quota ? `${quota.remaining ?? Math.max(0, quota.limit - quota.used)} mensagens disponíveis neste mês · ` : ""}O TubeX AI pode cometer erros. Confira métricas e recomendações antes de tomar decisões.</p>
+            <p className="tx-ai-disclaimer">{quota ? `${quota.remaining ?? Math.max(0, quota.limit - quota.used)} créditos disponíveis neste mês · ` : ""}O TubeX AI pode cometer erros. Confira métricas e recomendações antes de tomar decisões.</p>
           </div>
         </div>
       </section>

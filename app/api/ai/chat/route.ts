@@ -1,40 +1,22 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/tubex-backend";
 import { resolveAccountPlan } from "@/lib/tubex-plan";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  AI_CREDIT_LIMITS, AI_PLAN_LABELS, classifyChatCost,
+  readCreditUsage, reserveCredits, releaseCredits,
+} from "@/lib/tubex-ai-credits";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
 
-const PLAN_LIMITS: Record<string, number> = {
-  free: 25,
-  start: 200,
-  pro: 600,
-  expert: 1600,
-  owner: 100000,
-};
-const PLAN_LABELS: Record<string, string> = {
-  free: "Free", start: "Start", pro: "Pro", expert: "Expert", owner: "Admin",
-};
 const MODEL = process.env.GROQ_CHAT_MODEL || "openai/gpt-oss-20b";
-
-function monthKey() {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 
 async function getPlanAndUsage(user: any) {
   const resolved = await resolveAccountPlan(user);
-  const plan = resolved.plan in PLAN_LIMITS ? resolved.plan : "free";
-  const limit = PLAN_LIMITS[plan];
-  const { data, error } = await supabaseAdmin
-    .from("tubex_ai_usage")
-    .select("used")
-    .eq("user_id", user.id)
-    .eq("month_key", monthKey())
-    .maybeSingle();
-  if (error) throw new Error(`Não foi possível consultar o consumo da IA: ${error.message}`);
-  return { plan, planLabel: PLAN_LABELS[plan], used: Number(data?.used || 0), limit };
+  const plan = resolved.plan in AI_CREDIT_LIMITS ? resolved.plan : "free";
+  const limit = AI_CREDIT_LIMITS[plan];
+  const used = await readCreditUsage(user.id);
+  return { plan, planLabel: AI_PLAN_LABELS[plan], used, limit, remaining: Math.max(0, limit - used) };
 }
 
 export async function GET(request: Request) {
@@ -54,7 +36,7 @@ export async function POST(request: Request) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "Groq ainda não configurada. Cadastre GROQ_API_KEY nas variáveis de ambiente da Vercel." }, { status: 503 });
 
-  let reserved = false;
+  let reserved = false;\n  let reservedCost = 0;
   try {
     const body = await request.json();
     const messages = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
@@ -66,22 +48,21 @@ export async function POST(request: Request) {
     )) return NextResponse.json({ error: "Envie uma conversa válida. Cada mensagem pode ter até 8.000 caracteres." }, { status: 400 });
 
     const planInfo = await getPlanAndUsage(user);
-    const quota = await supabaseAdmin.rpc("consume_tubex_ai_usage", {
-      p_user_id: user.id,
-      p_month_key: monthKey(),
-      p_monthly_limit: planInfo.limit,
-    });
-    if (quota.error) throw new Error(`Falha no controle de créditos: ${quota.error.message}`);
-    const quotaRow = Array.isArray(quota.data) ? quota.data[0] : quota.data;
+    const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
+    const charge = classifyChatCost(lastUserMessage, mode);
+    const quotaRow = await reserveCredits(user.id, charge.cost, planInfo.limit);
     if (!quotaRow?.allowed) {
+      const used = Number(quotaRow?.used ?? planInfo.used);
       return NextResponse.json({
-        error: `Você atingiu o limite mensal do TubeX AI no plano ${planInfo.planLabel} (${planInfo.limit} mensagens). Faça upgrade para continuar.`,
-        quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used: Number(quotaRow?.used || planInfo.used), limit: planInfo.limit, remaining: 0 },
+        error: `Seus créditos acabaram para esta ação. Esta solicitação custa ${charge.cost} créditos e seu plano ${planInfo.planLabel} tem ${Math.max(0, planInfo.limit - used)} disponíveis. Faça upgrade para continuar usando o TubeX AI.`,
+        upgradeRequired: true,
+        quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used, limit: planInfo.limit, remaining: Math.max(0, planInfo.limit - used), cost: charge.cost },
       }, { status: 429 });
     }
     reserved = true;
+    reservedCost = charge.cost;
 
-    const system = `Você é o TubeX AI, copiloto especialista em crescimento de canais do YouTube. Responda em português do Brasil, com clareza, precisão e apresentação profissional. Não prometa viralização. Diferencie fatos fornecidos, hipóteses e recomendações. Nunca invente métricas, concorrentes, tendências ou acesso a ferramentas. O contexto recebido pode estar incompleto; informe claramente quando faltarem dados. Use números apenas quando estiverem presentes no contexto.
+        const system = `Você é o TubeX AI, copiloto especialista em crescimento de canais do YouTube. Responda em português do Brasil, com clareza, precisão e apresentação profissional. Não prometa viralização. Diferencie fatos fornecidos, hipóteses e recomendações. Nunca invente métricas, concorrentes, tendências ou acesso a ferramentas. O contexto recebido pode estar incompleto; informe claramente quando faltarem dados. Use números apenas quando estiverem presentes no contexto.
 
 FORMATAÇÃO OBRIGATÓRIA:
 - Escreva em Markdown simples e válido: use títulos curtos com ##, negrito com **texto**, listas com - ou 1., e parágrafos curtos.
@@ -123,7 +104,7 @@ Você pode analisar o contexto enviado pelo Workspace, explicar métricas, suger
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (reserved) {
-        await supabaseAdmin.rpc("release_tubex_ai_usage", { p_user_id: user.id, p_month_key: monthKey() });
+        await releaseCredits(user.id, reservedCost);
         reserved = false;
       }
       const status = response.status === 429 ? 503 : response.status;
@@ -135,12 +116,12 @@ Você pode analisar o contexto enviado pelo Workspace, explicar métricas, suger
     return NextResponse.json({
       answer,
       model: data.model || MODEL,
-      quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used, limit: planInfo.limit, remaining: Math.max(0, planInfo.limit - used) },
+      quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used, limit: planInfo.limit, remaining: Math.max(0, planInfo.limit - used), cost: reservedCost, action: charge.action },
       usage: data.usage || null,
     });
   } catch (error: any) {
     if (reserved) {
-      try { await supabaseAdmin.rpc("release_tubex_ai_usage", { p_user_id: user.id, p_month_key: monthKey() }); } catch {}
+      try { await releaseCredits(user.id, reservedCost); } catch {}
     }
     return NextResponse.json({ error: error?.message || "Não foi possível processar sua mensagem." }, { status: 500 });
   }

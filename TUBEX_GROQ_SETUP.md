@@ -17,28 +17,40 @@ No projeto do TubeX Workspace:
 
 A chave é lida somente pela rota server-side `/api/ai/chat`. Nunca use prefixo `NEXT_PUBLIC_` nela.
 
-## 3. Aplicar a migração Supabase (obrigatório para limites)
+## 3. Aplicar a migração Supabase (obrigatório)
 1. Abra o projeto Supabase → SQL Editor.
-2. Abra o arquivo `supabase/migrations/20261125_tubex_ai_usage.sql` deste pacote.
+2. Abra `supabase/migrations/20261126_tubex_shared_ai_credits.sql` deste pacote.
 3. Cole o conteúdo no SQL Editor e execute.
-4. Confirme que a tabela `tubex_ai_usage` e as funções `consume_tubex_ai_usage` e `release_tubex_ai_usage` foram criadas.
+4. Confirme a criação da tabela `tubex_ai_credit_usage` e das funções `consume_tubex_ai_credits` e `release_tubex_ai_credits`.
 
-Sem essa migração, o endpoint não consegue reservar e controlar os créditos de IA.
+A migração nova cria a carteira compartilhada. A tabela antiga `tubex_ai_usage` pode permanecer no banco; a aplicação deixa de utilizá-la. Não é necessário apagar dados antigos.
 
-## 4. Limites iniciais do TubeX AI
-Os limites abaixo são mensagens de chat por usuário/mês, reiniciadas no primeiro dia de cada mês UTC:
+## 4. Carteira compartilhada de créditos
+Chat e thumbnails consomem o mesmo saldo mensal por usuário. A franquia renova no primeiro dia de cada mês UTC.
 
-| Plano reconhecido pelo backend | Mensagens/mês |
+| Plano interno | Créditos por mês |
 |---|---:|
-| Free | 25 |
-| Start | 200 |
-| Pro | 600 |
-| Expert | 1.600 |
-| Owner/Admin | ilimitado na prática |
+| Free | 150 |
+| Start | 600 |
+| Member | 1.000 |
+| Pro | 2.000 |
+| Expert | 6.000 |
+| Owner/Admin | 100.000 |
 
-O painel mostra plano e consumo. As chamadas são contadas no servidor, com atualização atômica no Supabase para impedir que requisições simultâneas ultrapassem facilmente a franquia. Se o provedor falhar, a reserva é devolvida.
+### Custo por ação
 
-A franquia conta mensagens enviadas ao chat. Geração de thumbnails não está incluída nesta quota e continua usando o endpoint de imagens existente, que requer `OPENAI_API_KEY`. Defina uma franquia separada para imagens antes de liberar essa função amplamente.
+| Ferramenta | Custo |
+|---|---:|
+| Chat rápido | 1 crédito |
+| Chat profundo | 3 créditos |
+| Sugestões de títulos | 3 créditos |
+| Descrição | 1 crédito |
+| Roteiro | 5 créditos |
+| Gerar thumbnail | 22 créditos |
+
+O chat classifica o tipo de solicitação no servidor. Thumbnails reservam 22 créditos antes de chamar o provedor. Se Groq ou o serviço de imagem falhar, os créditos reservados são devolvidos. Se o saldo for insuficiente, a API bloqueia a ação e o Workspace apresenta o atalho para `/plans`.
+
+Os custos são parâmetros iniciais do TubeX, não valores oficiais do vidIQ. Devem ser revistos com base no custo real dos provedores e na margem de cada plano.
 
 ## 5. Planos e preços sugeridos
 Para evitar dois planos chamados Pro:
@@ -59,7 +71,7 @@ Os nomes e preços comerciais não são alterados automaticamente por este pacot
 ## 7. O que ainda precisa de uma etapa própria
 - Conectar dados privados reais do YouTube Analytics no servidor, com OAuth e escopos adequados.
 - Implementar function calling para o modelo acionar ferramentas de SEO, Analytics e pesquisa de concorrentes com validação server-side.
-- Definir franquia/custo para geração de imagens. A geração de thumbnail continua com o provedor de imagem já configurado, não com Groq.
+- A geração de thumbnail continua com o provedor de imagem já configurado (OpenAI nesta versão), não com Groq. O custo é de 22 créditos compartilhados.
 - Criar no Stripe os preços e produtos correspondentes ao novo catálogo comercial e atualizar o webhook para persistir o identificador de plano correto.
 
 ## 8. Monitoramento
