@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { findCreditPack } from "@/lib/tubex-ai-packs";
 
 export const runtime = "nodejs";
 
@@ -221,6 +222,58 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   });
 
   if (error) console.error("❌ CHECKOUT REFERRAL ERROR:", error);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isCreditPackSession(session: Stripe.Checkout.Session) {
+  return session.mode === "payment" && session.metadata?.kind === "ai_credit_pack";
+}
+
+/**
+ * Pacote de créditos do TubeX AI (compra única). Idempotente: a função
+ * grant_tubex_ai_credit_pack grava o session.id com chave única, então
+ * reenvios do Stripe ou os dois eventos (completed + async_payment_succeeded)
+ * nunca creditam duas vezes.
+ */
+async function handleCreditPackSession(session: Stripe.Checkout.Session) {
+  // Pix/boleto chegam como "unpaid" no completed; o crédito sai no async_payment_succeeded.
+  if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
+    console.log("ℹ️ PACOTE DE CRÉDITOS AGUARDANDO PAGAMENTO:", session.id, session.payment_status);
+    return;
+  }
+
+  const pack = findCreditPack(session.metadata?.pack);
+  const userId = String(session.metadata?.user_id || "").trim();
+  if (!pack || !UUID_RE.test(userId)) {
+    console.error("❌ PACOTE DE CRÉDITOS COM METADATA INVÁLIDA:", session.id, session.metadata);
+    return;
+  }
+
+  const amountCents = Number(session.amount_total ?? 0);
+  if (amountCents !== pack.amountCents) {
+    // Não bloqueia o crédito (o cliente pagou); só avisa que o Price na Stripe
+    // está diferente do catálogo em lib/tubex-ai-packs.ts.
+    console.warn("⚠️ VALOR DO PACOTE DIFERENTE DO CATÁLOGO:", { session: session.id, pack: pack.id, amountCents, expected: pack.amountCents });
+  }
+
+  const { data, error } = await supabaseAdmin.rpc("grant_tubex_ai_credit_pack", {
+    p_session_id: session.id,
+    p_payment_intent: String(session.payment_intent || ""),
+    p_user_id: userId,
+    p_email: normalize(session.customer_details?.email || session.metadata?.email || ""),
+    p_pack: pack.id,
+    p_credits: pack.credits,
+    p_amount_cents: amountCents,
+    p_currency: String(session.currency || pack.currency),
+  });
+  // Erro técnico: lança para o Stripe tentar de novo mais tarde.
+  if (error) throw error;
+
+  const row: any = Array.isArray(data) ? data[0] : data;
+  console.log(row?.granted ? "✅ CRÉDITOS DE IA ADICIONADOS:" : "ℹ️ PACOTE JÁ CREDITADO:", {
+    session: session.id, user: userId, pack: pack.id, balance: row?.pack_balance,
+  });
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -530,9 +583,18 @@ export async function POST(req: Request) {
     }
 
     switch (event.type) {
-      case "checkout.session.completed":
-        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        // Pacote avulso de créditos nunca mexe no plano/assinatura do usuário.
+        if (isCreditPackSession(session)) await handleCreditPackSession(session);
+        else await handleCheckoutCompleted(session);
         break;
+      }
+      case "checkout.session.async_payment_succeeded": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (isCreditPackSession(session)) await handleCreditPackSession(session);
+        break;
+      }
       // Both event names are handled; DB idempotency prevents double commission.
       case "invoice.paid":
       case "invoice.payment_succeeded":

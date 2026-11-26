@@ -1,19 +1,64 @@
 "use client";
 
 import { Fragment, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowUp, Plus, Sparkles, ImagePlus, LoaderCircle, Download,
   Eye, Users, Video, ChevronDown, PanelRightClose, PanelRightOpen,
   MessageSquare, MoreHorizontal, Paperclip, Search, ChartNoAxesCombined,
   Lightbulb, WandSparkles, Clock3, Check, X, RefreshCw, Copy, Square,
-  ArrowDown, Trash2, Menu
+  ArrowDown, Trash2, Menu, Coins, Crown, ShieldCheck
 } from "lucide-react";
+import { AI_CREDIT_PACKS, AI_UPGRADE_PATH, formatBRL } from "@/lib/tubex-ai-packs";
+import "./tubex-ai-credits.css";
 
 type Message = { role: "user" | "assistant"; content: string };
 type ChatSession = { id: string; title: string; updatedAt: number; messages: Message[] };
 type Mode = "fast" | "deep";
-type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number; cost?: number };
+type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number; planRemaining?: number; packBalance?: number; cost?: number };
+type CreditPack = { id: string; name: string; credits: number; amountCents: number; highlight?: string };
+type UpgradeOffer = { plan: string; label: string; credits: number } | null;
+
+function fmt(n: number) { return Number(n || 0).toLocaleString("pt-BR"); }
+
+/** Loja de créditos: pacotes avulsos + upgrade de plano. Usada inline (créditos esgotados) e no modal. */
+function CreditStore({ quota, packs, upgrade, buying, onBuy, compact = false }: {
+  quota: AIQuota | null; packs: CreditPack[]; upgrade: UpgradeOffer; buying: string; onBuy: (id: string) => void; compact?: boolean;
+}) {
+  const planRemaining = quota ? quota.planRemaining ?? Math.max(0, quota.limit - quota.used) : 0;
+  return (
+    <div className={`tx-credit-store ${compact ? "is-compact" : ""}`}>
+      {quota && (
+        <div className="tx-credit-balance">
+          <div><small>Franquia {quota.planLabel}</small><b>{fmt(planRemaining)}<span> / {fmt(quota.limit)}</span></b><em>renova todo mês</em></div>
+          <div><small>Pacotes</small><b>{fmt(quota.packBalance || 0)}</b><em>não expiram</em></div>
+        </div>
+      )}
+      <div className="tx-credit-packs">
+        {packs.map(pack => (
+          <button key={pack.id} type="button" onClick={() => onBuy(pack.id)} disabled={!!buying} className={`tx-credit-pack ${pack.highlight ? "is-featured" : ""}`}>
+            {pack.highlight && <span className="tx-credit-badge">{pack.highlight}</span>}
+            <span className="tx-credit-pack-icon"><Coins size={16}/></span>
+            <span className="tx-credit-pack-body">
+              <b>{fmt(pack.credits)} créditos</b>
+              <small>{pack.name} · ≈ {fmt(pack.credits)} respostas rápidas</small>
+            </span>
+            <span className="tx-credit-price">{buying === pack.id ? <LoaderCircle size={15} className="animate-spin"/> : formatBRL(pack.amountCents)}</span>
+          </button>
+        ))}
+      </div>
+      {upgrade && (
+        <a href="/plans" className="tx-credit-upgrade">
+          <span className="tx-credit-pack-icon is-gold"><Crown size={16}/></span>
+          <span className="min-w-0 flex-1"><b>Fazer upgrade para o {upgrade.label}</b><small>{fmt(upgrade.credits)} créditos todo mês, mais recursos do TubeX</small></span>
+          <ArrowUp size={14} className="rotate-45"/>
+        </a>
+      )}
+      <p className="tx-credit-note"><ShieldCheck size={13}/> Pagamento único e seguro pela Stripe. Os créditos entram assim que o pagamento é confirmado e são usados depois da franquia do mês.</p>
+    </div>
+  );
+}
 
 const STORAGE_KEY = "tubex-ai-conversations-v2";
 const starters = [
@@ -183,6 +228,11 @@ export default function TubeXAIChat() {
   const [showContext, setShowContext] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [quota, setQuota] = useState<AIQuota | null>(null);
+  const [packs, setPacks] = useState<CreditPack[]>(() => AI_CREDIT_PACKS.map(({ envPriceKey, ...pack }) => pack));
+  const [upgrade, setUpgrade] = useState<UpgradeOffer>(null);
+  const [storeOpen, setStoreOpen] = useState(false);
+  const [buying, setBuying] = useState("");
+  const [creditNotice, setCreditNotice] = useState<"" | "success" | "canceled">("");
   // Efeito de digitação: a resposta chega inteira e é revelada aos poucos, como num chat de IA real.
   const [typing, setTyping] = useState<{ sessionId: string; index: number; shown: number } | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -217,11 +267,27 @@ export default function TubeXAIChat() {
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token;
-        const response = await fetch("/api/ai/chat", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-        if (response.ok) setQuota(await response.json());
+        const response = await fetch("/api/ai/chat", { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json();
+        setQuota(payload);
+        if (Array.isArray(payload.packs) && payload.packs.length) setPacks(payload.packs);
+        setUpgrade(payload.upgrade ?? AI_UPGRADE_PATH[payload.plan] ?? null);
       } catch {}
     };
     void loadQuota();
+    // Volta do pagamento na Stripe: o webhook pode levar alguns segundos, então consulta de novo.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const credits = params.get("credits");
+      if (credits === "success" || credits === "canceled") {
+        setCreditNotice(credits);
+        if (credits === "success") [2500, 6000, 12000].forEach(ms => window.setTimeout(() => void loadQuota(), ms));
+        ["credits", "session_id", "tab"].forEach(key => params.delete(key));
+        const query = params.toString();
+        window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+      }
+    } catch {}
     window.addEventListener("tubex-channel-context", load); window.addEventListener("storage", load);
     return () => { window.removeEventListener("tubex-channel-context", load); window.removeEventListener("storage", load); };
   }, []);
@@ -371,6 +437,31 @@ export default function TubeXAIChat() {
     finally { setImageBusy(false); }
   }
 
+  useEffect(() => {
+    if (!storeOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setStoreOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [storeOpen]);
+
+  async function buyPack(packId: string) {
+    if (buying) return;
+    setBuying(packId); setError("");
+    try {
+      const { data } = await supabase.auth.getSession(); const token = data.session?.access_token;
+      const response = await fetch("/api/ai/credits/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ pack: packId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.url) throw new Error(payload.error || "Não foi possível abrir o pagamento.");
+      window.location.href = payload.url;
+    } catch (e: any) {
+      setError(e?.message || "Não foi possível abrir o pagamento."); setStoreOpen(false); setBuying("");
+    }
+  }
+
   const metrics = useMemo(() => channelContext ? [
     { label: "Inscritos", value: Number(channelContext.subscribers || 0).toLocaleString("pt-BR"), icon: Users },
     { label: "Visualizações", value: Number(channelContext.totalViews || 0).toLocaleString("pt-BR"), icon: Eye },
@@ -423,7 +514,7 @@ export default function TubeXAIChat() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {quota && <span title={`Plano ${quota.planLabel}: ${quota.used} de ${quota.limit} créditos utilizados neste mês`} className="tx-ai-quota">{quota.planLabel} · {remaining} créditos</span>}
+            {quota && <button type="button" onClick={() => setStoreOpen(true)} title={`Plano ${quota.planLabel}: ${quota.used} de ${quota.limit} créditos do mês usados${quota.packBalance ? ` · ${quota.packBalance} créditos de pacotes` : ""}. Clique para comprar mais.`} className={`tx-ai-quota tx-ai-quota-btn ${remaining !== null && remaining < 20 ? "is-low" : ""}`}><Coins size={12}/>{quota.planLabel} · {fmt(remaining || 0)}<span className="tx-ai-hide-mobile">créditos</span><Plus size={12} className="tx-ai-quota-plus"/></button>}
             <button onClick={newChat} className="tx-ai-icon-btn tx-ai-only-mobile" title="Nova conversa" aria-label="Nova conversa"><Plus size={16}/></button>
             <button onClick={() => setShowContext(v => !v)} className="tx-ai-icon-btn tx-ai-hide-mobile" title="Painel do canal" aria-pressed={showContext}>{showContext ? <PanelRightClose size={16}/> : <PanelRightOpen size={16}/>}</button>
           </div>
@@ -468,7 +559,8 @@ export default function TubeXAIChat() {
             {busy && <div className="tx-ai-message-row assistant"><span className="tx-ai-avatar is-thinking"><Sparkles size={14}/></span><div className="tx-ai-thinking"><span/><span/><span/> <small>{mode === "deep" ? "Analisando com profundidade…" : "Pensando…"}</small></div></div>}
             {thumbnail && <div className="tx-ai-generated"><img src={thumbnail} alt="Thumbnail gerada pelo TubeX AI"/><a href={thumbnail} download="tubex-thumbnail.png"><Download size={14}/> Salvar imagem</a></div>}
             {error && <div className="tx-ai-error"><span>{error}</span><div className="flex items-center gap-2">{canRetry && <button onClick={retry} className="tx-ai-retry"><RefreshCw size={13}/> Tentar novamente</button>}<button onClick={() => { setError(""); setUpgradeRequired(false); }} aria-label="Fechar aviso"><X size={14}/></button></div></div>}
-            {upgradeRequired && <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-3"><div><p className="text-[13px] font-bold">Precisa de mais créditos?</p><p className="text-[12px] text-[var(--tx-muted)]">Faça upgrade para ampliar sua franquia mensal do TubeX AI.</p></div><a href="/plans" className="tx-ai-generate-btn">Ver planos</a></div>}
+            {creditNotice && <div className={`tx-credit-notice ${creditNotice === "success" ? "is-success" : ""}`}><span>{creditNotice === "success" ? <><Check size={14}/> Pagamento recebido! Seus créditos entram em instantes{quota?.packBalance ? `. Saldo de pacotes: ${fmt(quota.packBalance)}` : ""}.</> : "Compra cancelada. Nenhum valor foi cobrado."}</span><button onClick={() => setCreditNotice("")} aria-label="Fechar aviso"><X size={14}/></button></div>}
+            {upgradeRequired && <div className="tx-credit-out"><div className="tx-credit-out-head"><span className="tx-credit-pack-icon is-gold"><Sparkles size={16}/></span><div><b>Seus créditos acabaram</b><p>Escolha um pacote avulso para continuar agora ou faça upgrade do plano.</p></div></div><CreditStore quota={quota} packs={packs} upgrade={upgrade} buying={buying} onBuy={buyPack} compact/></div>}
             </div>
           </div>
 
@@ -511,6 +603,13 @@ export default function TubeXAIChat() {
         </> : <div className="tx-ai-connect-card"><div className="tx-ai-connect-icon"><Video size={20}/></div><b>Conecte seu canal</b><p>Carregue os dados do canal no Feed para personalizar as análises do TubeX AI.</p><button onClick={() => window.dispatchEvent(new CustomEvent("tubex-navigate-tab", { detail: "feed" }))}>Abrir Feed <ArrowUp size={13}/></button></div>}
         <div className="mt-6"><p className="tx-ai-section-label">O que posso fazer</p><div className="mt-2 space-y-1">{["Diagnóstico do canal","Análise de vídeos","Estratégia de conteúdo","Criação de thumbnails"].map((v)=><div key={v} className="tx-ai-capability"><Check size={13}/>{v}</div>)}</div></div>
       </aside>}
+    {storeOpen && typeof document !== "undefined" && createPortal(<div className="tx-credit-modal" role="dialog" aria-modal="true" aria-label="Créditos do TubeX AI">
+        <button type="button" className="tx-credit-modal-scrim" aria-label="Fechar" onClick={() => setStoreOpen(false)}/>
+        <div className="tx-credit-modal-card">
+          <div className="tx-credit-modal-head"><div><p className="tx-credit-eyebrow">TubeX AI</p><h3>Créditos <span className="tx-gold">extras</span></h3></div><button onClick={() => setStoreOpen(false)} className="tx-ai-icon-btn" aria-label="Fechar"><X size={16}/></button></div>
+          <CreditStore quota={quota} packs={packs} upgrade={upgrade} buying={buying} onBuy={buyPack}/>
+        </div>
+      </div>, document.body)}
     </main>
   );
 }

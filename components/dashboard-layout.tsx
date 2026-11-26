@@ -178,6 +178,8 @@ export default function DashboardLayout({user}:{user:any}){
  const ownerButton=([sub,Icon,label]:[string,any,string])=><button key={sub} onClick={()=>selectTab(`admin:${sub}`)} aria-current={tab==="admin"&&adminSub===sub?"page":undefined} className={`tx-nav-item is-small ${tab==="admin"&&adminSub===sub?"is-active":""}`}><span className="tx-nav-icon"><Icon size={16}/></span><span className="min-w-0 flex-1 truncate text-left">{label}</span></button>;
  const ownerSection=isOwner?<section className="tx-nav-group tx-nav-owner"><p className="tx-nav-heading">Owner <span className="tx-owner-tag">OWNER</span></p>{ownerItems.map(ownerButton)}</section>:null;
  const titles:Record<Tab,string>={home:"Início",ai:"TubeX AI",research:"Pesquisar",optimize:"Otimizar",achievements:"Conquistas",affiliate:t.affiliate,account:"Conta e assinatura",support:t.support,admin:"Admin"};
+ // Links externos (ex.: volta do pagamento de créditos) abrem direto uma aba: /dashboard?tab=ai
+ useEffect(()=>{try{const t=new URLSearchParams(window.location.search).get("tab");if(t&&/^[a-z:]+$/.test(t))selectTab(t)}catch{}},[]);// eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{
   const handleNavigate=(event:Event)=>{const next=(event as CustomEvent<string>).detail;if(next)selectTab(next)};
   window.addEventListener("tubex-navigate-tab",handleNavigate);

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/tubex-backend";
 import { resolveAccountPlan } from "@/lib/tubex-plan";
-import { AI_CREDIT_LIMITS, AI_PLAN_LABELS, AI_CREDIT_COSTS, readCreditUsage, reserveCredits, releaseCredits } from "@/lib/tubex-ai-credits";
+import { AI_CREDIT_LIMITS, AI_CREDIT_COSTS, buildQuota, reserveCredits, releaseCredits, type CreditReservation } from "@/lib/tubex-ai-credits";
+import { AI_UPGRADE_PATH } from "@/lib/tubex-ai-packs";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   if (!apiKey) return NextResponse.json({ error: "Configure OPENAI_API_KEY na Vercel para gerar thumbnails." }, { status: 503 });
 
   let reserved = false;
+  let reservation: CreditReservation | null = null;
   try {
     const { prompt, title, channelContext } = await request.json();
     const brief = String(prompt || title || "").trim();
@@ -21,17 +23,19 @@ export async function POST(request: Request) {
     const resolved = await resolveAccountPlan(user);
     const plan = resolved.plan in AI_CREDIT_LIMITS ? resolved.plan : "free";
     const limit = AI_CREDIT_LIMITS[plan];
-    const usedBefore = await readCreditUsage(user.id);
     const cost = AI_CREDIT_COSTS.thumbnail;
-    const reservation = await reserveCredits(user.id, cost, limit);
-    if (!reservation?.allowed) {
-      const used = Number(reservation?.used ?? usedBefore);
+    const attempt = await reserveCredits(user.id, cost, limit);
+    if (!attempt.allowed) {
+      const quota = buildQuota(plan, attempt.used, attempt.packBalance, { cost });
       return NextResponse.json({
-        error: `Seus créditos são insuficientes para gerar uma thumbnail. A geração custa ${cost} créditos e você tem ${Math.max(0, limit - used)} disponíveis. Faça upgrade para continuar.`,
+        error: `Seus créditos são insuficientes para gerar uma thumbnail. A geração custa ${cost} créditos e você tem ${quota.remaining} disponíveis. Compre um pacote de créditos ou faça upgrade para continuar.`,
         upgradeRequired: true,
-        quota: { plan, planLabel: AI_PLAN_LABELS[plan], used, limit, remaining: Math.max(0, limit - used), cost },
+        code: "AI_CREDITS_EXHAUSTED",
+        quota,
+        upgrade: AI_UPGRADE_PATH[plan] ?? null,
       }, { status: 429 });
     }
+    reservation = attempt;
     reserved = true;
 
     const channel = channelContext?.channelName ? `Canal: ${String(channelContext.channelName).slice(0,100)}.` : "";
@@ -42,19 +46,18 @@ export async function POST(request: Request) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      await releaseCredits(user.id, cost); reserved = false;
+      await releaseCredits(user.id, reservation); reserved = false;
       return NextResponse.json({ error: data?.error?.message || `Falha ao gerar imagem (${response.status}). Os créditos foram devolvidos.` }, { status: response.status });
     }
     const b64 = data?.data?.[0]?.b64_json;
     if (!b64) throw new Error("O serviço não retornou a imagem.");
-    const used = Number(reservation.used || usedBefore + cost);
     reserved = false;
     return NextResponse.json({
       image: `data:image/png;base64,${b64}`,
-      quota: { plan, planLabel: AI_PLAN_LABELS[plan], used, limit, remaining: Math.max(0, limit - used), cost, action: "thumbnail" },
+      quota: buildQuota(plan, attempt.used, attempt.packBalance, { cost, action: "thumbnail" }),
     });
   } catch (error: any) {
-    if (reserved) { try { await releaseCredits(user.id, AI_CREDIT_COSTS.thumbnail); } catch {} }
+    if (reserved) { try { await releaseCredits(user.id, reservation); } catch {} }
     return NextResponse.json({ error: `${error?.message || "Não foi possível gerar a thumbnail."} Se houve falha na geração, os créditos reservados foram devolvidos.` }, { status: 500 });
   }
 }

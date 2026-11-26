@@ -4,9 +4,10 @@ import { resolveAccountPlan } from "@/lib/tubex-plan";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createHash } from "node:crypto";
 import {
-  AI_CREDIT_LIMITS, AI_PLAN_LABELS, classifyChatCost,
-  readCreditUsage, reserveCredits, releaseCredits,
+  AI_CREDIT_LIMITS, AI_PLAN_LABELS, classifyChatCost, buildQuota,
+  readCreditUsage, readPackBalance, reserveCredits, releaseCredits, type CreditReservation,
 } from "@/lib/tubex-ai-credits";
+import { AI_CREDIT_PACKS, AI_UPGRADE_PATH } from "@/lib/tubex-ai-packs";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -20,8 +21,8 @@ async function getPlanAndUsage(user: any) {
   const resolved = await resolveAccountPlan(user);
   const plan = resolved.plan in AI_CREDIT_LIMITS ? resolved.plan : "free";
   const limit = AI_CREDIT_LIMITS[plan];
-  const used = await readCreditUsage(user.id);
-  return { plan, planLabel: AI_PLAN_LABELS[plan], used, limit, remaining: Math.max(0, limit - used) };
+  const [used, packBalance] = await Promise.all([readCreditUsage(user.id), readPackBalance(user.id)]);
+  return { ...buildQuota(plan, used, packBalance), planLabel: AI_PLAN_LABELS[plan], limit };
 }
 
 function trimMessages(input: any[]) {
@@ -105,7 +106,12 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: "Sessão expirada. Entre novamente." }, { status: 401 });
   try {
     await recordChatEvent(request, user, "chat_opened");
-    return NextResponse.json(await getPlanAndUsage(user));
+    const quota = await getPlanAndUsage(user);
+    return NextResponse.json({
+      ...quota,
+      packs: AI_CREDIT_PACKS.map(({ envPriceKey, ...pack }) => pack),
+      upgrade: AI_UPGRADE_PATH[quota.plan] ?? null,
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Falha ao consultar o plano." }, { status: 500 });
   }
@@ -120,6 +126,7 @@ export async function POST(request: Request) {
 
   let creditReserved = false;
   let reservedCost = 0;
+  let reservation: CreditReservation | null = null;
   let providerReservationId: string | null = null;
 
   try {
@@ -141,14 +148,17 @@ export async function POST(request: Request) {
     const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
     const charge = classifyChatCost(lastUserMessage, mode);
     const quotaRow = await reserveCredits(user.id, charge.cost, planInfo.limit);
-    if (!quotaRow?.allowed) {
-      const used = Number(quotaRow?.used ?? planInfo.used);
+    if (!quotaRow.allowed) {
+      const quota = buildQuota(planInfo.plan, quotaRow.used, quotaRow.packBalance, { cost: charge.cost });
       return NextResponse.json({
-        error: `Seus créditos acabaram para esta ação. Esta solicitação custa ${charge.cost} créditos e seu plano ${planInfo.planLabel} tem ${Math.max(0, planInfo.limit - used)} disponíveis. Faça upgrade para continuar usando o TubeX AI.`,
+        error: `Seus créditos acabaram. Esta solicitação custa ${charge.cost} ${charge.cost === 1 ? "crédito" : "créditos"} e você tem ${quota.remaining} disponíveis. Compre um pacote de créditos ou faça upgrade para continuar usando o TubeX AI.`,
         upgradeRequired: true,
-        quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used, limit: planInfo.limit, remaining: Math.max(0, planInfo.limit - used), cost: charge.cost },
+        code: "AI_CREDITS_EXHAUSTED",
+        quota,
+        upgrade: AI_UPGRADE_PATH[planInfo.plan] ?? null,
       }, { status: 429 });
     }
+    reservation = quotaRow;
     creditReserved = true;
     reservedCost = charge.cost;
 
@@ -185,7 +195,7 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
 
     const requestedTokens = Math.ceil(estimateTokens(requestBody) * 1.12) + 60;
     if (requestedTokens > TPM_LIMIT) {
-      await releaseCredits(user.id, reservedCost);
+      await releaseCredits(user.id, reservation);
       creditReserved = false;
       return NextResponse.json({
         error: "Esta conversa contém contexto demais para a capacidade atual da IA. Inicie uma nova conversa ou reduza o histórico e tente novamente.",
@@ -195,7 +205,7 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
 
     const providerQuota = await reserveProviderTokens(requestedTokens);
     if (!providerQuota.allowed) {
-      await releaseCredits(user.id, reservedCost);
+      await releaseCredits(user.id, reservation);
       creditReserved = false;
       return NextResponse.json({
         error: `O TubeX AI está processando outras solicitações. Aguarde aproximadamente ${providerQuota.waitSeconds} segundos e tente novamente. Seus créditos não foram consumidos.`,
@@ -221,7 +231,7 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
       await releaseProviderTokens(providerReservationId);
       providerReservationId = null;
       if (creditReserved) {
-        await releaseCredits(user.id, reservedCost);
+        await releaseCredits(user.id, reservation);
         creditReserved = false;
       }
       const providerMessage = String(data?.error?.message || "");
@@ -248,7 +258,6 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
     // A reserva permanece na janela compartilhada por até 60s após a resposta.
     providerReservationId = null;
 
-    const used = Number(quotaRow.used || 0);
     creditReserved = false;
     await recordChatEvent(request, user, "chat_message_sent", {
       plan: planInfo.plan,
@@ -261,13 +270,13 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
     return NextResponse.json({
       answer,
       model: data.model || MODEL,
-      quota: { plan: planInfo.plan, planLabel: planInfo.planLabel, used, limit: planInfo.limit, remaining: Math.max(0, planInfo.limit - used), cost: reservedCost, action: charge.action },
+      quota: buildQuota(planInfo.plan, quotaRow.used, quotaRow.packBalance, { cost: reservedCost, action: charge.action }),
       usage: data.usage || null,
     });
   } catch (error: any) {
     await releaseProviderTokens(providerReservationId);
     if (creditReserved) {
-      try { await releaseCredits(user.id, reservedCost); } catch {}
+      try { await releaseCredits(user.id, reservation); } catch {}
     }
     const isTimeout = error?.name === "TimeoutError" || error?.name === "AbortError";
     return NextResponse.json({
