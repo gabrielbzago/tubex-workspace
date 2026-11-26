@@ -16,6 +16,7 @@ import "./tubex-ai-credits.css";
 type Message = { role: "user" | "assistant"; content: string };
 type ChatSession = { id: string; title: string; updatedAt: number; messages: Message[] };
 type Mode = "fast" | "deep";
+type ChannelVideo = { id: string; title: string; thumbnail: string; publishedAt: string; views: number; likes: number; comments: number };
 type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number; planRemaining?: number; packBalance?: number; cost?: number };
 type CreditPack = { id: string; name: string; credits: number; amountCents: number; highlight?: string };
 type UpgradeOffer = { plan: string; label: string; credits: number } | null;
@@ -223,6 +224,14 @@ export default function TubeXAIChat() {
   const [error, setError] = useState("");
   const [upgradeRequired, setUpgradeRequired] = useState(false);
   const [channelContext, setChannelContext] = useState<any>(null);
+  const [videoPickerOpen, setVideoPickerOpen] = useState(false);
+  const [videoQuery, setVideoQuery] = useState("");
+  const [videoLibrary, setVideoLibrary] = useState<ChannelVideo[]>([]);
+  const [videoLibraryLoadedFor, setVideoLibraryLoadedFor] = useState("");
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState("");
+  const [selectedVideos, setSelectedVideos] = useState<ChannelVideo[]>([]);
+  const [visibleVideoCount, setVisibleVideoCount] = useState(40);
   const [mode, setMode] = useState<Mode>("fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [showContext, setShowContext] = useState(false);
@@ -295,6 +304,14 @@ export default function TubeXAIChat() {
   useEffect(() => {
     try { if (sessions.length) localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, 30))); } catch {}
   }, [sessions]);
+
+  useEffect(() => {
+    setVideoLibrary([]);
+    setVideoLibraryLoadedFor("");
+    setSelectedVideos([]);
+    setVideoQuery("");
+    setVisibleVideoCount(40);
+  }, [channelContext?.channelId]);
 
   const active = sessions.find(s => s.id === activeId) || sessions[0];
   const messages = active?.messages || [welcome];
@@ -386,7 +403,7 @@ export default function TubeXAIChat() {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ messages: next.slice(-12), channelContext, mode }),
+        body: JSON.stringify({ messages: next.slice(-12), channelContext, selectedVideos, mode }),
       });
       const payload = await response.json();
       if (payload.quota) setQuota(payload.quota);
@@ -397,6 +414,88 @@ export default function TubeXAIChat() {
       if (e?.name !== "AbortError") setError(e?.message || "Falha ao conversar com a IA.");
     }
     finally { setBusy(false); abortRef.current = null; requestAnimationFrame(() => textareaRef.current?.focus()); }
+  }
+
+  async function openVideoPicker() {
+    setVideoPickerOpen(true);
+    setVideoQuery("");
+    setVideoLoadError("");
+    setVisibleVideoCount(40);
+    const channelId = String(channelContext?.channelId || "");
+    if (!channelId) {
+      setVideoLoadError("Conecte um canal no Feed para carregar seus vídeos.");
+      return;
+    }
+    if (videoLibraryLoadedFor === channelId) return;
+    setVideoLoading(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = String((data.session as any)?.provider_token || "");
+      if (!token) throw new Error("A autorização do YouTube expirou. Reconecte sua conta Google no Feed.");
+
+      const yt = async (path: string) => {
+        const response = await fetch("https://www.googleapis.com/youtube/v3/" + path, {
+          headers: { Authorization: "Bearer " + token }, cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error?.message || "Falha ao carregar vídeos do YouTube (" + response.status + ").");
+        return payload;
+      };
+
+      const channelParams = new URLSearchParams({ part: "contentDetails", id: channelId });
+      const channelData = await yt("channels?" + channelParams);
+      const uploadsId = String(channelData?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads || "");
+      if (!uploadsId) throw new Error("Não foi possível localizar a playlist de envios deste canal.");
+
+      const playlistItems: any[] = [];
+      let pageToken = "";
+      for (let page = 0; page < 1000; page++) {
+        const params = new URLSearchParams({ part: "snippet,contentDetails", playlistId: uploadsId, maxResults: "50" });
+        if (pageToken) params.set("pageToken", pageToken);
+        const result = await yt("playlistItems?" + params);
+        playlistItems.push(...(result.items || []));
+        pageToken = String(result.nextPageToken || "");
+        if (!pageToken) break;
+      }
+
+      const ids = [...new Set(playlistItems.map(item => String(item.contentDetails?.videoId || "")).filter(Boolean))];
+      const allVideos: ChannelVideo[] = [];
+      for (let i = 0; i < ids.length; i += 50) {
+        const params = new URLSearchParams({ part: "snippet,statistics", id: ids.slice(i, i + 50).join(",") });
+        const result = await yt("videos?" + params);
+        for (const item of result.items || []) {
+          allVideos.push({
+            id: String(item.id),
+            title: String(item.snippet?.title || "Sem título"),
+            thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || ""),
+            publishedAt: String(item.snippet?.publishedAt || ""),
+            views: Number(item.statistics?.viewCount || 0),
+            likes: Number(item.statistics?.likeCount || 0),
+            comments: Number(item.statistics?.commentCount || 0),
+          });
+        }
+      }
+      allVideos.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+      setVideoLibrary(allVideos);
+      setVideoLibraryLoadedFor(channelId);
+    } catch (e: any) {
+      setVideoLoadError(e?.message || "Não foi possível carregar os vídeos deste canal.");
+    } finally {
+      setVideoLoading(false);
+    }
+  }
+
+  function toggleSelectedVideo(video: ChannelVideo) {
+    if (selectedVideos.some(item => item.id === video.id)) {
+      setSelectedVideos(current => current.filter(item => item.id !== video.id));
+      return;
+    }
+    if (selectedVideos.length >= 5) {
+      setVideoLoadError("Selecione até 5 vídeos por pergunta para a análise manter o foco.");
+      return;
+    }
+    setVideoLoadError("");
+    setSelectedVideos(current => [...current, video]);
   }
 
   function regenerate() {
@@ -444,6 +543,13 @@ export default function TubeXAIChat() {
     return () => window.removeEventListener("keydown", onKey);
   }, [storeOpen]);
 
+  useEffect(() => {
+    if (!videoPickerOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setVideoPickerOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [videoPickerOpen]);
+
   async function buyPack(packId: string) {
     if (buying) return;
     setBuying(packId); setError("");
@@ -472,6 +578,11 @@ export default function TubeXAIChat() {
   const lastAssistantIndex = messages.length - 1 >= 0 && messages[messages.length - 1].role === "assistant" ? messages.length - 1 : -1;
   const canRetry = !busy && !!error && messages[messages.length - 1]?.role === "user";
   const remaining = quota ? quota.remaining ?? Math.max(0, quota.limit - quota.used) : null;
+  const filteredChannelVideos = useMemo(() => {
+    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+    const query = normalize(videoQuery.trim());
+    return videoLibrary.filter(video => !query || normalize(video.title).includes(query));
+  }, [videoLibrary, videoQuery]);
 
   return (
     <main className={`tx-ai-workspace ${showContext ? "has-context" : ""}`}>
@@ -572,9 +683,17 @@ export default function TubeXAIChat() {
               <div className="flex justify-end"><button onClick={generateThumbnail} disabled={imageBusy || thumbnailPrompt.trim().length < 5} className="tx-ai-generate-btn">{imageBusy ? <LoaderCircle size={14} className="animate-spin"/> : <WandSparkles size={14}/>} Gerar thumbnail · 100 créditos</button></div>
             </div>}
             <form onSubmit={e => { e.preventDefault(); void send(); }} className="tx-ai-composer">
+              {selectedVideos.length > 0 && <div className="flex flex-wrap gap-2 pb-2">
+                {selectedVideos.map(video => <span key={video.id} className="flex max-w-[230px] items-center gap-2 rounded-lg border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-1.5 text-[10px]">
+                  {video.thumbnail && <img src={video.thumbnail} alt="" className="h-8 w-12 shrink-0 rounded object-cover"/>}
+                  <span className="min-w-0 truncate">{video.title} · {fmt(video.views)} visualizações</span>
+                  <button type="button" onClick={() => setSelectedVideos(current => current.filter(item => item.id !== video.id))} className="shrink-0 rounded p-1 hover:bg-black/10" aria-label={"Remover " + video.title}><X size={12}/></button>
+                </span>)}
+              </div>}
               <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} rows={1} placeholder="Pergunte ao TubeX AI..." aria-label="Mensagem para o TubeX AI" enterKeyHint="send" />
               <div className="tx-ai-composer-tools">
                 <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => void openVideoPicker()} className="tx-ai-tool-btn" title="Adicionar vídeo como contexto"><Plus size={15}/><span>Vídeo</span></button>
                   <button type="button" onClick={() => setThumbnailMode(v => !v)} className={`tx-ai-tool-btn ${thumbnailMode ? "active" : ""}`}><ImagePlus size={15}/><span>Thumbnail</span></button>
                   <div className="relative">
                     <button type="button" onClick={() => setModeOpen(v => !v)} className="tx-ai-tool-btn" aria-expanded={modeOpen}>{mode === "fast" ? <Sparkles size={14}/> : <WandSparkles size={14}/>}<span>{mode === "fast" ? "Rápido" : "Profundo"}</span><ChevronDown size={12}/></button>
@@ -603,6 +722,33 @@ export default function TubeXAIChat() {
         </> : <div className="tx-ai-connect-card"><div className="tx-ai-connect-icon"><Video size={20}/></div><b>Conecte seu canal</b><p>Carregue os dados do canal no Feed para personalizar as análises do TubeX AI.</p><button onClick={() => window.dispatchEvent(new CustomEvent("tubex-navigate-tab", { detail: "feed" }))}>Abrir Feed <ArrowUp size={13}/></button></div>}
         <div className="mt-6"><p className="tx-ai-section-label">O que posso fazer</p><div className="mt-2 space-y-1">{["Diagnóstico do canal","Análise de vídeos","Estratégia de conteúdo","Criação de thumbnails"].map((v)=><div key={v} className="tx-ai-capability"><Check size={13}/>{v}</div>)}</div></div>
       </aside>}
+    {videoPickerOpen && typeof document !== "undefined" && createPortal(<div className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Selecionar vídeos do canal">
+      <button type="button" className="absolute inset-0 bg-black/65 backdrop-blur-sm" aria-label="Fechar seletor de vídeos" onClick={() => setVideoPickerOpen(false)}/>
+      <section className="relative z-10 flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--tx-border)] bg-[var(--tx-surface)] shadow-2xl">
+        <header className="flex items-center justify-between gap-3 border-b border-[var(--tx-border)] p-4 sm:p-5">
+          <div><p className="tx-ai-section-label">CONTEXTO DA ANÁLISE</p><h2 className="mt-1 text-lg font-black">Adicionar vídeos</h2><p className="mt-1 text-xs text-[var(--tx-muted)]">{videoLibraryLoadedFor ? fmt(videoLibrary.length) + " vídeos encontrados" : "Pesquise e selecione até 5 vídeos"} · {selectedVideos.length}/5 selecionados</p></div>
+          <button type="button" onClick={() => setVideoPickerOpen(false)} className="tx-ai-icon-btn" aria-label="Fechar"><X size={16}/></button>
+        </header>
+        <div className="border-b border-[var(--tx-border)] p-3 sm:p-4">
+          <label className="flex items-center gap-2 rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] px-3"><Search size={15} className="shrink-0 text-[var(--tx-muted)]"/><input autoFocus value={videoQuery} onChange={e => { setVideoQuery(e.target.value); setVisibleVideoCount(40); }} placeholder="Pesquisar pelo título do vídeo..." className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none"/></label>
+        </div>
+        {videoLoadError && <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs text-amber-500"><span>{videoLoadError}</span><button type="button" className="shrink-0 underline" onClick={() => { setVideoPickerOpen(false); window.dispatchEvent(new CustomEvent("tubex-navigate-tab", { detail: "feed" })); }}>Abrir Feed</button></div>}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+          {videoLoading ? <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-[var(--tx-muted)]"><LoaderCircle size={18} className="animate-spin"/> Carregando todos os vídeos do canal…</div>
+            : !filteredChannelVideos.length ? <div className="py-12 text-center text-sm text-[var(--tx-muted)]">{videoLibrary.length ? "Nenhum vídeo corresponde a essa busca." : "Nenhum vídeo disponível para este canal."}</div>
+            : <div className="grid gap-2 sm:grid-cols-2">{filteredChannelVideos.slice(0, visibleVideoCount).map(video => {
+              const isSelected = selectedVideos.some(item => item.id === video.id);
+              return <button type="button" key={video.id} onClick={() => toggleSelectedVideo(video)} className={`flex min-w-0 items-center gap-3 rounded-xl border p-2.5 text-left transition ${isSelected ? "border-[var(--tx-accent)] bg-[var(--tx-accent-soft)]" : "border-[var(--tx-border)] hover:bg-[var(--tx-surface-2)]"}`}>
+                <span className="relative h-[58px] w-[96px] shrink-0 overflow-hidden rounded-lg bg-[var(--tx-surface-2)]">{video.thumbnail ? <img src={video.thumbnail} alt="" className="h-full w-full object-cover"/> : <Video size={18} className="m-auto mt-5 text-[var(--tx-muted)]"/>}</span>
+                <span className="min-w-0 flex-1"><b className="line-clamp-2 text-xs leading-4">{video.title}</b><small className="mt-1 block text-[10px] text-[var(--tx-muted)]"><Eye size={11} className="mr-1 inline"/> {fmt(video.views)} visualizações{video.publishedAt ? " · " + new Date(video.publishedAt).toLocaleDateString("pt-BR") : ""}</small></span>
+                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${isSelected ? "border-[var(--tx-accent)] bg-[var(--tx-accent)] text-white" : "border-[var(--tx-border)]"}`}>{isSelected && <Check size={12}/>}</span>
+              </button>;
+            })}</div>}
+          {!videoLoading && filteredChannelVideos.length > visibleVideoCount && <button type="button" onClick={() => setVisibleVideoCount(value => value + 40)} className="tx-btn tx-btn-secondary mx-auto mt-4">Carregar mais vídeos</button>}
+        </div>
+        <footer className="flex items-center justify-between gap-3 border-t border-[var(--tx-border)] p-3 sm:p-4"><span className="text-[10px] text-[var(--tx-muted)]">Os vídeos escolhidos serão enviados como contexto junto da sua pergunta.</span><button type="button" onClick={() => setVideoPickerOpen(false)} className="tx-btn tx-btn-primary shrink-0">Concluir seleção</button></footer>
+      </section>
+    </div>, document.body)}
     {storeOpen && typeof document !== "undefined" && createPortal(<div className="tx-credit-modal" role="dialog" aria-modal="true" aria-label="Créditos do TubeX AI">
         <button type="button" className="tx-credit-modal-scrim" aria-label="Fechar" onClick={() => setStoreOpen(false)}/>
         <div className="tx-credit-modal-card">
