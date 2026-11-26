@@ -20,7 +20,8 @@ export const AI_CREDIT_COSTS = {
   titles: 3,
   description: 1,
   script: 5,
-  thumbnail: 22,
+  // GPT Image 2.5 em qualidade média, 1536x1024 (~US$ 0,05). Alta custava ~US$ 0,19 e dava prejuízo a 22.
+  thumbnail: 100,
 } as const;
 
 export function aiMonthKey() {

@@ -569,7 +569,7 @@ export default function TubeXAIChat() {
             {thumbnailMode && <div className="tx-ai-tool-panel">
               <div className="flex items-center justify-between"><div className="flex items-center gap-2 text-[13px] font-bold"><ImagePlus size={16} className="text-[var(--tx-blue)]"/> Criar thumbnail</div><button onClick={() => setThumbnailMode(false)} className="tx-ai-icon-btn" aria-label="Fechar"><X size={14}/></button></div>
               <textarea value={thumbnailPrompt} onChange={e => setThumbnailPrompt(e.target.value)} placeholder="Descreva o vídeo, o conceito visual, texto da capa e elementos que deseja incluir..." rows={3}/>
-              <div className="flex justify-end"><button onClick={generateThumbnail} disabled={imageBusy || thumbnailPrompt.trim().length < 5} className="tx-ai-generate-btn">{imageBusy ? <LoaderCircle size={14} className="animate-spin"/> : <WandSparkles size={14}/>} Gerar thumbnail · 22 créditos</button></div>
+              <div className="flex justify-end"><button onClick={generateThumbnail} disabled={imageBusy || thumbnailPrompt.trim().length < 5} className="tx-ai-generate-btn">{imageBusy ? <LoaderCircle size={14} className="animate-spin"/> : <WandSparkles size={14}/>} Gerar thumbnail · 100 créditos</button></div>
             </div>}
             <form onSubmit={e => { e.preventDefault(); void send(); }} className="tx-ai-composer">
               <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} rows={1} placeholder="Pergunte ao TubeX AI..." aria-label="Mensagem para o TubeX AI" enterKeyHint="send" />
