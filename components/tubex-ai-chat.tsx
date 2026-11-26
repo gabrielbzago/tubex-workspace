@@ -191,6 +191,7 @@ export default function TubeXAIChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stickRef = useRef(true);
+  const prefillRef = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -205,7 +206,8 @@ export default function TubeXAIChat() {
       const initial = { id: makeId(), title: "Nova conversa", updatedAt: Date.now(), messages: [welcome] };
       setSessions([initial]); setActiveId(initial.id);
     }
-    if (window.matchMedia?.("(min-width: 1400px)").matches) setShowContext(true);
+    if (window.matchMedia?.("(min-width: 1500px)").matches) setShowContext(true);
+    try { const pre = sessionStorage.getItem("tubex-ai-prefill"); if (pre) { prefillRef.current = pre; sessionStorage.removeItem("tubex-ai-prefill"); } } catch {}
     const load = () => {
       try { const raw = localStorage.getItem("tubex-ai-channel-context"); setChannelContext(raw ? JSON.parse(raw) : null); }
       catch { setChannelContext(null); }
@@ -231,6 +233,14 @@ export default function TubeXAIChat() {
   const active = sessions.find(s => s.id === activeId) || sessions[0];
   const messages = active?.messages || [welcome];
   const isFresh = messages.length <= 1;
+
+  // Pedido vindo de outra tela (ex.: "Analisar com IA" no Início): abre uma conversa nova e envia.
+  useEffect(() => {
+    if (!prefillRef.current || !active) return;
+    if (!isFresh) { newChat(); return; }
+    const text = prefillRef.current; prefillRef.current = null;
+    void send(text);
+  }, [active?.id, isFresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Revela a resposta palavra por palavra.
   useEffect(() => {

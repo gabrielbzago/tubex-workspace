@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity,Trophy,Rss,ChevronRight,ChevronUp,TrendingUp,Eye,Video } from "lucide-react";
+import { Sparkles,Gauge,Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity,Trophy,Rss,ChevronRight,ChevronUp,TrendingUp,Eye,Video } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "./theme-toggle";
 import AffiliatePage from "./affiliate-page";
@@ -15,10 +15,16 @@ import AchievementsCenter from "./achievements-center";
 import FeedDashboard from "./feed-dashboard";
 import IntelligenceCenter from "./intelligence-center";
 import TubeXAIChat from "./tubex-ai-chat";
+import ChannelHome from "./channel-home";
+import OptimizeView from "./optimize-view";
+import ResearchView from "./research-view";
+import AdminHub from "./admin-hub";
+import WelcomeSplash from "./welcome-splash";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
 import { recordWebProductEvent } from "@/lib/tubex-client-analytics";
 
 type Lang="pt-br"|"pt-pt"|"es"|"en";
+type Tab="home"|"ai"|"research"|"optimize"|"achievements"|"affiliate"|"account"|"support"|"admin";
 const languages=[
  ["pt-br","🇧🇷","Português (Brasil)"],["pt-pt","🇵🇹","Português (Portugal)"],["es","🇪🇸","Español"],["en","🇺🇸","English"]
 ] as const;
@@ -33,7 +39,9 @@ const i18n={
 function Logo(){return <a href="/dashboard" className="flex items-center gap-2" aria-label="TubeX"><img src="/logo.png" alt="TubeX" className="h-8 w-auto max-w-[142px] object-contain object-left"/></a>}
 
 export default function DashboardLayout({user}:{user:any}){
- const [tab,setTab]=useState<"ai"|"workspace"|"creator"|"dashboard"|"affiliate"|"admin"|"analytics"|"behavior"|"usage"|"cancellations"|"achievements"|"feed"|"intelligence"|"account"|"billing"|"support">("ai");
+ const [tab,setTab]=useState<Tab>("home");
+ const [researchSub,setResearchSub]=useState<"keywords"|"ideas">("keywords");
+ const [adminSub,setAdminSub]=useState<"analytics"|"subscribers"|"usage"|"cancellations"|"affiliates">("analytics");
  const [mobileOpen,setMobileOpen]=useState(false);
  const [toolsOpen,setToolsOpen]=useState(false);
  const [navQuery,setNavQuery]=useState("");
@@ -98,6 +106,7 @@ export default function DashboardLayout({user}:{user:any}){
  // rendered Keyword Explorer and Workspace SEO, and keep newly rendered UI in sync.
  useEffect(()=>{
   const originals = new WeakMap<Text,string>();
+  const written = new WeakMap<Text,string>();
   const originalAttributes = new WeakMap<Element,Record<string,string>>();
   const detectedLang = document.documentElement.lang.toLowerCase();
   let activeLang = ((["pt-br","pt-pt","es","en"].includes(detectedLang) ? detectedLang : localStorage.getItem("tubex-language")) as TubeXLang|null) || lang;
@@ -106,9 +115,11 @@ export default function DashboardLayout({user}:{user:any}){
     const text=node as Text;
     const parent=text.parentElement;
     if(!parent || parent.closest("script,style,textarea,input,[contenteditable='true']")) return;
-    if(!originals.has(text)) originals.set(text,text.nodeValue || "");
+    // Se o React trocou o texto (ex.: título da aba), o novo valor vira o original.
+    if(!originals.has(text) || (written.has(text) && text.nodeValue!==written.get(text))) originals.set(text,text.nodeValue || "");
     const original=originals.get(text) || "";
     const translated=translateUiText(original,activeLang);
+    written.set(text,translated);
     if(text.nodeValue!==translated) text.nodeValue=translated;
     return;
    }
@@ -152,102 +163,77 @@ export default function DashboardLayout({user}:{user:any}){
  }
  const plan=String(isOwner ? "expert" : (userData?.plan||"free")).toLowerCase();
  const displayName=userData?.name||user?.user_metadata?.full_name||user?.email?.split("@")[0]||"Creator";
- const toolItems:any[]=[
-  ["intelligence",Activity,"Inteligência"],
-  ["feed",Rss,"Feed do canal"],
-  ["workspace",Search,"Workspace SEO"],
-  ["creator",Lightbulb,"Keyword Explorer"],
+ // Navegação enxuta: 4 áreas principais + itens secundários discretos.
+ const mainItems:[Tab,any,string,string][]=[
+  ["home",Home,"Início","Seu canal em números"],
+  ["ai",Sparkles,"TubeX AI","Chat com seu copiloto"],
+  ["research",Search,"Pesquisar","Palavras-chave e ideias"],
+  ["optimize",Gauge,"Otimizar","Seus vídeos e melhorias"],
  ];
- const navItems:any[]=[
-  ["ai",Activity,"TubeX AI"],["affiliate",Users,t.affiliate],
-  ...(isOwner?[["admin",ShieldCheck,t.admin],["analytics",Activity,"TubeX Analytics"],["behavior",Users,"Comportamento do Assinante"],["usage",Activity,"Comportamento de Uso"],["cancellations",CreditCard,"Cancelamentos"]]:[]),
-  ["account",Settings,t.account],["billing",CreditCard,t.billing],["support",LifeBuoy,t.support]
+ const secondaryItems:[Tab,any,string][]=[
+  ["achievements",Trophy,"Conquistas"],["affiliate",Users,t.affiliate],["account",Settings,"Conta e assinatura"],["support",LifeBuoy,t.support],
+  ...(isOwner?[["admin",ShieldCheck,"Admin"] as [Tab,any,string]]:[]),
  ];
+ const titles:Record<Tab,string>={home:"Início",ai:"TubeX AI",research:"Pesquisar",optimize:"Otimizar",achievements:"Conquistas",affiliate:t.affiliate,account:"Conta e assinatura",support:t.support,admin:"Admin"};
  useEffect(()=>{
   const handleNavigate=(event:Event)=>{const next=(event as CustomEvent<string>).detail;if(next)selectTab(next)};
   window.addEventListener("tubex-navigate-tab",handleNavigate);
   return()=>window.removeEventListener("tubex-navigate-tab",handleNavigate);
  },[]);
- function selectTab(next:any){setTab(next);if(toolItems.some(([id]:any)=>id===next))setToolsOpen(true);setMobileOpen(false);const moduleByTab:Record<string,string>={ai:"ai",dashboard:"dashboard",intelligence:"intelligence_center",feed:"channel_feed",workspace:"seo_explorer",creator:"creator_workspace",achievements:"achievements",affiliate:"affiliate",account:"account",billing:"billing",support:"support",cancellations:"cancellations"};const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,next==="billing"?"pricing_viewed":"module_opened",module))}
+ // Aceita nomes antigos (feed, workspace, creator…) para links e eventos existentes.
+ function selectTab(raw:string){
+  const [base,sub]=String(raw).split(":");
+  const legacy:Record<string,Tab>={dashboard:"home",feed:"home",intelligence:"optimize",workspace:"research",creator:"research",billing:"account",analytics:"admin",behavior:"admin",usage:"admin",cancellations:"admin"};
+  const next=(legacy[base]||base) as Tab;
+  if(base==="creator"||sub==="ideas")setResearchSub("ideas");else if(base==="workspace"||sub==="keywords")setResearchSub("keywords");
+  const adminMap:Record<string,any>={analytics:"analytics",behavior:"subscribers",usage:"usage",cancellations:"cancellations",admin:"affiliates"};
+  if(next==="admin"&&base!=="admin")setAdminSub(adminMap[base]||"analytics");
+  setTab(next);setMobileOpen(false);
+  try{document.querySelector(".tx-dashboard-content")?.scrollTo({top:0,behavior:"smooth"})}catch{}
+  const moduleByTab:Record<string,string>={home:"dashboard",ai:"ai",research:"seo_explorer",optimize:"intelligence_center",achievements:"achievements",affiliate:"affiliate",account:"account",support:"support"};
+  const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"module_opened",module));
+ }
+ const navButton=(id:Tab,Icon:any,label:string,hint?:string,small=false)=><button key={id} onClick={()=>selectTab(id)} aria-current={tab===id?"page":undefined} className={`tx-nav-item ${small?"is-small":""} ${tab===id?"is-active":""}`}><span className="tx-nav-icon"><Icon size={small?15:17}/></span><span className="min-w-0 flex-1 text-left"><span className="block truncate">{label}</span>{hint&&<small className="tx-nav-hint">{hint}</small>}</span>{id==="admin"&&<span className="tx-owner-pill">OWNER</span>}</button>;
+ const planLabel=String(isOwner?"OWNER":(userData?.plan||"free")).toUpperCase();
  return <div className={`tx-saas-shell ${tab === "ai" ? "tx-shell-ai" : "tx-shell-page"} bg-[var(--tx-bg)] text-[var(--tx-text)]`}>
+  <WelcomeSplash name={displayName} userId={String(user?.id||"")}/>
   <aside className="tx-sidebar fixed inset-y-0 left-0 z-50 hidden w-[248px] border-r border-[var(--tx-border)] p-4 lg:flex lg:flex-col">
-   <div className="tx-sidebar-brand flex items-center justify-between gap-3"><Logo/><span className="tx-sidebar-edition">CREATOR STUDIO</span></div>
-   <a href="https://chromewebstore.google.com/detail/tubex-seo-analyzer-for-yo/lgddmmhnmkmkfhaodogcoecdecegemgk" target="_blank" rel="noreferrer" className="tx-extension-link mt-5"><span className="tx-extension-icon"><Puzzle size={15}/></span><span className="min-w-0 flex-1"><b>Instalar extensão</b><small>Leve o TubeX para o YouTube</small></span><ExternalLink size={13}/></a>
-   <label className="tx-nav-search mt-5"><Search size={14}/><input value={navQuery} onChange={e=>setNavQuery(e.target.value)} placeholder="Buscar ferramenta..." aria-label="Buscar módulo"/><kbd>⌕</kbd></label>
-   {(() => {
-    const q=navQuery.trim().toLocaleLowerCase();
-    const matches=(items:any[])=>items.filter(([id,Icon,label]:any)=>!q||String(label).toLocaleLowerCase().includes(q)||String(id).toLocaleLowerCase().includes(q));
-    const primary=matches([navItems[0]]);
-    const growth=matches([navItems[1],...toolItems]);
-    const admin=matches(navItems.filter(([id]:any)=>["admin","analytics","behavior","usage","cancellations"].includes(id)));
-    const account=matches(navItems.filter(([id]:any)=>["account","billing","support"].includes(id)));
-    const renderItems=(items:any[])=>items.map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} aria-current={tab===id?"page":undefined} className={`tx-nav-item ${tab===id?"is-active":""}`}><span className="tx-nav-icon"><Icon size={16}/></span><span className="min-w-0 flex-1 truncate">{label}</span>{id==="admin"&&<span className="tx-owner-pill">OWNER</span>}{tab===id&&<span className="tx-nav-active-dot"/>}</button>);
-    return <nav className="tx-sidebar-nav" aria-label="Navegação principal">
-     {primary.length>0&&<section className="tx-nav-group"><p className="tx-nav-heading">ESPAÇO DE TRABALHO</p>{renderItems(primary)}</section>}
-     {growth.length>0&&<section className="tx-nav-group"><p className="tx-nav-heading">CRESCIMENTO</p>{renderItems(growth.filter(([id]:any)=>id==="affiliate"))}<button onClick={()=>setToolsOpen(v=>!v)} aria-expanded={toolsOpen||growth.some(([id]:any)=>toolItems.some(([toolId]:any)=>toolId===id&&tab===id))} className={`tx-nav-item ${toolItems.some(([id]:any)=>id===tab)?"is-active": ""}`}><span className="tx-nav-icon"><Puzzle size={16}/></span><span className="min-w-0 flex-1">Ferramentas</span>{toolsOpen?<ChevronUp size={14}/>:<ChevronDown size={14}/>}</button>{(toolsOpen||!!q||toolItems.some(([id]:any)=>id===tab))&&<div className="tx-nav-subitems">{renderItems(matches(toolItems))}</div>}</section>}
-     {admin.length>0&&<section className="tx-nav-group"><p className="tx-nav-heading">ADMINISTRAÇÃO</p>{renderItems(admin)}</section>}
-     {account.length>0&&<section className="tx-nav-group"><p className="tx-nav-heading">CONTA</p>{renderItems(account)}</section>}
-     {q&&primary.length+growth.length+admin.length+account.length===0&&<p className="tx-nav-empty">Nenhum módulo encontrado.</p>}
-    </nav>;
-   })()}
-   <div className="tx-sidebar-bottom mt-auto">
-    <div className="tx-sidebar-user"><div className="tx-sidebar-avatar">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-1"><p className="truncate text-[11px] font-bold">{displayName}</p>{isOwner&&<span className="tx-owner-pill">OWNER</span>}</div><p className="truncate text-[9px] text-[var(--tx-muted)]">{user?.email}</p></div><span className="tx-session-dot" title="Sessão ativa"/></div>
-    <button onClick={logout} className="tx-logout-link"><LogOut size={15}/>{t.logout}</button>
+   <div className="tx-sidebar-brand flex items-center justify-between gap-3"><Logo/></div>
+   <nav className="tx-sidebar-nav" aria-label="Navegação principal">
+    <section className="tx-nav-group">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}</section>
+    <section className="tx-nav-group tx-nav-secondary"><p className="tx-nav-heading">Mais</p>{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</section>
+   </nav>
+   <div className="tx-sidebar-bottom mt-auto space-y-2">
+    {!["expert","owner"].includes(plan)&&<button onClick={()=>selectTab("account")} className="tx-upgrade-card"><Sparkles size={15}/><span><b>Seja Expert</b><small>Análises ilimitadas e IA avançada</small></span></button>}
+    <a href="https://chromewebstore.google.com/detail/tubex-seo-analyzer-for-yo/lgddmmhnmkmkfhaodogcoecdecegemgk" target="_blank" rel="noreferrer" className="tx-extension-link"><span className="tx-extension-icon"><Puzzle size={15}/></span><span className="min-w-0 flex-1"><b>Extensão TubeX</b><small>Use dentro do YouTube</small></span><ExternalLink size={13}/></a>
+    <div className="tx-sidebar-user"><div className="tx-sidebar-avatar">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{displayName}</p><p className="truncate text-[11px] text-[var(--tx-muted)]">Plano {planLabel}</p></div><button onClick={logout} title={t.logout} aria-label={t.logout} className="tx-icon-ghost"><LogOut size={15}/></button></div>
    </div>
   </aside>
   <main className="tx-app-main min-w-0 w-full lg:pl-[248px]">
    <header className="tx-topbar sticky top-0 z-40 border-b border-[var(--tx-border)] bg-[var(--tx-bg)]/90 backdrop-blur-xl">
     <div className="mx-auto flex h-[60px] w-full min-w-0 items-center gap-2 px-4 sm:h-[66px] sm:px-6 lg:px-8">
-     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={15}/>:<Menu size={15}/>}</button><Logo/></div><div className="hidden lg:block"><p className="text-[11px] font-black">{tab==="ai"?"TubeX AI":tab==="workspace"?"Workspace SEO":tab==="creator"?"Keyword Explorer":tab==="achievements"?"Conquistas":tab==="feed"?"Feed do canal":tab==="intelligence"?"Central de Inteligência":tab==="affiliate"?t.affiliate:tab==="admin"?t.admin:tab==="analytics"?"TubeX Analytics":tab==="behavior"?"Comportamento do Assinante":tab==="usage"?"Comportamento de Uso":tab==="cancellations"?"Cancelamentos":tab==="account"?t.account:tab==="billing"?t.billing:t.support}</p></div>
+     <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" aria-expanded={mobileOpen} className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={17}/>:<Menu size={17}/>}</button><Logo/></div>
+     <p className="hidden text-[15px] font-bold lg:block">{titles[tab]}</p>
      <div className="ml-auto flex items-center gap-2">
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
-      <button onClick={logout} title={t.logout} className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)] hover:text-[var(--tx-text)]"><LogOut size={14}/></button>
      </div>
     </div>
    </header>
-  {mobileOpen&&<div className="tx-mobile-menu lg:hidden max-h-[calc(100dvh-56px)] overflow-y-auto border-b border-[var(--tx-border)] px-3 py-3"><label className="tx-nav-search mb-3"><Search size={14}/><input value={navQuery} onChange={e=>setNavQuery(e.target.value)} placeholder="Buscar módulo ou ferramenta..." aria-label="Buscar módulo ou ferramenta"/></label><nav className="grid grid-cols-2 gap-1">{[...navItems,...(toolsOpen||navQuery?toolItems:[])].filter(([id,,label]:any)=>!navQuery||String(label).toLowerCase().includes(navQuery.toLowerCase())||String(id).toLowerCase().includes(navQuery.toLowerCase())).map(([id,Icon,label]:any)=><button key={id} onClick={()=>selectTab(id)} aria-current={tab===id?"page":undefined} className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-3 text-left text-[10px] font-extrabold ${tab===id?"border-[var(--tx-blue)]/30 bg-[var(--tx-blue-soft)] text-[var(--tx-text)]":"border-transparent text-[var(--tx-muted)] hover:bg-[var(--tx-surface-2)]"}`}><Icon size={15}/><span className="truncate">{label}</span></button>)}{!navQuery&&<button onClick={()=>setToolsOpen(v=>!v)} className="col-span-2 flex items-center justify-center gap-2 rounded-xl border border-[var(--tx-border)] px-3 py-2.5 text-[10px] font-extrabold text-[var(--tx-muted)]"><Puzzle size={14}/>{toolsOpen?"Ocultar ferramentas":"Mostrar ferramentas"}{toolsOpen?<ChevronUp size={13}/>:<ChevronDown size={13}/>}</button>}</nav></div>}
-   <div className={`tx-dashboard-content mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
-    {tab==="ai"&&<div className="tx-ai-home">
-     <section className="grid gap-2 xl:grid-cols-[1.15fr_.85fr]">
-      <div className="tx-surface flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--tx-border)] px-3 py-2.5 sm:px-4">
-       <div className="tx-channel-summary-avatar" title={channelContext?.channelName||userData?.youtube_channel_name||"Seu canal"}>{(channelContext?.channelThumbnail||achievementSummary?.profile?.channel_thumbnail)?<img src={channelContext?.channelThumbnail||achievementSummary?.profile?.channel_thumbnail} alt="Logo do canal conectado"/>:<span className="tx-channel-summary-avatar-fallback">{String(channelContext?.channelName||userData?.youtube_channel_name||"Y").slice(0,1).toUpperCase()}</span>}</div>
-       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2"><p className="tx-kicker shrink-0">DESEMPENHO</p><span className="truncate text-[10px] font-semibold text-[var(--tx-muted)]">{channelContext?.channelName||userData?.youtube_channel_name||"Seu canal"}</span></div>
-        <div className="mt-2 grid grid-cols-3 gap-2">
-         <MetricCompact label="Inscritos" value={channelContext?.subscribers ?? achievementSummary?.profile?.subscriber_count} icon={<Users size={12}/>}/>
-         <MetricCompact label="Visualizações" value={channelContext?.totalViews ?? achievementSummary?.profile?.total_views} icon={<Eye size={12}/>}/>
-         <MetricCompact label="Vídeos" value={channelContext?.videoCount ?? achievementSummary?.profile?.video_count} icon={<Video size={12}/>}/>
-        </div>
-       </div>
-       <div className="hidden h-12 w-[112px] shrink-0 sm:block"><MiniViewsChart history={achievementSummary?.history||[]}/></div>
-       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--tx-accent-soft)] text-[var(--tx-accent)]"><TrendingUp size={16}/></span>
-      </div>
-      <button onClick={()=>selectTab("achievements")} className="tx-surface group flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--tx-accent)]/30 px-3 py-2.5 text-left transition hover:border-[var(--tx-accent)]/70 hover:bg-[var(--tx-accent-soft)]/30 sm:px-4">
-       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--tx-accent-soft)] text-[var(--tx-accent)]"><Trophy size={19}/></span>
-       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><span className="tx-kicker">CONQUISTAS</span><strong className="text-[11px] font-black">{achievementSummary?.achievements?.filter((a:any)=>a.unlocked).length||0}/{achievementSummary?.achievements?.length||0}</strong><span className="text-[9px] text-[var(--tx-muted)]">desbloqueadas</span></div>
-        <div className="mt-1.5 flex items-center gap-1.5">
-         {(achievementSummary?.achievements||[]).filter((a:any)=>a.unlocked).slice(0,4).map((a:any,i:number)=><span key={a.code} title={a.title} className="grid h-6 w-6 place-items-center rounded-full border border-[var(--tx-accent)]/30 bg-[var(--tx-accent-soft)] text-[var(--tx-accent)]"><Trophy size={11}/></span>)}
-         {!(achievementSummary?.achievements||[]).some((a:any)=>a.unlocked)&&<span className="text-[10px] text-[var(--tx-muted)]">Seu primeiro troféu está à espera</span>}
-         <span className="ml-auto truncate text-[9px] text-[var(--tx-muted)]">{(achievementSummary?.achievements||[]).filter((a:any)=>!a.unlocked).sort((a:any,b:any)=>Number(b.progress||0)-Number(a.progress||0))[0]?.title||"Todas as metas concluídas"}</span>
-        </div>
-        <div className="mt-1.5 flex items-center gap-2"><div className="h-1 flex-1 overflow-hidden rounded-full bg-[var(--tx-border)]"><div className="h-full rounded-full bg-[var(--tx-accent)] transition-all" style={{width:`${Math.min(100,((achievementSummary?.achievements?.filter((a:any)=>a.unlocked).length||0)/Math.max(1,achievementSummary?.achievements?.length||1))*100)}%`}}/></div><span className="text-[8px] font-bold tabular-nums text-[var(--tx-muted)]">{Math.round(((achievementSummary?.achievements?.filter((a:any)=>a.unlocked).length||0)/Math.max(1,achievementSummary?.achievements?.length||1))*100)}%</span></div>
-       </div>
-       <ArrowRight size={14} className="shrink-0 text-[var(--tx-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--tx-accent)]"/>
-      </button>
-     </section>
-     <TubeXAIChat/>
-    </div>}
-    {tab==="intelligence"&&<IntelligenceCenter user={user} plan={isOwner ? "expert" : plan}/>}
-    {tab==="workspace"&&<SeoWorkspace user={user} plan={isOwner ? "expert" : plan}/> }
-    {tab==="creator"&&<CreatorWorkspace user={user} plan={isOwner ? "expert" : plan}/>}{tab==="feed"&&<FeedDashboard/>}{tab==="achievements"&&<AchievementsCenter user={user}/>}
-    {tab==="affiliate"&&<AffiliatePage userData={userData}/>} {tab==="admin"&&isOwner&&<AdminAffiliates/>}{tab==="analytics"&&isOwner&&<AdminAnalytics/>}{tab==="behavior"&&isOwner&&<AdminSubscriberBehavior/>}{tab==="usage"&&isOwner&&<AdminSubscriberBehavior segment="free"/>}{tab==="cancellations"&&isOwner&&<CancellationAdmin/>}{(tab==="admin"||tab==="analytics"||tab==="behavior"||tab==="usage"||tab==="cancellations")&&!isOwner&&<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACCESS DENIED</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1><p className="mt-3 text-sm text-[var(--tx-muted)]">Esta área é reservada ao administrador do TubeX.</p></section>}
-    {tab==="account"&&<Account user={user} userData={userData} t={t} isOwner={isOwner}/>}
-    {tab==="billing"&&<Billing user={user} userData={userData} t={t}/>} 
+   {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div><button onClick={logout} className="tx-logout-link mt-2"><LogOut size={15}/>{t.logout}</button></nav></div></>}
+   <div key={tab} className={`tx-dashboard-content tx-page-enter mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
+    {tab==="home"&&<ChannelHome achievementSummary={achievementSummary} displayName={displayName}/>}
+    {tab==="ai"&&<div className="tx-ai-home"><TubeXAIChat/></div>}
+    {tab==="research"&&<ResearchView user={user} plan={isOwner?"expert":plan} initial={researchSub}/>}
+    {tab==="optimize"&&<OptimizeView user={user} plan={isOwner?"expert":plan}/>}
+    {tab==="achievements"&&<AchievementsCenter user={user}/>}
+    {tab==="affiliate"&&<AffiliatePage userData={userData}/>}
+    {tab==="admin"&&(isOwner?<AdminHub initial={adminSub}/>:<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACESSO RESTRITO</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1></section>)}
+    {tab==="account"&&<div className="space-y-5"><Account user={user} userData={userData} t={t} isOwner={isOwner}/><Billing user={user} userData={userData} t={t}/></div>}
     {tab==="support"&&<Support t={t}/>}
    </div>
   </main>
+  <nav className="tx-bottom-nav lg:hidden" aria-label="Navegação rápida">{mainItems.map(([id,Icon,label])=><button key={id} onClick={()=>selectTab(id)} className={tab===id?"is-active":""} aria-current={tab===id?"page":undefined}><Icon size={19}/><span>{label}</span></button>)}</nav>
  </div>
 }
 
