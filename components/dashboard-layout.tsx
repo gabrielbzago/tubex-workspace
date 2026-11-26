@@ -206,7 +206,7 @@ export default function DashboardLayout({user}:{user:any}){
    <div className="tx-sidebar-bottom mt-auto space-y-2">
     {!["expert","owner"].includes(plan)&&<button onClick={()=>selectTab("account")} className="tx-upgrade-card"><Sparkles size={15}/><span><b>Seja Expert</b><small>Análises ilimitadas e IA avançada</small></span></button>}
     <a href="https://chromewebstore.google.com/detail/tubex-seo-analyzer-for-yo/lgddmmhnmkmkfhaodogcoecdecegemgk" target="_blank" rel="noreferrer" className="tx-extension-link"><span className="tx-extension-icon"><Puzzle size={15}/></span><span className="min-w-0 flex-1"><b>Extensão TubeX</b><small>Use dentro do YouTube</small></span><ExternalLink size={13}/></a>
-    <div className="tx-sidebar-user"><div className="tx-sidebar-avatar">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{displayName}</p><p className="truncate text-[11px] text-[var(--tx-muted)]">Plano {planLabel}</p></div><button onClick={logout} title={t.logout} aria-label={t.logout} className="tx-icon-ghost"><LogOut size={15}/></button></div>
+    <div className="tx-sidebar-user"><div className="tx-sidebar-avatar">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{displayName}</p><p className="truncate text-[11px] text-[var(--tx-muted)]">Plano {planLabel}</p></div><button onClick={logout} title={t.logout} aria-label={t.logout} className="tx-logout-pill"><LogOut size={14}/><span>Sair</span></button></div>
    </div>
   </aside>
   <main className="tx-app-main min-w-0 w-full lg:pl-[248px]">
@@ -220,7 +220,7 @@ export default function DashboardLayout({user}:{user:any}){
      </div>
     </div>
    </header>
-   {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div><button onClick={logout} className="tx-logout-link mt-2"><LogOut size={15}/>{t.logout}</button></nav></div></>}
+   {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div><button onClick={logout} className="tx-logout-link tx-logout-strong mt-3"><LogOut size={17}/>Sair da conta</button></nav></div></>}
    <div key={tab} className={`tx-dashboard-content tx-page-enter mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
     {tab==="home"&&<ChannelHome achievementSummary={achievementSummary} displayName={displayName}/>}
     {tab==="ai"&&<div className="tx-ai-home"><TubeXAIChat/></div>}

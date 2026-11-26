@@ -1792,3 +1792,7 @@ html[data-theme] .tx-dashboard-content .tx-select.tx-select,html .tx-dashboard-c
 @media (max-width:1023px){
   .tx-saas-shell .tx-dashboard-content.is-page{flex:1 1 0%!important;height:auto!important;min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom}
 }
+/* Botão Sair visível (PC e celular) */
+.tx-saas-shell .tx-logout-pill{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;height:32px;padding:0 10px;border:1px solid var(--tx-border);border-radius:9px;color:var(--tx-muted);font-size:12px;font-weight:700;background:transparent}
+.tx-saas-shell .tx-logout-pill:hover{color:var(--tx-red);border-color:color-mix(in srgb,var(--tx-red) 40%,transparent);background:color-mix(in srgb,var(--tx-red) 8%,transparent)}
+.tx-saas-shell .tx-logout-strong{justify-content:center;min-height:46px;border:1px solid color-mix(in srgb,var(--tx-red) 35%,transparent);border-radius:12px;color:var(--tx-red)!important;font-size:14px!important;font-weight:700;background:color-mix(in srgb,var(--tx-red) 7%,transparent)}
