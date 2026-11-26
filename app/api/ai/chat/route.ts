@@ -15,7 +15,25 @@ export const maxDuration = 45;
 const MODEL = process.env.GROQ_CHAT_MODEL || "openai/gpt-oss-20b";
 const TPM_LIMIT = Math.max(1000, Number(process.env.GROQ_TPM_LIMIT || 6800));
 const WINDOW_SECONDS = 60;
-const PROMPT_CHAR_BUDGET = 14000;
+const PROMPT_CHAR_BUDGET = 12000;
+// Os modelos gpt-oss "pensam" antes de responder e esse raciocínio consome o mesmo
+// limite de saída. Com 600 tokens a resposta era cortada no meio (ex.: tabela pela metade).
+const OUTPUT_BUDGET = { fast: 2400, deep: 4200 } as const;
+const MIN_OUTPUT_TOKENS = 900;
+const IS_REASONING_MODEL = /gpt-oss|qwen3|deepseek-r1/i.test(MODEL);
+
+/** Remove o pedaço final incompleto quando o modelo bate no limite de saída. */
+function trimTruncatedAnswer(text: string) {
+  const lines = text.replace(/\s+$/, "").split("\n");
+  // Tabela que ficou só no cabeçalho, ou linha de tabela/lista interrompida.
+  while (lines.length && /^\s*\|/.test(lines[lines.length - 1])) lines.pop();
+  // Último parágrafo sem pontuação final costuma ser frase cortada.
+  const last = lines[lines.length - 1] || "";
+  if (last && !/[.!?:)…*]\s*$/.test(last) && lines.length > 3) lines.pop();
+  // Título ou linhas vazias que ficaram sem conteúdo depois do corte.
+  while (lines.length > 1 && /^\s*(#{1,6}\s.*)?$/.test(lines[lines.length - 1])) lines.pop();
+  return lines.join("\n").replace(/\s+$/, "");
+}
 
 async function getPlanAndUsage(user: any) {
   const resolved = await resolveAccountPlan(user);
@@ -142,7 +160,7 @@ export async function POST(request: Request) {
     const context = body.channelContext && typeof body.channelContext === "object" ? body.channelContext : {};
     const compactContext = JSON.stringify(context).slice(0, 4000);
     const mode = body.mode === "deep" ? "deep" : "fast";
-    const maxCompletionTokens = mode === "deep" ? 900 : 600;
+    let maxCompletionTokens: number = OUTPUT_BUDGET[mode];
 
     const planInfo = await getPlanAndUsage(user);
     const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
@@ -166,7 +184,8 @@ export async function POST(request: Request) {
 
 FORMATAÇÃO:
 - Markdown simples: títulos curtos com ##, negrito, listas e parágrafos curtos.
-- Evite tabelas salvo quando forem realmente úteis.
+- Tabelas só quando ajudarem de verdade: no máximo 4 colunas e 6 linhas, células curtas. Nunca deixe uma tabela incompleta.
+- Termine sempre a resposta com uma conclusão ou "Próximos passos" numerados. Prefira uma resposta completa e enxuta a uma longa que fique pela metade.
 - Não mostre sintaxe ou instruções de formatação como texto.
 - Não repita a pergunta. Comece pela resposta principal.
 
@@ -176,8 +195,8 @@ PEDIDOS DE TÍTULOS:
 - Destaque uma aposta principal sem prometer CTR ou viralização.
 
 ${mode === "deep"
-      ? "MODO PROFUNDO: diagnóstico, evidências, hipóteses, prioridades e próximos passos."
-      : "MODO RÁPIDO: resposta concisa e orientada à ação."}
+      ? "MODO PROFUNDO: diagnóstico, evidências, hipóteses, prioridades e próximos passos. Até cerca de 900 palavras."
+      : "MODO RÁPIDO: resposta direta e orientada à ação, até cerca de 400 palavras. Em pedidos de diagnóstico, traga os 3 a 5 pontos mais importantes e as prioridades."}
 
 CONTEXTO DO CANAL:
 ${compactContext}
@@ -191,9 +210,15 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
       max_completion_tokens: maxCompletionTokens,
       temperature: 0.4,
       stream: false,
+      ...(IS_REASONING_MODEL ? { reasoning_effort: mode === "deep" ? "medium" : "low" } : {}),
     };
 
-    const requestedTokens = Math.ceil(estimateTokens(requestBody) * 1.12) + 60;
+    // A Groq conta entrada + saída máxima no limite por minuto. Se a conversa já é
+    // grande, a saída é reduzida para caber, sem nunca ficar abaixo do mínimo.
+    const promptTokens = Math.ceil(estimateTokens(requestBody.messages) * 1.12) + 60;
+    maxCompletionTokens = Math.min(maxCompletionTokens, Math.max(MIN_OUTPUT_TOKENS, TPM_LIMIT - promptTokens - 100));
+    requestBody.max_completion_tokens = maxCompletionTokens;
+    const requestedTokens = promptTokens + maxCompletionTokens;
     if (requestedTokens > TPM_LIMIT) {
       await releaseCredits(user.id, reservation);
       creditReserved = false;
@@ -250,8 +275,17 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
       });
     }
 
-    const answer = data?.choices?.[0]?.message?.content?.trim();
-    if (!answer) throw new Error("Groq não retornou uma resposta válida.");
+    const choice = data?.choices?.[0];
+    let answer: string = String(choice?.message?.content || "").trim();
+    const truncated = choice?.finish_reason === "length";
+    if (truncated && answer) {
+      answer = `${trimTruncatedAnswer(answer)}\n\n_Resposta resumida por limite de tamanho. Peça "continue" para ver o restante._`;
+    }
+    if (!answer) {
+      throw new Error(truncated
+        ? "A análise ficou grande demais para uma resposta. Seus créditos foram devolvidos; tente pedir um ponto específico ou use a Análise profunda."
+        : "Groq não retornou uma resposta válida.");
+    }
 
     const actualTokens = Number(data?.usage?.total_tokens || 0);
     if (actualTokens > 0) await settleProviderTokens(providerReservationId, actualTokens);
@@ -266,6 +300,7 @@ Analise o contexto enviado, explique métricas e sugira títulos, pautas, roteir
       credits: reservedCost,
       prompt_chars: lastUserMessage.length,
       total_tokens: actualTokens || null,
+      truncated,
     });
     return NextResponse.json({
       answer,
