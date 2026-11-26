@@ -1843,3 +1843,4 @@ html .tx-sheet-wrap .tx-comment-reply textarea.tx-reply-input,html[data-theme] .
 .tx-saas-shell.tx-sheet-wrap{background:transparent!important;min-height:0!important}
 .tx-saas-shell .tx-nav-owner{margin-top:6px;padding-top:10px;border-top:1px solid var(--tx-border)}
 .tx-saas-shell .tx-owner-tag{margin-left:6px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,#f2c94c 16%,transparent);color:#f2c94c;font-size:9px;letter-spacing:.08em}
+:root{--tx-font-body:"Inter";--tx-font-display:"Plus Jakarta Sans"}
