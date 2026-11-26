@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { connectYouTube } from "@/lib/tubex-youtube";
 import {
   Activity, AlertCircle, ArrowDownRight, ArrowUpRight, BarChart3, CheckCircle2,
   Clock3, Eye, MessageCircle, PlayCircle, RefreshCw, ThumbsUp, TrendingDown,
@@ -47,8 +48,9 @@ async function yt(path: string, token: string) {
   const r = await fetch(`${API}/${path}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const error = new Error(d?.error?.message || `YouTube API: ${r.status}`) as Error & { status?: number };
+    const error = new Error(d?.error?.message || `YouTube API: ${r.status}`) as Error & { status?: number; reason?: string };
     error.status = r.status;
+    error.reason = String(d?.error?.errors?.[0]?.reason || d?.error?.status || "");
     throw error;
   }
   return d;
@@ -88,6 +90,7 @@ export default function FeedDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [commentWarning, setCommentWarning] = useState("");
+  const [commentStatus, setCommentStatus] = useState<"ok" | "partial" | "auth" | "quota" | "error">("ok");
   const [updated, setUpdated] = useState("");
   const [range, setRange] = useState<Period>("28");
 
@@ -149,25 +152,53 @@ export default function FeedDashboard() {
         window.dispatchEvent(new Event("tubex-channel-context"));
       } catch {}
 
+      // Comentários sem resposta: só vídeos públicos com comentários, em paralelo.
+      // Vídeos com comentários desativados (ex.: conteúdo infantil) ou privados não são erro.
       const pending: CommentRow[] = [];
-      let commentDenied = false;
-      for (const v of rows.slice(0, 12)) {
+      const recent = rows.slice(0, 12);
+      const candidates = recent.filter(v => v.comments > 0);
+      const issues = { disabled: 0, auth: 0, quota: 0, other: 0, checked: 0 };
+      await Promise.all(candidates.map(async v => {
+        let pageToken = "";
         try {
-          const p = new URLSearchParams({ part: "snippet,replies", videoId: v.id, maxResults: "100", order: "time" });
-          const result = await yt(`commentThreads?${p.toString()}`, token);
-          for (const item of result.items || []) {
-            const top = item.snippet?.topLevelComment?.snippet;
-            if (!top) continue;
-            if (Number(item.snippet?.totalReplyCount || 0) === 0) pending.push({
-              id: String(item.id), videoId: v.id, videoTitle: v.title, author: top.authorDisplayName || "Usuário",
-              text: top.textDisplay || "", publishedAt: top.publishedAt || "", likes: Number(top.likeCount || 0), replies: 0
-            });
+          for (let page = 0; page < 3; page++) {
+            const p = new URLSearchParams({ part: "snippet", videoId: v.id, maxResults: "100", order: "time", textFormat: "plainText" });
+            if (pageToken) p.set("pageToken", pageToken);
+            const result = await yt(`commentThreads?${p.toString()}`, token);
+            for (const item of result.items || []) {
+              const top = item.snippet?.topLevelComment?.snippet;
+              if (!top) continue;
+              // Ignora comentários do próprio canal e os que já têm resposta.
+              if (String(top.authorChannelId?.value || "") === selected.id) continue;
+              if (Number(item.snippet?.totalReplyCount || 0) > 0) continue;
+              pending.push({
+                id: String(item.id), videoId: v.id, videoTitle: v.title, author: top.authorDisplayName || "Usuário",
+                text: top.textDisplay || top.textOriginal || "", publishedAt: top.publishedAt || "", likes: Number(top.likeCount || 0), replies: 0
+              });
+            }
+            pageToken = String(result.nextPageToken || "");
+            if (!pageToken) break;
           }
-        } catch (e: any) { commentDenied = true; console.warn("TubeX comments", e?.message); }
-      }
+          issues.checked++;
+        } catch (e: any) {
+          const reason = String(e?.reason || "");
+          if (/commentsDisabled|videoNotFound|forbidden|processingFailure/i.test(reason) && e?.status !== 401) issues.disabled++;
+          else if (e?.status === 401 || /insufficientPermissions|authError|unauthorized|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(reason)) issues.auth++;
+          else if (/quota|rateLimit|userRateLimitExceeded/i.test(reason)) issues.quota++;
+          else issues.other++;
+          console.warn("TubeX comments", v.id, e?.status, reason, e?.message);
+        }
+      }));
       pending.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
       setComments(pending);
-      setCommentWarning(commentDenied ? "A API não liberou todos os comentários. O total pendente pode estar incompleto; confira as permissões OAuth do canal." : "");
+      const failed = issues.auth + issues.quota + issues.other;
+      setCommentStatus(issues.auth ? "auth" : issues.quota ? "quota" : failed && !issues.checked ? "error" : failed ? "partial" : "ok");
+      setCommentWarning(
+        issues.auth ? "Sua autorização do Google expirou ou não inclui leitura de comentários. Reconecte o YouTube para ver os comentários pendentes."
+        : issues.quota ? "O limite diário da API do YouTube foi atingido. Tente de novo mais tarde."
+        : failed ? `Não foi possível ler os comentários de ${failed} ${failed === 1 ? "vídeo" : "vídeos"}. A lista abaixo pode estar incompleta.`
+        : issues.disabled ? `${issues.disabled} ${issues.disabled === 1 ? "vídeo tem" : "vídeos têm"} comentários desativados ou indisponíveis e ${issues.disabled === 1 ? "foi ignorado" : "foram ignorados"}.`
+        : "");
       setUpdated(new Date().toLocaleString("pt-BR"));
     } catch (e: any) {
       setError(e?.message || "Não foi possível carregar os dados.");
@@ -238,7 +269,7 @@ export default function FeedDashboard() {
       <Metric label="Visualizações do canal" value={number(channel?.views || 0)} sub="Total acumulado do canal" icon={Eye}/>
       <Metric label="Inscritos" value={number(channel?.subscribers || 0)} sub="Inscritos públicos atuais" icon={Users} tone="green"/>
       <Metric label="Views em novos vídeos" value={number(totalViews)} sub={`${filtered.length} publicações nos últimos ${days} dias`} icon={PlayCircle}/>
-      <Metric label="Comentários sem resposta" value={number(comments.length)} sub="Nos 12 vídeos mais recentes" icon={MessageCircle} tone={comments.length ? "red" : "green"}/>
+      <Metric label="Comentários sem resposta" value={!comments.length && ["auth", "quota", "error"].includes(commentStatus) ? "—" : number(comments.length)} sub={!comments.length && ["auth", "quota", "error"].includes(commentStatus) ? "Não foi possível ler agora" : "Nos 12 vídeos mais recentes"} icon={MessageCircle} tone={comments.length ? "red" : ["auth", "quota", "error"].includes(commentStatus) ? "gold" : "green"}/>
     </div>
 
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -282,10 +313,16 @@ export default function FeedDashboard() {
       </Panel>
     </div>
 
-    <Panel title="Comentários que aguardam resposta" subtitle="Comentários sem resposta nos 12 vídeos mais recentes. A resposta é feita no YouTube Studio." icon={MessageCircle} action={<span className="rounded-full bg-rose-500/10 px-3 py-1 text-[10px] font-black text-rose-500">{comments.length} pendentes</span>}>
-      {commentWarning && <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-5 text-amber-600">{commentWarning}</div>}
-      {comments.length ? <div className="grid gap-3 lg:grid-cols-2">{comments.slice(0, 16).map(c => <div key={c.id} className="rounded-xl border border-[var(--tx-border)] p-3"><div className="flex items-center justify-between gap-2"><p className="text-xs font-black">{c.author}</p><span className="text-[10px] text-[var(--tx-muted)]">{date(c.publishedAt)}</span></div><p className="mt-2 text-xs leading-5 text-[var(--tx-muted)]">{short(c.text.replace(/<[^>]*>/g, ""), 220)}</p><p className="mt-2 text-[10px] text-[var(--tx-muted)]">No vídeo: {short(c.videoTitle, 80)}</p><a target="_blank" rel="noreferrer" href={`https://studio.youtube.com/video/${c.videoId}/comments`} className="mt-2 inline-flex items-center gap-1 text-[10px] font-black text-[var(--tx-accent-strong)]">Responder no YouTube <ExternalLink size={12}/></a></div>)}</div> : <div className="py-8 text-center"><CheckCircle2 className="mx-auto text-emerald-500" size={28}/><p className="mt-2 text-sm font-bold">{commentWarning ? "Não foi possível confirmar os comentários pendentes" : "Nenhum comentário sem resposta encontrado"}</p><p className="mt-1 text-[10px] text-[var(--tx-muted)]">A busca considera os 12 vídeos mais recentes e comentários acessíveis pela API.</p></div>}
-    </Panel>
+    {(() => {
+      const failedAll = !comments.length && ["auth", "quota", "error"].includes(commentStatus);
+      const warnTone = commentStatus !== "ok";
+      return <Panel title="Comentários que aguardam resposta" subtitle="Comentários sem resposta nos 12 vídeos mais recentes. A resposta é feita no YouTube Studio." icon={MessageCircle} action={failedAll ? <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[10px] font-black text-amber-500">Indisponível</span> : <span className={`rounded-full px-3 py-1 text-[10px] font-black ${comments.length ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"}`}>{comments.length} {comments.length === 1 ? "pendente" : "pendentes"}{commentStatus === "partial" ? "+" : ""}</span>}>
+        {commentWarning && !failedAll && <div className={`mb-3 rounded-xl border p-3 text-xs leading-5 ${warnTone ? "border-amber-500/25 bg-amber-500/5 text-amber-500" : "border-[var(--tx-border)] bg-[var(--tx-surface-2)] text-[var(--tx-muted)]"}`}>{commentWarning}</div>}
+        {comments.length ? <div className="grid gap-3 lg:grid-cols-2">{comments.slice(0, 16).map(c => <div key={c.id} className="rounded-xl border border-[var(--tx-border)] p-3"><div className="flex items-center justify-between gap-2"><p className="text-xs font-black">{c.author}</p><span className="text-[10px] text-[var(--tx-muted)]">{date(c.publishedAt)}</span></div><p className="mt-2 text-xs leading-5 text-[var(--tx-muted)]">{short(c.text.replace(/<[^>]*>/g, ""), 220)}</p><p className="mt-2 text-[10px] text-[var(--tx-muted)]">No vídeo: {short(c.videoTitle, 80)}</p><a target="_blank" rel="noreferrer" href={`https://studio.youtube.com/video/${c.videoId}/comments`} className="mt-2 inline-flex items-center gap-1 text-[10px] font-black text-[var(--tx-accent-strong)]">Responder no YouTube <ExternalLink size={12}/></a></div>)}</div>
+        : failedAll ? <div className="py-8 text-center"><AlertCircle className="mx-auto text-amber-500" size={28}/><p className="mt-2 text-sm font-bold">Não conseguimos ler os comentários agora</p><p className="mx-auto mt-1 max-w-md text-xs leading-5 text-[var(--tx-muted)]">{commentWarning}</p>{commentStatus === "auth" ? <button onClick={() => { void connectYouTube().catch(() => {}); }} className="tx-btn tx-btn-primary mt-4 px-4 py-2 text-xs">Reconectar YouTube</button> : <button onClick={() => load()} className="tx-btn tx-btn-secondary mt-4 px-4 py-2 text-xs"><RefreshCw size={13}/> Tentar de novo</button>}</div>
+        : <div className="py-8 text-center"><CheckCircle2 className="mx-auto text-emerald-500" size={28}/><p className="mt-2 text-sm font-bold">Tudo respondido</p><p className="mt-1 text-[10px] text-[var(--tx-muted)]">Nenhum comentário sem resposta nos 12 vídeos mais recentes.</p></div>}
+      </Panel>;
+    })()}
 
     <p className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-3 text-[10px] leading-5 text-[var(--tx-muted)]">Transparência dos dados: este painel usa a YouTube Data API. Views, curtidas, comentários, inscritos, duração e datas são dados públicos retornados pelo YouTube. CTR, impressões, retenção, tempo de exibição, origem de tráfego e crescimento diário de inscritos exigem YouTube Analytics API e permissões adicionais; não são estimados aqui.</p>
   </div>;
