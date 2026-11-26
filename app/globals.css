@@ -1796,3 +1796,50 @@ html[data-theme] .tx-dashboard-content .tx-select.tx-select,html .tx-dashboard-c
 .tx-saas-shell .tx-logout-pill{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;height:32px;padding:0 10px;border:1px solid var(--tx-border);border-radius:9px;color:var(--tx-muted);font-size:12px;font-weight:700;background:transparent}
 .tx-saas-shell .tx-logout-pill:hover{color:var(--tx-red);border-color:color-mix(in srgb,var(--tx-red) 40%,transparent);background:color-mix(in srgb,var(--tx-red) 8%,transparent)}
 .tx-saas-shell .tx-logout-strong{justify-content:center;min-height:46px;border:1px solid color-mix(in srgb,var(--tx-red) 35%,transparent);border-radius:12px;color:var(--tx-red)!important;font-size:14px!important;font-weight:700;background:color-mix(in srgb,var(--tx-red) 7%,transparent)}
+/* Conta + Sair abaixo do nome */
+.tx-saas-shell .tx-sidebar-account{display:grid;gap:8px}
+.tx-saas-shell .tx-logout-wide{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;min-height:42px;border:1px solid color-mix(in srgb,var(--tx-red) 30%,var(--tx-border));border-radius:12px;color:var(--tx-red);font-size:13.5px;font-weight:700;background:color-mix(in srgb,var(--tx-red) 6%,transparent)}
+.tx-saas-shell .tx-logout-wide:hover{background:color-mix(in srgb,var(--tx-red) 14%,transparent);transform:translateY(-1px)}
+/* Comentários sem resposta nos cards */
+.tx-saas-shell .tx-vcard-pending{display:flex;align-items:center;gap:6px;width:100%;margin-top:10px;padding:8px 10px;border-radius:10px;font-size:12.5px;text-align:left}
+.tx-saas-shell .tx-vcard-pending.is-loading{color:var(--tx-muted)}
+.tx-saas-shell .tx-vcard-pending.is-done{color:var(--tx-green)}
+.tx-saas-shell .tx-vcard-pending.is-open{border:1px solid color-mix(in srgb,#f2c94c 35%,transparent);background:color-mix(in srgb,#f2c94c 10%,transparent);color:#f2c94c;font-weight:600}
+.tx-saas-shell .tx-vcard-pending.is-open:hover{background:color-mix(in srgb,#f2c94c 18%,transparent);transform:translateY(-1px)}
+.tx-saas-shell .tx-vcard-pending b{font-weight:800}
+.tx-saas-shell .tx-chip.is-comments{display:inline-flex;align-items:center;gap:6px;color:#f2c94c;background:color-mix(in srgb,#f2c94c 12%,transparent)}
+.tx-saas-shell .tx-comments-auth{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 16px;border:1px solid color-mix(in srgb,#f59e0b 35%,transparent);border-radius:14px;background:color-mix(in srgb,#f59e0b 8%,transparent);color:#fbbf24;font-size:13px}
+.tx-saas-shell .tx-comments-auth p{flex:1 1 260px;color:var(--tx-text)}
+/* Painel de comentários: diálogo no PC, bottom sheet no celular */
+.tx-sheet-wrap{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}
+.tx-sheet-scrim{position:absolute;inset:0;background:rgba(3,7,15,.62);backdrop-filter:blur(4px);animation:tx-fade .2s ease both}
+.tx-sheet{position:relative;display:flex;flex-direction:column;width:min(640px,100%);max-height:min(84vh,820px);border:1px solid var(--tx-border);border-radius:20px;background:var(--tx-surface);color:var(--tx-text);box-shadow:0 30px 80px rgba(0,0,0,.5);animation:tx-sheet-in .28s var(--tx-ease,ease) both;overflow:hidden}
+@keyframes tx-sheet-in{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+.tx-sheet-head{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--tx-border)}
+.tx-sheet-head img{width:88px;aspect-ratio:16/9;flex-shrink:0;border-radius:10px;object-fit:cover}
+.tx-sheet-close{display:grid;width:36px;height:36px;flex-shrink:0;place-items:center;border-radius:10px;color:var(--tx-muted)}
+.tx-sheet-close:hover{background:var(--tx-surface-2);color:var(--tx-text)}
+.tx-sheet-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:14px 18px;display:grid;gap:10px;align-content:start}
+.tx-sheet-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:12px 18px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--tx-border);font-size:12px;color:var(--tx-muted)}
+.tx-sheet-foot a{display:inline-flex;align-items:center;gap:5px;font-weight:700;color:var(--tx-blue,#5b9bff)}
+.tx-sheet-alert{display:flex;gap:10px;padding:12px 14px;border:1px solid color-mix(in srgb,#f59e0b 35%,transparent);border-radius:12px;background:color-mix(in srgb,#f59e0b 8%,transparent);color:#fbbf24;font-size:13px}
+.tx-sheet-alert p{color:var(--tx-text)}
+.tx-comment{padding:12px;border:1px solid var(--tx-border);border-radius:14px;background:var(--tx-surface-2)}
+.tx-comment-reply{display:flex;align-items:flex-end;gap:8px;margin-top:10px}
+.tx-comment-reply textarea{flex:1;min-height:40px;max-height:160px;resize:none;padding:9px 12px;border:1px solid var(--tx-border)!important;border-radius:12px!important;background:var(--tx-surface)!important;color:var(--tx-text)!important;font-size:14px;line-height:1.4;outline:none}
+.tx-comment-reply textarea:focus{border-color:var(--tx-blue,#5b9bff)!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--tx-blue,#5b9bff) 20%,transparent)}
+.tx-comment-reply button{display:grid;width:40px;height:40px;flex-shrink:0;place-items:center;border-radius:12px;background:var(--tx-blue,#3b82f6);color:#fff}
+.tx-comment-reply button:disabled{opacity:.4;cursor:not-allowed}
+@media (max-width:640px){
+  .tx-sheet-wrap{align-items:flex-end;padding:0}
+  .tx-sheet{width:100%;max-height:90dvh;border-radius:20px 20px 0 0;border-bottom:0;animation-name:tx-sheet-up}
+  @keyframes tx-sheet-up{from{transform:translateY(100%)}to{transform:none}}
+  .tx-sheet-head img{width:64px}
+  .tx-sheet-body{padding:12px}
+  .tx-comment-reply textarea{font-size:16px}
+}
+@media (prefers-reduced-motion:reduce){.tx-sheet,.tx-sheet-scrim{animation:none!important}}
+html .tx-sheet-wrap .tx-comment-reply textarea.tx-reply-input,html[data-theme] .tx-sheet-wrap .tx-comment-reply textarea{background:var(--tx-surface)!important;color:var(--tx-text)!important}
+.tx-saas-shell.tx-sheet-wrap{background:transparent!important;min-height:0!important}
+.tx-saas-shell .tx-nav-owner{margin-top:6px;padding-top:10px;border-top:1px solid var(--tx-border)}
+.tx-saas-shell .tx-owner-tag{margin-left:6px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,#f2c94c 16%,transparent);color:#f2c94c;font-size:9px;letter-spacing:.08em}

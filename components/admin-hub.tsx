@@ -7,8 +7,9 @@ import CancellationAdmin from "./cancellation-center";
 
 type Sub = "analytics" | "subscribers" | "usage" | "cancellations" | "affiliates";
 const TABS: [Sub, string][] = [["analytics", "Analytics"], ["subscribers", "Assinantes"], ["usage", "Uso (free)"], ["cancellations", "Cancelamentos"], ["affiliates", "Afiliados"]];
-export default function AdminHub({ initial = "analytics" }: { initial?: Sub }) {
-  const [sub, setSub] = useState<Sub>(initial);
+export default function AdminHub({ initial = "analytics", onChange }: { initial?: Sub; onChange?: (s: Sub) => void }) {
+  const [sub, setSubState] = useState<Sub>(initial);
+  const setSub = (s: Sub) => { setSubState(s); onChange?.(s); };
   return (
     <div className="space-y-5">
       <nav className="tx-tabs" role="tablist" aria-label="Administração">

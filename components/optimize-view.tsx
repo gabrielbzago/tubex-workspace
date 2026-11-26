@@ -1,7 +1,8 @@
 "use client";
-import { useMemo, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Sparkles, LayoutGrid, List, Loader2, MonitorPlay as Youtube, RefreshCw, ThumbsUp, MessageCircle, Eye, Wrench } from "lucide-react";
-import { useChannelData, connectYouTube, baselineFor, compact, ago, type YTVideo } from "@/lib/tubex-youtube";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ArrowUpRight, ArrowDownRight, Sparkles, LayoutGrid, List, Loader2, MonitorPlay as Youtube, RefreshCw, ThumbsUp, MessageCircle, Eye, Wrench, X, Send, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useChannelData, connectYouTube, baselineFor, compact, ago, fetchUnansweredMany, fetchUnanswered, replyToComment, YT_COMMENT_SCOPE_HINT, type YTVideo, type CommentState, type YTComment } from "@/lib/tubex-youtube";
 import IntelligenceCenter from "./intelligence-center";
 import FeedDashboard from "./feed-dashboard";
 
@@ -28,7 +29,7 @@ function analyse(videos: YTVideo[]): Row[] {
   });
 }
 
-function VideoCard({ v, i }: { v: Row; i: number }) {
+function VideoCard({ v, i, pending, onComments }: { v: Row; i: number; pending?: CommentState | "loading"; onComments: () => void }) {
   return (
     <article className="tx-vcard tx-rise" style={{ animationDelay: `${Math.min(i, 12) * 45}ms` }}>
       <a href={`https://www.youtube.com/watch?v=${v.id}`} target="_blank" rel="noreferrer" className="tx-vcard-thumb">
@@ -44,10 +45,83 @@ function VideoCard({ v, i }: { v: Row; i: number }) {
           <span title="Comentários"><MessageCircle size={13} />{compact(v.comments)}</span>
           <span className="ml-auto">{ago(v.publishedAt)}</span>
         </div>
+        <PendingButton pending={pending} hasComments={v.comments > 0} onClick={onComments} />
         {v.hint && <div className="tx-vcard-hint"><Wrench size={13} /><span>{v.hint}</span></div>}
         <button onClick={() => askAI(`Quero melhorar meu vídeo "${v.title}" (${v.views} views, ${v.likes} curtidas, ${v.comments} comentários, publicado ${ago(v.publishedAt)}${v.ratio !== null ? `, ${v.ratio.toFixed(1)}x minha média` : ""}). Sugira 3 títulos melhores e ideias de thumbnail.`)} className="tx-vcard-ai"><Sparkles size={13} /> Melhorar com IA</button>
       </div>
     </article>
+  );
+}
+
+
+function PendingButton({ pending, hasComments, onClick }: { pending?: CommentState | "loading"; hasComments: boolean; onClick: () => void }) {
+  if (!hasComments) return null;
+  if (pending === "loading" || pending === undefined) return <span className="tx-vcard-pending is-loading"><Loader2 size={13} className="animate-spin" />Verificando comentários…</span>;
+  if (pending.status === "disabled") return null;
+  if (pending.status !== "ok") return null;
+  const n = pending.items.length;
+  if (!n) return <span className="tx-vcard-pending is-done"><CheckCircle2 size={13} />Comentários respondidos</span>;
+  return <button type="button" onClick={onClick} className="tx-vcard-pending is-open"><MessageCircle size={13} /><b>{n >= 300 ? "300+" : n}</b> {n === 1 ? "comentário sem resposta" : "comentários sem resposta"}</button>;
+}
+
+function CommentsSheet({ video, channelId, onClose, onChange }: { video: Row; channelId: string; onClose: () => void; onChange: (s: CommentState) => void }) {
+  const [state, setState] = useState<CommentState | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [needsAuth, setNeedsAuth] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { let alive = true; fetchUnanswered(video.id, channelId).then((s) => { if (alive) { setState(s); if (s.status === "auth") setNeedsAuth(true); } }); return () => { alive = false; }; }, [video.id, channelId]);
+  const closeFn = useRef(onClose); closeFn.current = onClose;
+  useEffect(() => { closeRef.current?.focus(); const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeFn.current(); }; window.addEventListener("keydown", onKey); const prev = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; }; }, []);
+  async function send(c: YTComment) {
+    const text = (drafts[c.id] || "").trim(); if (!text) return;
+    setSending(c.id); setErrors((x) => ({ ...x, [c.id]: "" }));
+    try {
+      await replyToComment(c.id, video.id, text);
+      setState((s) => { if (!s) return s; const next = { ...s, items: s.items.filter((x) => x.id !== c.id) }; onChange(next); return next; });
+    } catch (e: any) {
+      if (e?.needsGoogle) setNeedsAuth(true);
+      setErrors((x) => ({ ...x, [c.id]: e?.message || "Não foi possível responder." }));
+    } finally { setSending(null); }
+  }
+  const items = state?.items || [];
+  return createPortal(
+    <div className="tx-saas-shell tx-sheet-wrap" role="dialog" aria-modal="true" aria-label={`Comentários de ${video.title}`}>
+      <button className="tx-sheet-scrim" aria-label="Fechar" onClick={onClose} />
+      <section className="tx-sheet">
+        <header className="tx-sheet-head">
+          <img src={video.thumbnail} alt="" />
+          <div className="min-w-0 flex-1"><p className="tx-kicker">Comentários sem resposta</p><h2 className="line-clamp-2 text-[15px] font-bold leading-snug">{video.title}</h2></div>
+          <button ref={closeRef} onClick={onClose} className="tx-sheet-close" aria-label="Fechar"><X size={18} /></button>
+        </header>
+        <div className="tx-sheet-body">
+          {needsAuth && <div className="tx-sheet-alert"><AlertCircle size={16} /><div><p>{YT_COMMENT_SCOPE_HINT}</p><button onClick={() => { void connectYouTube().catch(() => {}); }} className="tx-btn tx-btn-primary mt-3 px-4 py-2 text-xs">Reconectar YouTube</button></div></div>}
+          {!state && <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="tx-skeleton h-[96px]" />)}</div>}
+          {state && state.status === "ok" && !items.length && <div className="py-10 text-center"><CheckCircle2 className="mx-auto text-[var(--tx-green)]" size={30} /><p className="mt-3 font-bold">Tudo respondido neste vídeo</p></div>}
+          {state && (state.status === "quota" || state.status === "error") && <div className="tx-sheet-alert"><AlertCircle size={16} /><p>{state.status === "quota" ? "O limite diário da API do YouTube foi atingido. Tente mais tarde." : `Não foi possível ler os comentários (${state.detail || "erro desconhecido"}).`}</p></div>}
+          {state?.status === "disabled" && <p className="py-8 text-center text-sm text-[var(--tx-muted)]">Os comentários estão desativados neste vídeo.</p>}
+          {items.map((c, i) => (
+            <article key={c.id} className="tx-comment tx-rise" style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
+              <div className="flex items-start gap-3">
+                {c.authorImage ? <img src={c.authorImage} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--tx-surface-2)] text-sm font-bold">{c.author.replace(/^@/, "").slice(0, 1).toUpperCase()}</span>}
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-baseline gap-x-2 text-[13px]"><b className="truncate">{c.author}</b><span className="text-xs text-[var(--tx-muted)]">{ago(c.publishedAt)}</span>{c.likes > 0 && <span className="inline-flex items-center gap-1 text-xs text-[var(--tx-muted)]"><ThumbsUp size={11} />{c.likes}</span>}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-[14px] leading-relaxed">{c.text}</p>
+                  <div className="tx-comment-reply">
+                    <textarea rows={1} value={drafts[c.id] || ""} onChange={(e) => { setDrafts((d) => ({ ...d, [c.id]: e.target.value })); e.target.style.height = "auto"; e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`; }} onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(c); } }} placeholder="Escreva sua resposta…" aria-label={`Responder ${c.author}`} />
+                    <button onClick={() => send(c)} disabled={!((drafts[c.id] || "").trim()) || sending === c.id} aria-label="Enviar resposta">{sending === c.id ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
+                  </div>
+                  {errors[c.id] && <p className="mt-1.5 text-xs text-[var(--tx-red)]">{errors[c.id]}</p>}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        <footer className="tx-sheet-foot"><a href={`https://studio.youtube.com/video/${video.id}/comments`} target="_blank" rel="noreferrer">Abrir no YouTube Studio <ExternalLink size={13} /></a><span>A resposta é publicada pelo seu canal.</span></footer>
+      </section>
+    </div>,
+    document.body,
   );
 }
 
@@ -58,6 +132,23 @@ export default function OptimizeView({ user, plan }: { user: any; plan: string }
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [connecting, setConnecting] = useState(false);
   const all = useMemo(() => analyse(data?.videos || []), [data]);
+  const [pending, setPending] = useState<Record<string, CommentState | "loading">>({});
+  const [commentsAuth, setCommentsAuth] = useState(false);
+  const [openVideo, setOpenVideo] = useState<Row | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const ids = data.videos.filter((v) => v.comments > 0).map((v) => v.id);
+    setPending(Object.fromEntries(ids.map((id) => [id, "loading" as const])));
+    setCommentsAuth(false);
+    let alive = true;
+    void fetchUnansweredMany(ids, data.channel.id, (id, st) => {
+      if (!alive) return;
+      if (st.status === "auth") setCommentsAuth(true);
+      setPending((p) => ({ ...p, [id]: st }));
+    }).then(() => { if (alive) setPending((p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v === "loading" ? { status: "error", items: [] } as CommentState : v]))); });
+    return () => { alive = false; };
+  }, [data]);
+  const totalPending = Object.values(pending).reduce((a, v) => a + (v !== "loading" && v.status === "ok" ? v.items.length : 0), 0);
   const rows = useMemo(() => {
     const list = all.filter((v) => (tab === "shorts" ? v.isShort : !v.isShort));
     const sorted = [...list];
@@ -94,23 +185,26 @@ export default function OptimizeView({ user, plan }: { user: any; plan: string }
             <div className="flex flex-wrap gap-2 text-[13px]">
               <span className="tx-chip is-up">{above} acima da média</span>
               <span className="tx-chip is-down">{improvable} podem melhorar</span>
+              {totalPending > 0 && <span className="tx-chip is-comments"><MessageCircle size={13} />{totalPending} comentários sem resposta</span>}
             </div>
             <div className="flex items-center gap-2">
               <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Ordenar" className="tx-select"><option value="recent">Mais recentes</option><option value="views">Mais views</option><option value="ratio">Melhor vs. média</option><option value="engagement">Mais engajamento</option></select>
               <div className="tx-seg"><button aria-label="Grade" className={layout === "grid" ? "is-active" : ""} onClick={() => setLayout("grid")}><LayoutGrid size={15} /></button><button aria-label="Lista" className={layout === "list" ? "is-active" : ""} onClick={() => setLayout("list")}><List size={15} /></button></div>
             </div>
           </div>
+          {commentsAuth && <div className="tx-comments-auth"><AlertCircle size={17} /><p>{YT_COMMENT_SCOPE_HINT}</p><button onClick={() => { void connectYouTube().catch(() => {}); }} className="tx-btn tx-btn-primary px-4 py-2 text-xs">Reconectar YouTube</button></div>}
           {!rows.length ? <p className="rounded-xl bg-[var(--tx-surface-2)] p-5 text-sm text-[var(--tx-muted)]">Nenhum {tab === "shorts" ? "Short" : "vídeo"} encontrado nos últimos 50 envios.</p>
-            : layout === "grid" ? <div className="tx-vgrid">{rows.map((v, i) => <VideoCard key={v.id} v={v} i={i} />)}</div>
+            : layout === "grid" ? <div className="tx-vgrid">{rows.map((v, i) => <VideoCard key={v.id} v={v} i={i} pending={pending[v.id]} onComments={() => setOpenVideo(v)} />)}</div>
             : <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
                 <thead><tr><th className="px-3 py-2.5">Vídeo</th><th className="px-3 text-right">Views</th><th className="px-3 text-right">vs. média</th><th className="px-3 text-right">Engajamento</th><th className="px-3">Publicado</th></tr></thead>
                 <tbody>{rows.map((v) => <tr key={v.id} className="border-t border-[var(--tx-border)]">
-                  <td className="px-3 py-2.5"><div className="flex items-center gap-3"><img src={v.thumbnail} alt="" className="h-12 w-20 shrink-0 rounded-lg object-cover" /><div className="min-w-0"><p className="line-clamp-2 font-medium">{v.title}</p>{v.hint && <p className="mt-0.5 line-clamp-1 text-xs text-[var(--tx-accent)]">{v.hint}</p>}</div></div></td>
+                  <td className="px-3 py-2.5"><div className="flex items-center gap-3"><img src={v.thumbnail} alt="" className="h-12 w-20 shrink-0 rounded-lg object-cover" /><div className="min-w-0"><p className="line-clamp-2 font-medium">{v.title}</p>{v.hint && <p className="mt-0.5 line-clamp-1 text-xs text-[var(--tx-accent)]">{v.hint}</p>}{(() => { const st = pending[v.id]; return st && st !== "loading" && st.status === "ok" && st.items.length ? <button onClick={() => setOpenVideo(v)} className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--tx-gold,#f2c94c)]"><MessageCircle size={12} />{st.items.length} sem resposta</button> : null; })()}</div></div></td>
                   <td className="px-3 text-right tabular-nums">{compact(v.views)}</td>
                   <td className={`px-3 text-right font-bold tabular-nums ${v.status === "up" ? "text-[var(--tx-green)]" : v.status === "down" ? "text-[var(--tx-red)]" : ""}`}>{v.ratio === null ? "—" : `${v.ratio.toFixed(1).replace(".", ",")}x`}</td>
                   <td className="px-3 text-right tabular-nums">{(v.engagement * 100).toFixed(1).replace(".", ",")}%</td>
                   <td className="whitespace-nowrap px-3 text-[var(--tx-muted)]">{ago(v.publishedAt)}</td>
                 </tr>)}</tbody></table></div>}
+          {openVideo && data && <CommentsSheet video={openVideo} channelId={data.channel.id} onClose={() => setOpenVideo(null)} onChange={(st) => setPending((p) => ({ ...p, [openVideo.id]: st }))} />}
           <p className="text-xs text-[var(--tx-muted)]">"x vezes a média" compara cada vídeo com a mediana dos 10 vídeos anteriores do mesmo formato. Views públicas da API do YouTube.</p>
         </>}
       </>}

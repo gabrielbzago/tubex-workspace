@@ -194,7 +194,7 @@ export default function FeedDashboard() {
       const failed = issues.auth + issues.quota + issues.other;
       setCommentStatus(issues.auth ? "auth" : issues.quota ? "quota" : failed && !issues.checked ? "error" : failed ? "partial" : "ok");
       setCommentWarning(
-        issues.auth ? "Sua autorização do Google expirou ou não inclui leitura de comentários. Reconecte o YouTube para ver os comentários pendentes."
+        issues.auth ? "Para ler e responder comentários, o TubeX precisa da permissão \"Gerenciar sua conta do YouTube\". Reconecte e marque essa permissão."
         : issues.quota ? "O limite diário da API do YouTube foi atingido. Tente de novo mais tarde."
         : failed ? `Não foi possível ler os comentários de ${failed} ${failed === 1 ? "vídeo" : "vídeos"}. A lista abaixo pode estar incompleta.`
         : issues.disabled ? `${issues.disabled} ${issues.disabled === 1 ? "vídeo tem" : "vídeos têm"} comentários desativados ou indisponíveis e ${issues.disabled === 1 ? "foi ignorado" : "foram ignorados"}.`

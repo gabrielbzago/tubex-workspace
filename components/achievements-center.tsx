@@ -76,8 +76,8 @@ export default function AchievementsCenter({ user }: { user: any }) {
       if (!accessToken) {
         const options = {
           redirectTo: `${window.location.origin}/dashboard`,
-          scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly",
-          queryParams: { access_type: "offline", prompt: "consent" },
+          scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl",
+          queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
         };
         const currentUser = session?.user;
         const hasGoogleIdentity = (currentUser?.identities || []).some((identity: any) => identity.provider === "google");

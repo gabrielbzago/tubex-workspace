@@ -97,8 +97,8 @@ export async function connectYouTube() {
   const user: any = data.session?.user;
   const options = {
     redirectTo: `${window.location.origin}/dashboard`,
-    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly",
-    queryParams: { access_type: "offline", prompt: "consent" },
+    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl",
+    queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
   };
   const hasGoogle = (user?.identities || []).some((i: any) => i.provider === "google");
   const result = user && !hasGoogle
@@ -130,4 +130,94 @@ export function ago(iso: string) {
   if (d < 30) return `há ${Math.round(d)} ${Math.round(d) === 1 ? "dia" : "dias"}`;
   if (d < 365) return `há ${Math.round(d / 30)} ${Math.round(d / 30) === 1 ? "mês" : "meses"}`;
   return `há ${Math.round(d / 365)} ${Math.round(d / 365) === 1 ? "ano" : "anos"}`;
+}
+
+/* ---------- Comentários sem resposta (ler e responder) ---------- */
+export type YTComment = { id: string; videoId: string; author: string; authorImage: string; text: string; publishedAt: string; likes: number };
+export type CommentState = { status: "ok" | "disabled" | "auth" | "quota" | "error"; items: YTComment[]; detail?: string };
+export const YT_COMMENT_SCOPE_HINT = "Para ler e responder comentários, o TubeX precisa da permissão \"Gerenciar sua conta do YouTube\". Reconecte e marque essa permissão.";
+
+async function providerToken() {
+  const { data } = await supabase.auth.getSession();
+  return String((data.session as any)?.provider_token || "");
+}
+async function ytCall(path: string, token: string, init?: RequestInit) {
+  const r = await fetch(`${API}/${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers || {}) }, cache: "no-store" });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const reason = String(d?.error?.errors?.[0]?.reason || d?.error?.status || "");
+    const e = new Error(d?.error?.message || `YouTube API: ${r.status}`) as Error & { status?: number; reason?: string };
+    e.status = r.status; e.reason = reason;
+    console.warn("[TubeX YouTube API]", r.status, reason, d?.error?.message || "", path.split("?")[0]);
+    throw e;
+  }
+  return d;
+}
+function classify(e: any): CommentState["status"] {
+  const reason = String(e?.reason || "");
+  if (/commentsDisabled|videoNotFound|processingFailure/i.test(reason)) return "disabled";
+  if (e?.status === 401 || /insufficientPermissions|ACCESS_TOKEN_SCOPE_INSUFFICIENT|authError|unauthorized/i.test(reason)) return "auth";
+  if (/quota|rateLimit/i.test(reason)) return "quota";
+  if (e?.status === 403 && /forbidden/i.test(reason)) return "disabled";
+  return "error";
+}
+
+const commentCache = new Map<string, { at: number; state: CommentState }>();
+/** Comentários de nível superior sem resposta (exclui os do próprio canal). */
+export async function fetchUnanswered(videoId: string, channelId: string, force = false): Promise<CommentState> {
+  const hit = commentCache.get(videoId);
+  if (!force && hit && Date.now() - hit.at < TTL) return hit.state;
+  const token = await providerToken();
+  if (!token) return { status: "auth", items: [] };
+  const items: YTComment[] = [];
+  let state: CommentState;
+  try {
+    let pageToken = "";
+    for (let page = 0; page < 3; page++) {
+      const p = new URLSearchParams({ part: "snippet", videoId, maxResults: "100", order: "time", textFormat: "plainText" });
+      if (pageToken) p.set("pageToken", pageToken);
+      const res = await ytCall(`commentThreads?${p}`, token);
+      for (const item of res.items || []) {
+        const top = item.snippet?.topLevelComment?.snippet;
+        if (!top || Number(item.snippet?.totalReplyCount || 0) > 0) continue;
+        if (String(top.authorChannelId?.value || "") === channelId) continue;
+        items.push({ id: String(item.snippet?.topLevelComment?.id || item.id), videoId, author: top.authorDisplayName || "Usuário", authorImage: top.authorProfileImageUrl || "", text: top.textOriginal || top.textDisplay || "", publishedAt: top.publishedAt || "", likes: Number(top.likeCount || 0) });
+      }
+      pageToken = String(res.nextPageToken || "");
+      if (!pageToken) break;
+    }
+    state = { status: "ok", items };
+  } catch (e: any) {
+    state = { status: classify(e), items: [], detail: `${e?.status || ""} ${e?.reason || ""} ${e?.message || ""}`.trim() };
+  }
+  if (state.status !== "auth" && state.status !== "quota") commentCache.set(videoId, { at: Date.now(), state });
+  return state;
+}
+
+/** Busca vários vídeos com concorrência limitada. */
+export async function fetchUnansweredMany(videoIds: string[], channelId: string, onEach: (id: string, s: CommentState) => void, concurrency = 6) {
+  let i = 0; let stop = false;
+  const worker = async () => {
+    while (!stop && i < videoIds.length) {
+      const id = videoIds[i++];
+      const s = await fetchUnanswered(id, channelId);
+      onEach(id, s);
+      if (s.status === "auth" || s.status === "quota") stop = true;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, videoIds.length) }, worker));
+}
+
+/** Responde um comentário pelo canal conectado (requer youtube.force-ssl). */
+export async function replyToComment(parentId: string, videoId: string, text: string) {
+  const token = await providerToken();
+  if (!token) throw new NeedsGoogleError(YT_COMMENT_SCOPE_HINT);
+  try {
+    await ytCall("comments?part=snippet", token, { method: "POST", body: JSON.stringify({ snippet: { parentId, textOriginal: text } }) });
+  } catch (e: any) {
+    if (classify(e) === "auth") throw new NeedsGoogleError(YT_COMMENT_SCOPE_HINT);
+    throw new Error(e?.message || "Não foi possível publicar a resposta.");
+  }
+  const hit = commentCache.get(videoId);
+  if (hit) hit.state = { ...hit.state, items: hit.state.items.filter((c) => c.id !== parentId) };
 }

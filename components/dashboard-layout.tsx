@@ -172,8 +172,11 @@ export default function DashboardLayout({user}:{user:any}){
  ];
  const secondaryItems:[Tab,any,string][]=[
   ["achievements",Trophy,"Conquistas"],["affiliate",Users,t.affiliate],["account",Settings,"Conta e assinatura"],["support",LifeBuoy,t.support],
-  ...(isOwner?[["admin",ShieldCheck,"Admin"] as [Tab,any,string]]:[]),
  ];
+ // Owner: atalhos diretos para cada módulo de monitoramento.
+ const ownerItems:[string,any,string][]=[["analytics",Activity,"Analytics"],["subscribers",Users,"Assinantes"],["usage",TrendingUp,"Uso (free)"],["cancellations",X,"Cancelamentos"],["affiliates",ShieldCheck,"Afiliados (admin)"]];
+ const ownerButton=([sub,Icon,label]:[string,any,string])=><button key={sub} onClick={()=>selectTab(`admin:${sub}`)} aria-current={tab==="admin"&&adminSub===sub?"page":undefined} className={`tx-nav-item is-small ${tab==="admin"&&adminSub===sub?"is-active":""}`}><span className="tx-nav-icon"><Icon size={16}/></span><span className="min-w-0 flex-1 truncate text-left">{label}</span></button>;
+ const ownerSection=isOwner?<section className="tx-nav-group tx-nav-owner"><p className="tx-nav-heading">Owner <span className="tx-owner-tag">OWNER</span></p>{ownerItems.map(ownerButton)}</section>:null;
  const titles:Record<Tab,string>={home:"Início",ai:"TubeX AI",research:"Pesquisar",optimize:"Otimizar",achievements:"Conquistas",affiliate:t.affiliate,account:"Conta e assinatura",support:t.support,admin:"Admin"};
  useEffect(()=>{
   const handleNavigate=(event:Event)=>{const next=(event as CustomEvent<string>).detail;if(next)selectTab(next)};
@@ -188,6 +191,7 @@ export default function DashboardLayout({user}:{user:any}){
   if(base==="creator"||sub==="ideas")setResearchSub("ideas");else if(base==="workspace"||sub==="keywords")setResearchSub("keywords");
   const adminMap:Record<string,any>={analytics:"analytics",behavior:"subscribers",usage:"usage",cancellations:"cancellations",admin:"affiliates"};
   if(next==="admin"&&base!=="admin")setAdminSub(adminMap[base]||"analytics");
+  if(base==="admin"&&["analytics","subscribers","usage","cancellations","affiliates"].includes(sub))setAdminSub(sub as any);
   setTab(next);setMobileOpen(false);
   try{document.querySelector(".tx-dashboard-content")?.scrollTo({top:0,behavior:"smooth"})}catch{}
   const moduleByTab:Record<string,string>={home:"dashboard",ai:"ai",research:"seo_explorer",optimize:"intelligence_center",achievements:"achievements",affiliate:"affiliate",account:"account",support:"support"};
@@ -202,11 +206,12 @@ export default function DashboardLayout({user}:{user:any}){
    <nav className="tx-sidebar-nav" aria-label="Navegação principal">
     <section className="tx-nav-group">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}</section>
     <section className="tx-nav-group tx-nav-secondary"><p className="tx-nav-heading">Mais</p>{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</section>
+    {ownerSection}
    </nav>
    <div className="tx-sidebar-bottom mt-auto space-y-2">
     {!["expert","owner"].includes(plan)&&<button onClick={()=>selectTab("account")} className="tx-upgrade-card"><Sparkles size={15}/><span><b>Seja Expert</b><small>Análises ilimitadas e IA avançada</small></span></button>}
     <a href="https://chromewebstore.google.com/detail/tubex-seo-analyzer-for-yo/lgddmmhnmkmkfhaodogcoecdecegemgk" target="_blank" rel="noreferrer" className="tx-extension-link"><span className="tx-extension-icon"><Puzzle size={15}/></span><span className="min-w-0 flex-1"><b>Extensão TubeX</b><small>Use dentro do YouTube</small></span><ExternalLink size={13}/></a>
-    <div className="tx-sidebar-user"><div className="tx-sidebar-avatar">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{displayName}</p><p className="truncate text-[11px] text-[var(--tx-muted)]">Plano {planLabel}</p></div><button onClick={logout} title={t.logout} aria-label={t.logout} className="tx-logout-pill"><LogOut size={14}/><span>Sair</span></button></div>
+    <div className="tx-sidebar-account"><div className="tx-sidebar-user"><div className="tx-sidebar-avatar">{displayName.slice(0,1).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{displayName}</p><p className="truncate text-[11px] text-[var(--tx-muted)]">Plano {planLabel}</p></div></div><button onClick={logout} className="tx-logout-wide"><LogOut size={16}/><span>Sair da conta</span></button></div>
    </div>
   </aside>
   <main className="tx-app-main min-w-0 w-full lg:pl-[248px]">
@@ -220,7 +225,7 @@ export default function DashboardLayout({user}:{user:any}){
      </div>
     </div>
    </header>
-   {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div><button onClick={logout} className="tx-logout-link tx-logout-strong mt-3"><LogOut size={17}/>Sair da conta</button></nav></div></>}
+   {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div>{ownerSection}<button onClick={logout} className="tx-logout-link tx-logout-strong mt-3"><LogOut size={17}/>Sair da conta</button></nav></div></>}
    <div key={tab} className={`tx-dashboard-content tx-page-enter mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
     {tab==="home"&&<ChannelHome achievementSummary={achievementSummary} displayName={displayName}/>}
     {tab==="ai"&&<div className="tx-ai-home"><TubeXAIChat/></div>}
@@ -228,7 +233,7 @@ export default function DashboardLayout({user}:{user:any}){
     {tab==="optimize"&&<OptimizeView user={user} plan={isOwner?"expert":plan}/>}
     {tab==="achievements"&&<AchievementsCenter user={user}/>}
     {tab==="affiliate"&&<AffiliatePage userData={userData}/>}
-    {tab==="admin"&&(isOwner?<AdminHub initial={adminSub}/>:<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACESSO RESTRITO</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1></section>)}
+    {tab==="admin"&&(isOwner?<AdminHub key={adminSub} initial={adminSub} onChange={setAdminSub}/>:<section className="tx-surface rounded-[22px] p-7"><p className="tx-kicker">ACESSO RESTRITO</p><h1 className="mt-2 text-3xl font-black">Área exclusiva do Owner</h1></section>)}
     {tab==="account"&&<div className="space-y-5"><Account user={user} userData={userData} t={t} isOwner={isOwner}/><Billing user={user} userData={userData} t={t}/></div>}
     {tab==="support"&&<Support t={t}/>}
    </div>
