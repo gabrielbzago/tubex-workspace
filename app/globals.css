@@ -1856,3 +1856,49 @@ tr:hover .tx-plan-badge,tr:hover .tx-site-badge{transform:translateY(-1px)}
 .tx-live-dot{width:8px;height:8px;border-radius:999px;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.5);animation:tx-live-pulse 2s ease-out infinite}
 @keyframes tx-live-pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.45)}70%{box-shadow:0 0 0 7px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
 @media (prefers-reduced-motion:reduce){.tx-live-dot{animation:none}tr:hover .tx-plan-badge,tr:hover .tx-site-badge{transform:none}}
+
+/* v18: destaque do TubeX AI após o login (components/ai-chat-spotlight.tsx) */
+.tx-ai-spot{position:fixed;z-index:70;width:340px;max-width:calc(100vw - 32px);padding:18px 18px 16px;border-radius:18px;color:#eef3ff;background:radial-gradient(120% 90% at 0% 0%,rgba(242,201,76,.14),transparent 55%),linear-gradient(160deg,#0f1d3a 0%,#0a142b 100%);border:1px solid rgba(242,201,76,.38);box-shadow:0 0 0 1px rgba(255,255,255,.04) inset,0 24px 60px -18px rgba(3,8,24,.75),0 0 38px -12px rgba(242,201,76,.45);font-family:var(--tx-font-body),Inter,system-ui,sans-serif;animation:tx-spot-in .55s cubic-bezier(.2,.9,.25,1.15) both}
+.tx-ai-spot.is-bottom{animation-name:tx-spot-in-up}
+.tx-ai-spot.is-out{animation:tx-spot-out .3s ease both}
+.tx-ai-spot-arrow{position:absolute;width:14px;height:14px;background:#0f1d3a;border:1px solid rgba(242,201,76,.38);transform:rotate(45deg)}
+.tx-ai-spot.is-side .tx-ai-spot-arrow{left:-8px;top:calc(var(--tx-spot-arrow,40px) - 7px);border-top:0;border-right:0}
+.tx-ai-spot.is-bottom .tx-ai-spot-arrow{bottom:-8px;left:calc(var(--tx-spot-arrow,50%) - 7px);background:#0a142b;border-top:0;border-left:0}
+.tx-ai-spot-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:28px;height:28px;border-radius:9px;color:rgba(238,243,255,.6);transition:background .18s ease,color .18s ease}
+.tx-ai-spot-close:hover{background:rgba(255,255,255,.08);color:#fff}
+.tx-ai-spot-kicker{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#f2c94c}
+.tx-ai-spot-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:linear-gradient(135deg,#f7d774,#d4a017);color:#2a1d00;box-shadow:0 4px 14px -4px rgba(242,201,76,.7);animation:tx-spot-twinkle 2.8s ease-in-out infinite}
+.tx-ai-spot h2{margin:0 28px 6px 0;font-family:var(--tx-font-display),"Plus Jakarta Sans",sans-serif;font-size:17px;line-height:1.3;font-weight:800;letter-spacing:-.01em;color:#fff}
+.tx-ai-spot h2 .tx-gold{color:#f2c94c;background:linear-gradient(90deg,#f7d774,#e2b13c,#f7d774);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:tx-spot-shine 3.2s linear infinite}
+.tx-ai-spot-desc{margin:0 0 12px;font-size:13px;line-height:1.5;color:rgba(222,231,250,.78)}
+.tx-ai-spot-prompts{display:grid;gap:6px;margin-bottom:14px}
+.tx-ai-spot-prompts button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 11px;border-radius:11px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:#dfe7fa;font-size:12.5px;font-weight:600;text-align:left;opacity:0;animation:tx-spot-chip .45s ease forwards;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.tx-ai-spot-prompts button:nth-child(1){animation-delay:.25s}.tx-ai-spot-prompts button:nth-child(2){animation-delay:.35s}.tx-ai-spot-prompts button:nth-child(3){animation-delay:.45s}
+.tx-ai-spot-prompts button svg{flex:none;color:#f2c94c;transition:transform .18s ease}
+.tx-ai-spot-prompts button:hover{border-color:rgba(242,201,76,.45);background:rgba(242,201,76,.08);transform:translateX(2px)}
+.tx-ai-spot-prompts button:hover svg{transform:translateX(2px)}
+.tx-ai-spot-actions{display:flex;align-items:center;gap:10px}
+.tx-ai-spot-cta{position:relative;overflow:hidden;display:inline-flex;flex:1;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:12px;background:linear-gradient(135deg,#f7d774,#d4a017);color:#231800;font-size:13.5px;font-weight:800;box-shadow:0 8px 22px -8px rgba(242,201,76,.75);transition:transform .18s ease,box-shadow .18s ease}
+.tx-ai-spot-cta::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);transform:translateX(-120%);animation:tx-spot-sweep 3.4s ease-in-out 1s infinite}
+.tx-ai-spot-cta:hover{transform:translateY(-1px);box-shadow:0 12px 26px -8px rgba(242,201,76,.85)}
+.tx-ai-spot-cta:active{transform:scale(.97)}
+.tx-ai-spot-later{height:40px;padding:0 10px;border-radius:12px;color:rgba(222,231,250,.68);font-size:13px;font-weight:600;transition:color .18s ease,background .18s ease}
+.tx-ai-spot-later:hover{color:#fff;background:rgba(255,255,255,.06)}
+.tx-ai-spot-ring{position:fixed;z-index:69;pointer-events:none;border-radius:14px;border:2px solid rgba(242,201,76,.85);box-shadow:0 0 0 0 rgba(242,201,76,.45),0 0 22px -4px rgba(242,201,76,.6);animation:tx-spot-ring 1.9s ease-out infinite;transition:opacity .3s ease}
+.tx-ai-spot-ring.is-out{opacity:0}
+/* Enquanto a pessoa não abriu o chat, o item "TubeX AI" ganha um ponto dourado pulsante. */
+html.tx-ai-undiscovered [data-tx-ai-target]{position:relative}
+html.tx-ai-undiscovered [data-tx-ai-target]:not(.is-active)::after{content:"";position:absolute;top:9px;right:10px;width:8px;height:8px;border-radius:999px;background:#f2c94c;box-shadow:0 0 0 0 rgba(242,201,76,.55);animation:tx-spot-dot 2s ease-out infinite}
+html.tx-ai-undiscovered .tx-bottom-nav [data-tx-ai-target]:not(.is-active)::after{top:5px;right:calc(50% - 17px)}
+html.tx-ai-undiscovered .tx-bottom-nav [data-tx-ai-target] svg{color:#e2b13c}
+@keyframes tx-spot-in{from{opacity:0;transform:translateX(-10px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes tx-spot-in-up{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes tx-spot-out{to{opacity:0;transform:scale(.96)}}
+@keyframes tx-spot-chip{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes tx-spot-ring{0%{box-shadow:0 0 0 0 rgba(242,201,76,.45),0 0 22px -4px rgba(242,201,76,.6)}70%{box-shadow:0 0 0 10px rgba(242,201,76,0),0 0 22px -4px rgba(242,201,76,.6)}100%{box-shadow:0 0 0 0 rgba(242,201,76,0),0 0 22px -4px rgba(242,201,76,.6)}}
+@keyframes tx-spot-dot{0%{box-shadow:0 0 0 0 rgba(242,201,76,.55)}70%{box-shadow:0 0 0 7px rgba(242,201,76,0)}100%{box-shadow:0 0 0 0 rgba(242,201,76,0)}}
+@keyframes tx-spot-shine{to{background-position:-200% 0}}
+@keyframes tx-spot-sweep{0%,60%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+@keyframes tx-spot-twinkle{0%,100%{transform:none}50%{transform:rotate(-8deg) scale(1.08)}}
+@media (max-width:1023px){.tx-ai-spot{padding:16px 16px 14px}.tx-ai-spot h2{font-size:16px}}
+@media (prefers-reduced-motion:reduce){.tx-ai-spot,.tx-ai-spot *,.tx-ai-spot-ring,html.tx-ai-undiscovered [data-tx-ai-target]::after{animation:none!important;opacity:1}.tx-ai-spot.is-out{opacity:0}}

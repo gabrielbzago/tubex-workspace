@@ -20,6 +20,7 @@ import OptimizeView from "./optimize-view";
 import ResearchView from "./research-view";
 import AdminHub from "./admin-hub";
 import WelcomeSplash from "./welcome-splash";
+import AIChatSpotlight from "./ai-chat-spotlight";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
 import { recordWebProductEvent } from "@/lib/tubex-client-analytics";
 
@@ -199,10 +200,11 @@ export default function DashboardLayout({user}:{user:any}){
   const moduleByTab:Record<string,string>={home:"dashboard",ai:"ai",research:"seo_explorer",optimize:"intelligence_center",achievements:"achievements",affiliate:"affiliate",account:"account",support:"support"};
   const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"module_opened",module));
  }
- const navButton=(id:Tab,Icon:any,label:string,hint?:string,small=false)=><button key={id} onClick={()=>selectTab(id)} aria-current={tab===id?"page":undefined} className={`tx-nav-item ${small?"is-small":""} ${tab===id?"is-active":""}`}><span className="tx-nav-icon"><Icon size={small?15:17}/></span><span className="min-w-0 flex-1 text-left"><span className="block truncate">{label}</span>{hint&&<small className="tx-nav-hint">{hint}</small>}</span>{id==="admin"&&<span className="tx-owner-pill">OWNER</span>}</button>;
+ const navButton=(id:Tab,Icon:any,label:string,hint?:string,small=false)=><button key={id} data-tx-ai-target={id==="ai"?"":undefined} onClick={()=>selectTab(id)} aria-current={tab===id?"page":undefined} className={`tx-nav-item ${small?"is-small":""} ${tab===id?"is-active":""}`}><span className="tx-nav-icon"><Icon size={small?15:17}/></span><span className="min-w-0 flex-1 text-left"><span className="block truncate">{label}</span>{hint&&<small className="tx-nav-hint">{hint}</small>}</span>{id==="admin"&&<span className="tx-owner-pill">OWNER</span>}</button>;
  const planLabel=String(isOwner?"OWNER":(userData?.plan||"free")).toUpperCase();
  return <div className={`tx-saas-shell ${tab === "ai" ? "tx-shell-ai" : "tx-shell-page"} bg-[var(--tx-bg)] text-[var(--tx-text)]`}>
   <WelcomeSplash name={displayName} userId={String(user?.id||"")}/>
+  <AIChatSpotlight tab={tab} userId={String(user?.id||"")} onOpen={()=>selectTab("ai")}/>
   <aside className="tx-sidebar fixed inset-y-0 left-0 z-50 hidden w-[248px] border-r border-[var(--tx-border)] p-4 lg:flex lg:flex-col">
    <div className="tx-sidebar-brand flex items-center justify-between gap-3"><Logo/></div>
    <nav className="tx-sidebar-nav" aria-label="Navegação principal">
@@ -240,7 +242,7 @@ export default function DashboardLayout({user}:{user:any}){
     {tab==="support"&&<Support t={t}/>}
    </div>
   </main>
-  <nav className="tx-bottom-nav lg:hidden" aria-label="Navegação rápida">{mainItems.map(([id,Icon,label])=><button key={id} onClick={()=>selectTab(id)} className={tab===id?"is-active":""} aria-current={tab===id?"page":undefined}><Icon size={19}/><span>{label}</span></button>)}</nav>
+  <nav className="tx-bottom-nav lg:hidden" aria-label="Navegação rápida">{mainItems.map(([id,Icon,label])=><button key={id} data-tx-ai-target={id==="ai"?"":undefined} onClick={()=>selectTab(id)} className={tab===id?"is-active":""} aria-current={tab===id?"page":undefined}><Icon size={19}/><span>{label}</span></button>)}</nav>
  </div>
 }
 

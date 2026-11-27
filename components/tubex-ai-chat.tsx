@@ -16,7 +16,7 @@ import "./tubex-ai-credits.css";
 type Message = { role: "user" | "assistant"; content: string };
 type ChatSession = { id: string; title: string; updatedAt: number; messages: Message[] };
 type Mode = "fast" | "deep";
-type ChannelVideo = { id: string; title: string; thumbnail: string; publishedAt: string; views: number; likes: number; comments: number };
+type ChannelVideo = { id: string; title: string; thumbnail: string; publishedAt: string; views: number; likes: number; comments: number; tags?: string[]; description?: string };
 type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number; planRemaining?: number; packBalance?: number; cost?: number };
 type CreditPack = { id: string; name: string; credits: number; amountCents: number; highlight?: string };
 type UpgradeOffer = { plan: string; label: string; credits: number } | null;
@@ -525,6 +525,9 @@ export default function TubeXAIChat() {
             views: Number(item.statistics?.viewCount || 0),
             likes: Number(item.statistics?.likeCount || 0),
             comments: Number(item.statistics?.commentCount || 0),
+            // Tags e início da descrição deixam a IA avaliar o SEO atual do vídeo anexado.
+            tags: Array.isArray(item.snippet?.tags) ? item.snippet.tags.slice(0, 30).map((t: unknown) => String(t)) : [],
+            description: String(item.snippet?.description || "").slice(0, 400),
           });
         }
       }
