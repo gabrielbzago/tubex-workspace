@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isTubeXOwner } from "@/lib/tubex-owner";
 import { fetchEventsSince, fetchTable } from "@/lib/tubex-paged";
 import { aiMonthKey } from "@/lib/tubex-ai-credits";
+import { listAuthUsers } from "@/lib/tubex-auth-users";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
   const monthKey = aiMonthKey();
 
   // Paginado: o Supabase devolve no máximo 1.000 linhas por requisição.
-  const [eventResult, installResult, userResult, creditResult] = await Promise.all([
+  const [eventResult, installResult, userResult, creditResult, authUsers] = await Promise.all([
     fetchEventsSince(
       since,
       "id,user_id,install_id,session_id,event_name,module,properties,created_at",
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
     fetchTable("tubex_installations", "install_id,email,name,picture,user_id,last_seen", "last_seen"),
     fetchTable("users", "id,email,name,plan"),
     supabaseAdmin.from("tubex_ai_credit_usage").select("user_id,used,updated_at").eq("month_key", monthKey).gt("used", 0).limit(1000),
+    listAuthUsers().catch(() => []),
   ]);
   if (eventResult.error) return NextResponse.json({ error: eventResult.error }, { status: 500 });
 
@@ -56,6 +58,9 @@ export async function GET(request: Request) {
   const userById = new Map(users.map((u) => [u.id, u]));
   const userByEmail = new Map(users.map((u) => [String(u.email || "").toLowerCase(), u]));
   const installById = new Map(installs.map((i) => [i.install_id, i]));
+  const installByEmail = new Map(installs.map((i) => [String(i.email || "").toLowerCase(), i]));
+  const authById = new Map(authUsers.map((u) => [u.id, u]));
+  const authByEmail = new Map(authUsers.filter((u) => u.email).map((u) => [u.email as string, u]));
 
   type Account = {
     user_id: string; name: string | null; email: string | null; plan: string; site: boolean;
@@ -64,23 +69,27 @@ export async function GET(request: Request) {
   };
   const accounts = new Map<string, Account>();
 
-  const resolve = (row: { user_id?: string | null; install_id?: string | null }) => {
+  const resolve = (row: { user_id?: string | null; install_id?: string | null; email?: string | null }) => {
     const install = row.install_id ? installById.get(row.install_id) : null;
     const webId = String(row.install_id || "").startsWith("web-") ? String(row.install_id).slice(4) : null;
-    const siteUser = (row.user_id && userById.get(row.user_id))
-      || (install?.user_id && userById.get(install.user_id))
-      || (webId && userById.get(webId))
-      || (install?.email && userByEmail.get(String(install.email).toLowerCase()))
+    const id = row.user_id || install?.user_id || webId || null;
+    const propEmail = row.email ? String(row.email).toLowerCase() : null;
+    const authUser = (id && authById.get(id))
+      || (install?.email && authByEmail.get(String(install.email).toLowerCase()))
+      || (propEmail && authByEmail.get(propEmail))
       || null;
-    const key = siteUser?.id || row.user_id || install?.user_id || webId || (install?.email ? String(install.email).toLowerCase() : null) || row.install_id || null;
+    const email = authUser?.email || install?.email?.toLowerCase() || propEmail || null;
+    const siteUser = (id && userById.get(id)) || (authUser && userById.get(authUser.id)) || (email && userByEmail.get(email)) || null;
+    const ext = install || (email ? installByEmail.get(email) : null);
+    const key = authUser?.id || siteUser?.id || id || email || row.install_id || null;
     if (!key) return null;
     if (!accounts.has(key)) {
       accounts.set(key, {
         user_id: key,
-        name: siteUser?.name || install?.name || null,
-        email: siteUser?.email || install?.email || null,
+        name: siteUser?.name || authUser?.name || ext?.name || null,
+        email: siteUser?.email || email,
         plan: String(siteUser?.plan || "free").toLowerCase(),
-        site: Boolean(siteUser),
+        site: Boolean(authUser || siteUser),
         sources: new Set(), opens: 0, messages: 0, credits: 0, monthCredits: 0,
         sessions: new Set(), last_used: null,
       });
@@ -92,7 +101,7 @@ export async function GET(request: Request) {
   };
 
   for (const event of eventResult.rows as any[]) {
-    const acc = resolve(event);
+    const acc = resolve({ user_id: event.user_id, install_id: event.install_id, email: event.properties?.email || null });
     if (!acc) continue;
     const name = String(event.event_name || "");
     const fromWeb = String(event.install_id || "").startsWith("web-") || event.properties?.source === "web_dashboard";
@@ -141,6 +150,11 @@ export async function GET(request: Request) {
       user_id: event.user_id, event_name: event.event_name, created_at: event.created_at,
       plan: event.properties?.plan || "—", credits: Number(event.properties?.credits || 0),
     })),
-    warnings: creditResult.error ? [`Créditos do mês indisponíveis: ${creditResult.error.message}`] : [],
+    warnings: [
+      ...(creditResult.error ? [`Créditos do mês indisponíveis: ${creditResult.error.message}`] : []),
+      ...(list.some((u) => u.month_credits > 0) && !list.some((u) => u.messages > 0 || u.opens > 0)
+        ? ["Há créditos consumidos mas nenhum evento do Chat gravado. Os eventos passam a ser registrados a partir desta versão; se continuar em 0, procure por \"[TubeX AI analytics]\" nos logs da Vercel."]
+        : []),
+    ],
   }, { headers: { "Cache-Control": "private, no-store, max-age=0" } });
 }

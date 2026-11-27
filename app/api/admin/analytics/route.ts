@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isTubeXOwner } from "@/lib/tubex-owner";
 import { fetchEventsSince, fetchTable } from "@/lib/tubex-paged";
+import { listAuthUsers } from "@/lib/tubex-auth-users";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,11 +98,14 @@ export async function GET(request: Request) {
   const since = new Date(Math.min(prevSince.getTime(), Date.parse(monthStart))).toISOString();
   // Paginado: o Supabase corta cada resposta em 1.000 linhas. Antes, só os eventos
   // mais recentes (hoje) chegavam e os dias anteriores apareciam zerados.
-  const [eventResult, installResult, userResult] = await Promise.all([
+  const [eventResult, installResult, userResult, authUsers] = await Promise.all([
     fetchEventsSince(since, "id,user_id,install_id,event_name,module,email:properties->>email,created_at", undefined, 150_000, 25_000),
     fetchTable("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen", "last_seen"),
     fetchTable("users", "id,email,name,plan"),
+    listAuthUsers().catch(() => []),
   ]);
+  const authById = new Map(authUsers.map((u) => [u.id, u]));
+  const authByEmail = new Map(authUsers.filter((u) => u.email).map((u) => [u.email as string, u]));
   if (eventResult.error) return NextResponse.json({ error: eventResult.error }, { status: 500 });
   const allRows: any[] = eventResult.rows;
   const prevRows = allRows.filter(row => { const t = Date.parse(row.created_at); return t >= prevSince.getTime() && t < rangeSince.getTime(); });
@@ -204,11 +208,13 @@ export async function GET(request: Request) {
   }
   const modules = [...moduleStats.entries()].map(([name, value]) => ({ name, label: moduleLabel(name), value: value.users.size, actions: value.actions })).sort((a, b) => b.actions - a.actions);
   const extensionUsers = installs.map(inst => {
-    const user = (inst.user_id && userMap.get(inst.user_id)) || emailMap.get(String(inst.email || "").toLowerCase());
+    const instEmail = String(inst.email || "").toLowerCase();
+    const authUser = (inst.user_id && authById.get(inst.user_id)) || authByEmail.get(instEmail) || null;
+    const user = (inst.user_id && userMap.get(inst.user_id)) || emailMap.get(instEmail) || (authUser && userMap.get(authUser.id)) || null;
     // Todo mundo que instalou e entrou na extensão é, no mínimo, Free. O selo "site"
     // indica que a mesma conta Google também tem cadastro no site.
     const plan = String(user?.plan || "free").toLowerCase().trim() || "free";
-    return { ...inst, plan, site: Boolean(user), site_user_id: user?.id || null, account_status: null };
+    return { ...inst, name: inst.name || user?.name || authUser?.name || null, plan, site: Boolean(user || authUser), site_user_id: user?.id || authUser?.id || null, account_status: null };
   });
   const daily = [...dailyMap.values()];
   const installsInPeriod = installs.filter(i => i.first_seen && Date.parse(i.first_seen) >= Date.now() - days * DAY).length;

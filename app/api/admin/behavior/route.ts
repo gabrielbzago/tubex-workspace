@@ -66,10 +66,13 @@ async function getOwner(request: Request) {
   return null;
 }
 
-async function fetchAll(table: string, columns = "*", pageSize = 1000, maxRows = 50000) {
+async function fetchAll(table: string, columns = "*", pageSize = 1000, maxRows = 50000, orderBy?: string) {
   const rows: any[] = [];
   for (let from = 0; from < maxRows; from += pageSize) {
-    const { data, error } = await (supabaseAdmin as any).from(table).select(columns).range(from, from + pageSize - 1);
+    let query = (supabaseAdmin as any).from(table).select(columns);
+    // Sem ordem, o corte de maxRows podia deixar de fora justamente os eventos mais recentes.
+    if (orderBy) query = query.order(orderBy, { ascending: false }).order("id", { ascending: false });
+    const { data, error } = await query.range(from, from + pageSize - 1);
     if (error) {
       console.warn(`[admin behavior] ${table} unavailable:`, error.message);
       return rows;
@@ -132,14 +135,23 @@ export async function GET(request: Request) {
   const cutoff7 = now - 7 * DAY;
 
   // A base é reconstruída a partir de users + Auth. Não depende de eventos recentes.
-  const [userRows, authUsers, eventRows, installations, referrals, sales] = await Promise.all([
+  const [userRows, authUsers, eventRows, installations, referrals, sales, aiCreditRows] = await Promise.all([
     fetchAll("users", "*"),
     fetchAuthUsers(),
-    fetchAll("tubex_events", "id,user_id,install_id,session_id,event_name,module,properties,created_at"),
+    fetchAll("tubex_events", "id,user_id,install_id,session_id,event_name,module,properties,created_at", 1000, 150000, "created_at"),
     fetchAll("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen"),
     fetchAll("affiliate_referrals", "id,referred_email,referred_name,plan,status,stripe_subscription_id,updated_at,created_at"),
     fetchAll("affiliate_sales", "id,customer_email,customer_name,plan,status,stripe_subscription_id,last_payment_date,created_at"),
+    fetchAll("tubex_ai_credit_usage", "user_id,used,updated_at"),
   ]);
+  // Último uso da IA (Chat/Thumbnail) por conta, a partir do consumo de créditos.
+  const lastAiByUser = new Map<string, string>();
+  for (const row of aiCreditRows) {
+    if (!row?.user_id || !Number(row.used)) continue;
+    const prev = lastAiByUser.get(row.user_id);
+    if (!prev || ms(row.updated_at) > ms(prev)) lastAiByUser.set(row.user_id, row.updated_at);
+  }
+  const fmtBR = (v: any) => ms(v) ? new Date(ms(v)).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
   type Bucket = { key: string; email: string; emails: Set<string>; ids: Set<string>; row: any; auth: any; installs: any[]; events: any[]; referrals: any[]; sales: any[] };
   const buckets = new Map<string, Bucket>();
@@ -303,7 +315,8 @@ export async function GET(request: Request) {
     const lastLoginAt = maxDate(authLastLogin, eventLastLogin);
     const lastResourceAt = maxDate(...resourceEvents.map((x) => x.created_at));
     const latestResourceEvent = [...resourceEvents].sort((a, b) => ms(b.created_at) - ms(a.created_at))[0] || null;
-    const lastActivityAt = maxDate(lastResourceAt, installLastSeen, lastLoginAt);
+    const lastAiAt = maxDate(...[...bucket.ids].map((id) => lastAiByUser.get(id)));
+    const lastActivityAt = maxDate(lastResourceAt, installLastSeen, lastLoginAt, lastAiAt);
     const firstLoginAt = minDate(auth?.created_at, ...loginEvents.map((x) => x.created_at));
     const daysSinceActivity = daysAgo(lastActivityAt, now);
     const legacyOnly = resourceEvents.length === 0;
@@ -325,7 +338,10 @@ export async function GET(request: Request) {
     const cancelComment = str(row.cancel_comment || row.cancellation_comment) || null;
     const cancelLabel = cancelReason || (canceledReferral.length ? "Cancelamento registrado no histórico de afiliados" : null);
 
-    const activityReference = lastResourceAt || maxDate(installLastSeen, lastLoginAt);
+    // Qualquer sinal recente conta: uso de recurso, login, sincronização da extensão ou IA.
+    // Antes, havendo algum evento de recurso antigo, o login de hoje era ignorado e a conta
+    // aparecia "Em risco" mesmo estando em uso.
+    const activityReference = lastActivityAt;
     const activityDays = daysAgo(activityReference, now);
     const hoursSinceActivity = activityReference ? Math.max(0, Math.floor((now - ms(activityReference)) / 3_600_000)) : null;
     let status: "active" | "at_risk" | "inactive" | "canceled";
@@ -353,9 +369,10 @@ export async function GET(request: Request) {
       statusReasons.push("Sem eventos de uso ou acesso recente identificável.");
     }
     if (legacyOnly) statusReasons.push("Conta anterior à implantação da telemetria: ações e módulos usados antes do início do Analytics não podem ser reconstruídos.");
-    if (lastLoginAt) statusReasons.push(`Último login autenticado em ${lastLoginAt}.`);
-    if (installLastSeen) statusReasons.push(`Última sincronização da extensão em ${installLastSeen}.`);
-    if (lastResourceAt) statusReasons.push(`Último evento de recurso registrado em ${lastResourceAt}.`);
+    if (lastLoginAt) statusReasons.push(`Último login: ${fmtBR(lastLoginAt)}.`);
+    if (lastAiAt) statusReasons.push(`Último uso da IA: ${fmtBR(lastAiAt)}.`);
+    if (installLastSeen) statusReasons.push(`Última sincronização da extensão: ${fmtBR(installLastSeen)}.`);
+    if (lastResourceAt) statusReasons.push(`Último uso de recurso: ${fmtBR(lastResourceAt)}.`);
 
     const activeDays = days.length || (activityDays !== null ? 1 : 0);
     const activeDays30 = days30.length || (legacyOnly && activityDays !== null && activityDays <= 30 ? 1 : 0);

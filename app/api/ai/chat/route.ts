@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/tubex-backend";
 import { resolveAccountPlan } from "@/lib/tubex-plan";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   AI_CREDIT_LIMITS, AI_PLAN_LABELS, classifyChatCost, buildQuota,
   readCreditUsage, readPackBalance, reserveCredits, releaseCredits, type CreditReservation,
@@ -104,18 +104,36 @@ async function recordChatEvent(request: Request, user: any, eventName: string, p
   try {
     const bearer = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
     const sessionId = bearer ? createHash("sha256").update(bearer).digest("hex").slice(0, 32) : null;
-    const planInfo = await resolveAccountPlan(user).catch(() => ({ plan: "free" } as any));
-    const { error } = await supabaseAdmin.from("tubex_events").insert({
+    // O plano já vem no envio de mensagens; na abertura, consulta com limite de tempo
+    // para não segurar o registro caso a verificação externa de plano demore.
+    let plan = typeof properties.plan === "string" ? properties.plan : "";
+    if (!plan) {
+      const timeout = new Promise<{ plan: string }>((resolve) => setTimeout(() => resolve({ plan: "free" }), 2500));
+      const resolved: any = await Promise.race([resolveAccountPlan(user).catch(() => ({ plan: "free" })), timeout]);
+      plan = resolved?.plan || "free";
+    }
+    // id e created_at explícitos: no banco de produção a tabela pode não ter DEFAULT
+    // nessas colunas (a rota da extensão sempre envia os dois). Sem eles o insert
+    // falhava e o Chat aparecia com 0 aberturas e 0 mensagens no painel Owner.
+    const row = {
+      id: randomUUID(),
       user_id: user.id,
       install_id: `web-${user.id}`,
       session_id: sessionId,
       event_name: eventName,
       module: "ai_chat",
-      properties: { source: "web_dashboard", plan: planInfo.plan || "free", ...properties },
-    });
-    if (error) console.warn("[TubeX AI analytics] event not recorded", error.message);
+      properties: { source: "web_dashboard", ...properties, plan, email: user.email || null },
+      created_at: new Date().toISOString(),
+    };
+    let { error } = await supabaseAdmin.from("tubex_events").insert(row);
+    if (error) {
+      console.warn("[TubeX AI analytics] insert falhou, tentando sem user_id:", error.message);
+      // Segunda tentativa no mesmo formato da rota da extensão (sem FK de usuário).
+      ({ error } = await supabaseAdmin.from("tubex_events").upsert({ ...row, user_id: null }, { onConflict: "id", ignoreDuplicates: true }));
+      if (error) console.error("[TubeX AI analytics] evento não registrado", eventName, error.message);
+    }
   } catch (error: any) {
-    console.warn("[TubeX AI analytics] event not recorded", error?.message || error);
+    console.error("[TubeX AI analytics] evento não registrado", error?.message || error);
   }
 }
 
