@@ -178,17 +178,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Envie uma conversa válida. Cada mensagem pode ter até 12.000 caracteres." }, { status: 400 });
     }
 
-    const messages = trimMessages(rawMessages);
+    let messages = trimMessages(rawMessages);
     const context = body.channelContext && typeof body.channelContext === "object" ? body.channelContext : {};
     const channelSummary = buildChannelSummary(context);
     const selectedVideos = sanitizeSelectedVideos(body.selectedVideos);
-    const selectedVideoContext = describeSelectedVideos(selectedVideos);
-    const intent = detectIntent(messages);
+    const selectedVideoContext = describeSelectedVideos(selectedVideos, context);
+    const detectedIntent = detectIntent(messages);
+    // Com vídeo anexado, perguntas abertas ("como está indo esse vídeo?") são análise.
+    const intent = selectedVideos.length && detectedIntent === "general" ? "analysis" : detectedIntent;
     const mode = body.mode === "deep" ? "deep" : "fast";
     let maxCompletionTokens: number = OUTPUT_BUDGET[mode];
 
     const planInfo = await getPlanAndUsage(user);
     const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
+    // Modelos menores ignoram dados que ficam só no prompt de sistema. Repete os números
+    // do vídeo anexado junto da pergunta para a resposta usar os dados reais.
+    if (selectedVideos.length) {
+      const lastIndex = messages.map((m) => m.role).lastIndexOf("user");
+      messages = messages.map((m, index) => index === lastIndex
+        ? { ...m, content: `${m.content}\n\n[Dados reais do YouTube dos vídeos anexados, fornecidos pelo TubeX. Use estes números na resposta:]\n${selectedVideoContext}` }
+        : m);
+    }
     const charge = classifyChatCost(lastUserMessage, mode);
     const quotaRow = await reserveCredits(user.id, charge.cost, planInfo.limit);
     if (!quotaRow.allowed) {
@@ -230,6 +240,7 @@ COMO PENSAR:
 - Use o contexto do canal como evidência: cite vídeos pelo título e números reais (views, mediana, "x a mediana"). Nunca invente métricas, concorrentes, tendências, volume de busca ou acesso a ferramentas.
 - Diferencie fatos fornecidos, hipóteses e recomendações. Não prometa viralização.
 - Considere a conversa inteira: se o usuário pedir "mais", "outras" ou ajustar algo, construa a partir do que você já respondeu e não repita itens já entregues.
+- Você TEM acesso aos dados públicos do canal e dos vídeos anexados listados abaixo (views, curtidas, comentários, data, comparação com a mediana). Nunca responda que "não tem acesso aos dados" nem mande o usuário conferir views, curtidas ou comentários no YouTube Studio: use os números. Só retenção, CTR, tempo de exibição, origem de tráfego e receita não estão disponíveis; mencione isso no máximo em uma linha, depois da análise.
 - Se o pedido for ambíguo e a resposta depender disso, faça uma pergunta curta. Se der para ajudar mesmo assim, ajude e pergunte no final.
 
 ${intentPlaybook(intent)}

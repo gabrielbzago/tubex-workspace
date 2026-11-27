@@ -114,6 +114,7 @@ const PLAYBOOKS: Record<ChatIntent, string> = {
 - Você não vê as capas atuais. Não afirme que gerou imagem; a geração de thumbnail é um botão separado no chat.`,
 
   analysis: `PEDIDO ATUAL: ANÁLISE DO CANAL OU DOS VÍDEOS.
+- Se houver vídeo anexado, a resposta é sobre ELE. Abra com o veredito numa frase (ex.: "Está acima da média: 2,3x a mediana do canal"), depois os números (views, views por dia, curtidas e comentários em % comparados ao canal), o que provavelmente explica o resultado (título, tema, formato, momento) e 3 ações concretas para este vídeo (título, thumbnail, descrição/tags, divulgação, Short derivado ou próximo vídeo).
 - Use os números do contexto: mediana, melhores vídeos, ritmo de publicação, Shorts versus longos, desempenho em relação à mediana. Cite os vídeos pelo título.
 - Separe o que é fato (dado fornecido), hipótese (sua leitura) e recomendação. Termine com prioridades numeradas.
 - Se faltar dado (retenção, CTR, origem de tráfego), diga que não está disponível em vez de supor.`,
@@ -280,11 +281,50 @@ export function sanitizeSelectedVideos(input: unknown): SelectedVideo[] {
     }));
 }
 
-export function describeSelectedVideos(videos: SelectedVideo[]): string {
+function ageDays(date: string) {
+  const time = Date.parse(date);
+  return Number.isFinite(time) ? Math.max(1, (Date.now() - time) / 86_400_000) : 0;
+}
+
+const pct = (part: number, total: number) => total > 0 ? `${((part / total) * 100).toFixed(1).replace(".", ",")}%` : "sem dados";
+const ratio = (value: number) => value.toFixed(1).replace(".", ",");
+
+/**
+ * Descreve os vídeos anexados com o diagnóstico já calculado contra o próprio canal
+ * (mediana de views, views por dia, taxa de curtidas e comentários). Sem isso o modelo
+ * pequeno respondia "não tenho acesso aos dados" mesmo com os números no prompt.
+ */
+export function describeSelectedVideos(videos: SelectedVideo[], context?: any): string {
   if (!videos.length) return "Nenhum vídeo anexado.";
-  return videos.map((v, i) => [
-    `${i + 1}. "${v.title}" | ${fmt(v.views)} views | ${fmt(v.likes)} curtidas | ${fmt(v.comments)} comentários | ${daysAgo(v.publishedAt) || "data indisponível"}`,
-    `   Tags atuais: ${v.tags.length ? v.tags.join(", ") : "nenhuma ou não informadas"}`,
-    v.description ? `   Início da descrição: ${v.description}` : "",
-  ].filter(Boolean).join("\n")).join("\n");
+  const sample = (Array.isArray(context?.videos) ? context.videos : [])
+    .filter((v: any) => v && Number.isFinite(Number(v.views)))
+    .map((v: any) => ({ views: n(v.views), likes: n(v.likes), comments: n(v.comments), age: ageDays(String(v.publishedAt || "")) }));
+  const medViews = median(sample.map((v: any) => v.views));
+  const medPerDay = median(sample.filter((v: any) => v.age > 0).map((v: any) => v.views / v.age));
+  const medLikeRate = median(sample.filter((v: any) => v.views > 0).map((v: any) => v.likes / v.views));
+  const medCommentRate = median(sample.filter((v: any) => v.views > 0).map((v: any) => v.comments / v.views));
+
+  return videos.map((v, i) => {
+    const age = ageDays(v.publishedAt);
+    const perDay = age ? v.views / age : 0;
+    const lines = [
+      `${i + 1}. "${v.title}"`,
+      `   Números atuais: ${fmt(v.views)} visualizações, ${fmt(v.likes)} curtidas, ${fmt(v.comments)} comentários, publicado ${daysAgo(v.publishedAt) || "em data indisponível"}${age ? ` (média de ${fmt(perDay)} views por dia desde a publicação)` : ""}.`,
+      `   Engajamento: curtidas = ${pct(v.likes, v.views)} das views; comentários = ${pct(v.comments, v.views)} das views.`,
+    ];
+    if (sample.length >= 3 && medViews > 0) {
+      const xViews = v.views / medViews;
+      const xDay = medPerDay > 0 && perDay > 0 ? perDay / medPerDay : 0;
+      const verdict = xViews >= 1.5 ? "ACIMA da média do canal" : xViews <= 0.6 ? "ABAIXO da média do canal" : "dentro da média do canal";
+      lines.push(`   Comparação com o canal (${sample.length} vídeos recentes): ${ratio(xViews)}x a mediana de ${fmt(medViews)} views, portanto ${verdict}.` +
+        (xDay ? ` Ritmo de ${ratio(xDay)}x a mediana de views por dia (${fmt(medPerDay)}/dia).` : "") +
+        (medLikeRate > 0 ? ` Taxa de curtidas do canal: ${pct(medLikeRate, 1)}; de comentários: ${pct(medCommentRate, 1)}.` : ""));
+      if (age && age < 7) lines.push("   Atenção: vídeo com menos de 7 dias; a comparação de total de views ainda é parcial, dê mais peso ao ritmo por dia.");
+    } else {
+      lines.push("   Lista de vídeos do canal indisponível para comparação; avalie pelos números absolutos e pelo engajamento.");
+    }
+    lines.push(`   Tags atuais: ${v.tags.length ? v.tags.join(", ") : "nenhuma ou não informadas"}`);
+    if (v.description) lines.push(`   Início da descrição: ${v.description}`);
+    return lines.join("\n");
+  }).join("\n");
 }
