@@ -205,7 +205,10 @@ export async function GET(request: Request) {
   const modules = [...moduleStats.entries()].map(([name, value]) => ({ name, label: moduleLabel(name), value: value.users.size, actions: value.actions })).sort((a, b) => b.actions - a.actions);
   const extensionUsers = installs.map(inst => {
     const user = (inst.user_id && userMap.get(inst.user_id)) || emailMap.get(String(inst.email || "").toLowerCase());
-    return { ...inst, plan: user?.plan || "não vinculado", account_status: null };
+    // Todo mundo que instalou e entrou na extensão é, no mínimo, Free. O selo "site"
+    // indica que a mesma conta Google também tem cadastro no site.
+    const plan = String(user?.plan || "free").toLowerCase().trim() || "free";
+    return { ...inst, plan, site: Boolean(user), site_user_id: user?.id || null, account_status: null };
   });
   const daily = [...dailyMap.values()];
   const installsInPeriod = installs.filter(i => i.first_seen && Date.parse(i.first_seen) >= Date.now() - days * DAY).length;

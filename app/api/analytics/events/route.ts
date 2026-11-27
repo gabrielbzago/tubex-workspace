@@ -32,7 +32,10 @@ const ALLOWED = new Set([
   "upgrade_prompt_viewed","upgrade_prompt_clicked","ui_action","api_error","api_request_succeeded",
   "search_failed","analysis_failed","extension_uninstalled","module_closed","welcome_skipped",
   "session_started","extension_action","trend_search_completed","trend_search_failed","summary_viewed",
-  "creator_workspace_opened","competitor_analysis_started","competitor_analysis_failed"
+  "creator_workspace_opened","competitor_analysis_started","competitor_analysis_failed",
+  // TubeX AI Chat (site e extensão): sem estes nomes os eventos do Chat eram descartados.
+  "chat_opened","chat_message_sent","chat_response_received","ai_chat_opened","ai_chat_message_sent",
+  "ai_message_sent","ai_response_received","thumbnail_generated"
 ]);
 
 function cleanText(v: unknown, max=80) {
