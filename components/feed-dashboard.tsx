@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { connectYouTube } from "@/lib/tubex-youtube";
+import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
 import {
   Activity, AlertCircle, ArrowDownRight, ArrowUpRight, BarChart3, CheckCircle2,
   Clock3, Eye, MessageCircle, PlayCircle, RefreshCw, ThumbsUp, TrendingDown,
@@ -97,8 +98,7 @@ export default function FeedDashboard() {
   const load = useCallback(async (requestedChannelId?: string) => {
     setLoading(true); setError("");
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = String((data.session as any)?.provider_token || "");
+      const token = await getGoogleAccessToken();
       if (!token) throw new Error("O canal não está autorizado para leitura. Reconecte sua conta Google e conceda acesso de leitura ao YouTube.");
       const mine = await yt("channels?part=snippet,statistics,contentDetails&mine=true&maxResults=50", token);
       const found: Channel[] = (mine.items || []).map((c: any) => ({

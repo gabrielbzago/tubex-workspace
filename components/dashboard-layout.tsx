@@ -22,6 +22,8 @@ import AdminHub from "./admin-hub";
 import WelcomeSplash from "./welcome-splash";
 import AIChatSpotlight from "./ai-chat-spotlight";
 import YouTubeAnalyticsView from "./youtube-analytics-view";
+import ChannelSwitcher from "./channel-switcher";
+import { CHANNEL_EVENT } from "@/lib/tubex-google-token-client";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
 import { recordWebProductEvent } from "@/lib/tubex-client-analytics";
 
@@ -50,6 +52,9 @@ export default function DashboardLayout({user}:{user:any}){
  const [channelContext,setChannelContext]=useState<any>(null);
  const [achievementSummary,setAchievementSummary]=useState<any>(null);
  const [ownerVerified,setOwnerVerified]=useState(false);
+ // Trocar de canal remonta o conteúdo para todas as telas recarregarem com o canal novo.
+ const [channelKey,setChannelKey]=useState("");
+ useEffect(()=>{const onChannel=(e:Event)=>setChannelKey(String((e as CustomEvent).detail||Date.now()));window.addEventListener(CHANNEL_EVENT,onChannel);return()=>window.removeEventListener(CHANNEL_EVENT,onChannel)},[]);
  const [lang,setLang]=useState<Lang>("pt-br"),[openLang,setOpenLang]=useState(false),[userData,setUserData]=useState<any>(null);
  const t=i18n[lang];
  const ownerEmails = [process.env.NEXT_PUBLIC_OWNER_EMAIL || "", ...(process.env.NEXT_PUBLIC_OWNER_EMAILS || "").split(","), "gabrielbzago@gmail.com"].map(v => v.trim().toLowerCase()).filter(Boolean);
@@ -225,14 +230,15 @@ export default function DashboardLayout({user}:{user:any}){
     <div className="mx-auto flex h-[60px] w-full min-w-0 items-center gap-2 px-4 sm:h-[66px] sm:px-6 lg:px-8">
      <div className="flex items-center gap-2 lg:hidden"><button onClick={()=>setMobileOpen(v=>!v)} aria-label="Menu" aria-expanded={mobileOpen} className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface)] text-[var(--tx-muted)]">{mobileOpen?<X size={17}/>:<Menu size={17}/>}</button><Logo/></div>
      <p className="hidden text-[15px] font-bold lg:block">{titles[tab]}</p>
-     <div className="ml-auto flex items-center gap-2">
+     <div className="ml-auto flex min-w-0 items-center gap-2">
+      <ChannelSwitcher/>
       <ThemeToggle/>
       <div className="relative"><button onClick={()=>setOpenLang(!openLang)} className="tx-mini-btn">{languages.find(x=>x[0]===lang)?.[1]}<ChevronDown size={11}/></button>{openLang&&<div className="tx-menu">{languages.map(x=><button key={x[0]} onClick={()=>changeLang(x[0])}>{x[1]} {x[2]}</button>)}</div>}</div>
      </div>
     </div>
    </header>
    {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div>{ownerSection}<button onClick={logout} className="tx-logout-link tx-logout-strong mt-3"><LogOut size={17}/>Sair da conta</button></nav></div></>}
-   <div key={tab} className={`tx-dashboard-content tx-page-enter mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
+   <div key={`${tab}:${channelKey}`} className={`tx-dashboard-content tx-page-enter mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
     {tab==="home"&&<ChannelHome achievementSummary={achievementSummary} displayName={displayName}/>}
     {tab==="analytics"&&<YouTubeAnalyticsView/>}
     {tab==="ai"&&<div className="tx-ai-home"><TubeXAIChat/></div>}

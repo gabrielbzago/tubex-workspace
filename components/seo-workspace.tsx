@@ -7,6 +7,8 @@ import {
   Target, TrendingUp, Users, Video, RefreshCw
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
+import { connectYouTube } from "@/lib/tubex-youtube";
 
 const getUiLocale = () => {
   if (typeof window === "undefined") return "pt-BR";
@@ -230,8 +232,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
   }, [user?.email]);
 
   const refreshSession = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = String((data.session as any)?.provider_token || "");
+    const token = await getGoogleAccessToken();
     if (token) { setAccessToken(token); await loadChannels(token); }
     else { setAccessToken(""); setChannelLoading(false); setChannelError("Conecte sua conta Google para visualizar seus canais do YouTube e acompanhar seus resultados em um só lugar."); }
   }, [loadChannels]);
@@ -253,9 +254,8 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
       }
     } catch { localStorage.removeItem(activeAnalysisCacheKey); }
     (async () => {
-      const { data } = await supabase.auth.getSession();
+      const token = await getGoogleAccessToken();
       if (!active) return;
-      const token = String((data.session as any)?.provider_token || "");
       if (token) { setAccessToken(token); await loadChannels(token); }
       else { setChannelLoading(false); setChannelError("Sua conta está conectada ao TubeX. Autorize o YouTube para carregar automaticamente todos os canais disponíveis."); }
     })();
@@ -264,6 +264,8 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
 
   async function connectGoogle() {
     setConnecting(true); setChannelError("");
+    // Adiciona/reconecta o canal escolhido na tela do Google sem trocar o login TubeX.
+    try { await connectYouTube(); return; } catch {}
     const options = {
       redirectTo: `${window.location.origin}/dashboard`,
       scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly",

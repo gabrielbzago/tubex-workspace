@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Award, Bell, CheckCircle2, Circle, Crown, Flame, Loader2, Mail, Play, RefreshCw, ShieldCheck, Sparkles, Star, Target, Trophy, Video } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
+import { connectYouTube } from "@/lib/tubex-youtube";
 
 type Achievement = {
   code: string; title: string; description: string; category: string; metric: string;
@@ -72,8 +74,9 @@ export default function AchievementsCenter({ user }: { user: any }) {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData.session as any;
-      const accessToken = String(session?.provider_token || "");
+      const accessToken = await getGoogleAccessToken().catch(() => "");
       if (!accessToken) {
+        try { await connectYouTube(); return; } catch {}
         const options = {
           redirectTo: `${window.location.origin}/dashboard`,
           scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly",
@@ -105,9 +108,9 @@ export default function AchievementsCenter({ user }: { user: any }) {
   useEffect(() => {
     void load();
     let active = true;
-    supabase.auth.getSession().then(({ data: sessionData }) => {
-      if (active && sessionData.session?.provider_token) void sync();
-    });
+    getGoogleAccessToken().then((token) => {
+      if (active && token) void sync();
+    }).catch(() => {});
     return () => { active = false; };
   }, [load, sync]);
 

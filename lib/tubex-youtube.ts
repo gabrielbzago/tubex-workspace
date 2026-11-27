@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
+import { CHANNEL_EVENT, getActiveChannelId, getGoogleAccessToken, setActiveChannelId, startChannelConnect } from "@/lib/tubex-google-token-client";
 
 /** Dados do canal conectado (YouTube Data API com o token OAuth do Google), com cache em memória. */
 export type YTChannel = { id: string; title: string; thumbnail: string; subscribers: number; views: number; videoCount: number; uploads: string };
@@ -12,6 +12,9 @@ const API = "https://www.googleapis.com/youtube/v3";
 const TTL = 10 * 60 * 1000;
 let cache: ChannelData | null = null;
 let inflight: Promise<ChannelData> | null = null;
+
+// Trocou de canal: descarta os dados do canal anterior.
+if (typeof window !== "undefined") window.addEventListener(CHANNEL_EVENT, () => { cache = null; inflight = null; commentCache.clear(); });
 
 export class NeedsGoogleError extends Error { needsGoogle = true; }
 
@@ -39,8 +42,11 @@ async function fetchChannelData(): Promise<ChannelData> {
     videoCount: Number(c.statistics?.videoCount || 0), uploads: String(c.contentDetails?.relatedPlaylists?.uploads || ""),
   }));
   if (!list.length) throw new Error("Nenhum canal do YouTube foi encontrado nesta conta Google.");
-  let saved = ""; try { saved = localStorage.getItem("tubex-feed-channel") || ""; } catch {}
+  // O token só enxerga o canal escolhido no consentimento; o canal ativo vem do seletor de canais.
+  const saved = getActiveChannelId();
   const channel = list.find((c) => c.id === saved) || list[0];
+  if (!saved) setActiveChannelId(channel.id, false);
+  try { localStorage.setItem("tubex-feed-channel", channel.id); } catch {}
   const ids: string[] = [];
   if (channel.uploads) {
     const p = new URLSearchParams({ part: "contentDetails", playlistId: channel.uploads, maxResults: "50" });
@@ -84,7 +90,10 @@ export function useChannelData() {
     setLoading(true); setError(null);
     try {
       if (!inflight || force) inflight = fetchChannelData();
-      cache = await inflight; setData(cache);
+      const result = await inflight;
+      const active = getActiveChannelId();
+      if (!active || result.channel.id === active) cache = result;
+      setData(result);
     } catch (e: any) {
       setError({ message: e?.message || "Não foi possível carregar o canal.", needsGoogle: Boolean(e?.needsGoogle) });
     } finally { inflight = null; setLoading(false); }
@@ -95,12 +104,14 @@ export function useChannelData() {
 
 /** Reconecta o Google. extraScopes: ex. YT_SCOPE.monetary para liberar a receita (opcional). */
 export async function connectYouTube(extraScopes: string[] = []) {
+  // Preferência: fluxo próprio que adiciona o canal escolhido SEM trocar o login TubeX.
+  if (await startChannelConnect(Array.isArray(extraScopes) ? extraScopes : [])) return;
   const { data } = await supabase.auth.getSession();
   const user: any = data.session?.user;
   const options = {
     redirectTo: `${window.location.origin}/dashboard`,
     scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly" + (Array.isArray(extraScopes) && extraScopes.length ? " " + extraScopes.join(" ") : ""),
-    queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
+    queryParams: { access_type: "offline", prompt: "select_account consent", include_granted_scopes: "true" },
   };
   const hasGoogle = (user?.identities || []).some((i: any) => i.provider === "google");
   const result = user && !hasGoogle

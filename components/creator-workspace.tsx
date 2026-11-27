@@ -6,6 +6,8 @@ import {
   Lightbulb, Loader2, RefreshCw, Search, Sparkles, TrendingUp, Users, Video
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
+import { connectYouTube } from "@/lib/tubex-youtube";
 import { UpgradeGate } from "./seo-workspace";
 
 type Channel = { id: string; title: string; description: string; thumbnail: string; subscribers: number | null; views: number; videoCount: number; uploads: string };
@@ -204,8 +206,9 @@ export default function CreatorWorkspace({ user, plan: initialPlan = "free" }: {
     const { data } = await supabase.auth.getSession();
     const session = data.session as any;
     setSessionToken(String(session?.access_token || ""));
-    setAccessToken(String(session?.provider_token || ""));
-    return { bearer: String(session?.access_token || ""), google: String(session?.provider_token || "") };
+    const google = await getGoogleAccessToken().catch(() => "");
+    setAccessToken(google);
+    return { bearer: String(session?.access_token || ""), google };
   }, []);
 
   const loadChannels = useCallback(async (token: string) => {
@@ -290,6 +293,7 @@ export default function CreatorWorkspace({ user, plan: initialPlan = "free" }: {
 
   async function connectGoogle() {
     setConnecting(true); setChannelError("");
+    try { await connectYouTube(); return; } catch {}
     const options = { redirectTo: `${window.location.origin}/dashboard`, scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly", queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" } };
     const { data } = await supabase.auth.getSession();
     const currentUser = data.session?.user;
