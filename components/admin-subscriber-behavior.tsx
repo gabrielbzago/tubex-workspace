@@ -158,7 +158,11 @@ export default function AdminSubscriberBehavior({ segment = "subscribers" }: { s
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Sessão expirada. Entre novamente.");
       const response = await fetch(`/api/admin/behavior?segment=${segment}`, { headers: { Authorization: `Bearer ${session.access_token}` }, cache: "no-store" });
-      const payload = await response.json();
+      // A Vercel devolve texto ("An error occurred...") em timeout/500; não quebrar o JSON.parse.
+      const raw = await response.text();
+      let payload: any;
+      try { payload = JSON.parse(raw); }
+      catch { throw new Error(response.status === 504 ? "O servidor demorou demais para responder. Clique em Atualizar para tentar de novo." : `O servidor respondeu com erro (${response.status}). Tente atualizar em instantes.`); }
       if (!response.ok) throw new Error(payload.error === "forbidden" ? "Acesso restrito ao proprietário." : "Não foi possível carregar os dados de comportamento.");
       setAccounts(payload.accounts || []);
     } catch (reason: any) { setError(reason.message || "Falha ao carregar os dados."); }

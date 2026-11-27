@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+import { fetchAllPages } from "@/lib/tubex-paged";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const DAY = 86_400_000;
 const TZ = "America/Sao_Paulo";
@@ -83,6 +85,27 @@ async function fetchAll(table: string, columns = "*", pageSize = 1000, maxRows =
   return rows;
 }
 
+/**
+ * Eventos mais recentes primeiro, em páginas paralelas e com limite de tempo.
+ * A versão anterior lia 150 mil linhas ordenadas, uma página por vez, e estourava
+ * o tempo da Vercel (a página recebia "An error occurred..." em vez de JSON).
+ */
+async function fetchRecentEvents() {
+  const columns = "id,user_id,install_id,session_id,event_name,module,properties,created_at";
+  let total: number | null = null;
+  try {
+    const { count, error } = await supabaseAdmin.from("tubex_events").select("id", { count: "exact", head: true });
+    if (!error && typeof count === "number") total = count;
+  } catch { /* segue sem total */ }
+  const { rows, error } = await fetchAllPages(
+    (from, to) => (supabaseAdmin as any).from("tubex_events").select(columns)
+      .order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to),
+    { maxRows: 60_000, total, concurrency: 8, timeBudgetMs: 35_000 },
+  );
+  if (error) console.warn("[admin behavior] tubex_events parcial:", error);
+  return rows;
+}
+
 async function fetchAuthUsers() {
   const users: any[] = [];
   for (let page = 1; page <= 100; page++) {
@@ -138,7 +161,7 @@ export async function GET(request: Request) {
   const [userRows, authUsers, eventRows, installations, referrals, sales, aiCreditRows] = await Promise.all([
     fetchAll("users", "*"),
     fetchAuthUsers(),
-    fetchAll("tubex_events", "id,user_id,install_id,session_id,event_name,module,properties,created_at", 1000, 150000, "created_at"),
+    fetchRecentEvents(),
     fetchAll("tubex_installations", "install_id,google_sub,email,name,picture,user_id,extension_version,first_seen,last_seen"),
     fetchAll("affiliate_referrals", "id,referred_email,referred_name,plan,status,stripe_subscription_id,updated_at,created_at"),
     fetchAll("affiliate_sales", "id,customer_email,customer_name,plan,status,stripe_subscription_id,last_payment_date,created_at"),
@@ -307,7 +330,7 @@ export async function GET(request: Request) {
         at: str(e.created_at),
         plan: str(e.properties?.plan) || null,
         source: str(e.properties?.source) || null,
-      })).slice(-100).reverse();
+      })).slice(-30).reverse();
 
     const installLastSeen = maxDate(...bucket.installs.map((x) => x.last_seen));
     const authLastLogin = iso(auth?.last_sign_in_at);
@@ -452,7 +475,7 @@ export async function GET(request: Request) {
       actions30,
       highUse: actions30 >= 30,
       modules,
-      sessions: sessions.slice(0, 100),
+      sessions: sessions.slice(0, 30),
       paymentJourney: paymentEvents,
       _hasResourceEvents: resourceEvents.length > 0,
     };
