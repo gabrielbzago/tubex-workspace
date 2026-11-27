@@ -266,7 +266,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
     setConnecting(true); setChannelError("");
     const options = {
       redirectTo: `${window.location.origin}/dashboard`,
-      scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl",
+      scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly",
       queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" }
     };
     const { data: authData } = await supabase.auth.getSession();

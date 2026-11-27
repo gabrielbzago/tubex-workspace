@@ -117,8 +117,8 @@ const PLAYBOOKS: Record<ChatIntent, string> = {
 - Se houver vídeo anexado, a resposta é sobre ELE e segue esta ordem, com um título curto para cada etapa:
   1. Idade: data e hora da publicação e se é recém-lançado. Isso muda toda a leitura; vídeo recente nunca é ruim só por ter menos views totais que vídeos antigos.
   2. Ritmo: views por hora ou por dia e o VEREDITO AJUSTADO PELA IDADE (ex.: "com 30 horas tem 1,9x o que um vídeo típico do canal teria").
-  3. CTR: a API pública não traz CTR nem impressões. Diga isso em uma linha e use o ritmo de views nas primeiras horas ou dias como sinal indireto de que título e thumbnail estão atraindo cliques.
-  4. Engajamento: curtidas e comentários em % das views, comparados à mediana do canal.
+  3. Alcance e CTR: se houver YOUTUBE ANALYTICS com impressões e CTR, use os números reais (CTR entre 2% e 10% é a faixa comum; abaixo de 2% sugere revisar título e thumbnail). Se não houver, diga em uma linha e use o ritmo de views como sinal indireto.
+  4. Retenção e engajamento: duração média e % assistido quando existirem; curtidas, comentários, compartilhamentos e inscritos ganhos em relação às views, comparados ao canal. Cite a origem do tráfego principal e o que ela indica (busca = SEO funcionando; sugeridos/início = algoritmo testando o vídeo).
   5. Diagnóstico: junte tudo numa conclusão clara (indo bem, na média ou abaixo, e por quê) e dê 3 ações concretas para este vídeo agora (ex.: fixar comentário, responder comentários, Short derivado, ajuste de título ou thumbnail só se estiver abaixo).
 - Use os números do contexto: mediana, melhores vídeos, ritmo de publicação, Shorts versus longos, desempenho em relação à mediana. Cite os vídeos pelo título.
 - Separe o que é fato (dado fornecido), hipótese (sua leitura) e recomendação. Termine com prioridades numeradas.
@@ -269,7 +269,54 @@ export function buildChannelSummary(context: any): string {
 export type SelectedVideo = {
   id: string; title: string; publishedAt: string; views: number; likes: number; comments: number;
   tags: string[]; description: string;
+  analytics: SelectedVideoAnalytics | null;
 };
+
+export type SelectedVideoAnalytics = {
+  status: "ok" | "no_permission" | "no_data" | "error";
+  views?: number; minutesWatched?: number; avgViewDuration?: number; avgViewPercentage?: number;
+  subscribersGained?: number; shares?: number; impressions?: number; ctr?: number;
+  trafficSources: { source: string; views: number }[];
+};
+
+function sanitizeAnalytics(input: any): SelectedVideoAnalytics | null {
+  if (!input || typeof input !== "object") return null;
+  const status = ["ok", "no_permission", "no_data", "error"].includes(input.status) ? input.status : "error";
+  const num = (value: unknown) => (value === undefined || value === null || !Number.isFinite(Number(value)) ? undefined : Math.max(0, Number(value)));
+  return {
+    status,
+    views: num(input.views), minutesWatched: num(input.minutesWatched), avgViewDuration: num(input.avgViewDuration),
+    avgViewPercentage: num(input.avgViewPercentage), subscribersGained: num(input.subscribersGained), shares: num(input.shares),
+    impressions: num(input.impressions), ctr: num(input.ctr),
+    trafficSources: (Array.isArray(input.trafficSources) ? input.trafficSources : []).slice(0, 6)
+      .map((t: any) => ({ source: clean(t?.source, 40).replace(/[^A-Z_]/gi, ""), views: n(t?.views) })).filter((t: any) => t.source),
+  };
+}
+
+const TRAFFIC_LABELS: Record<string, string> = {
+  YT_SEARCH: "Pesquisa do YouTube", SUGGESTED_VIDEO: "Vídeos sugeridos", BROWSE: "Página inicial e inscrições",
+  SHORTS: "Feed de Shorts", EXT_URL: "Sites e apps externos", NO_LINK_OTHER: "Direto ou desconhecido",
+  NOTIFICATION: "Notificações", PLAYLIST: "Playlists", YT_CHANNEL: "Página do canal", YT_OTHER_PAGE: "Outras páginas do YouTube",
+  SUBSCRIBER: "Inscritos", END_SCREEN: "Telas finais", HASHTAGS: "Hashtags", SOUND_PAGE: "Página de áudio",
+  ANNOTATION: "Cards e anotações", CAMPAIGN_CARD: "Campanhas", ADVERTISING: "Anúncios", LIVE_REDIRECT: "Redirecionamento de live",
+};
+
+function describeAnalytics(a: SelectedVideoAnalytics | null): string[] {
+  if (!a) return ["   YouTube Analytics: não consultado. CTR, retenção e origem do tráfego indisponíveis."];
+  if (a.status === "no_permission") return ["   YouTube Analytics: sem permissão neste login. Diga em uma linha que, para liberar CTR, retenção e origem do tráfego, o usuário deve reconectar a conta Google no TubeX (Início > conectar canal) e aceitar a permissão de relatórios do YouTube Analytics."];
+  if (a.status === "no_data") return ["   YouTube Analytics: ainda sem dados para este vídeo (o Analytics costuma ter 24 a 48 horas de atraso). Diga isso e use o ritmo de views públicas."];
+  if (a.status === "error") return ["   YouTube Analytics: indisponível agora. Use os dados públicos e não invente CTR ou retenção."];
+  const out = ["   YOUTUBE ANALYTICS (dados privados reais do dono do canal; podem ter 24 a 48 horas de atraso em relação às views públicas):"];
+  if (a.ctr !== undefined && a.impressions !== undefined) out.push(`   - Impressões: ${fmt(a.impressions)} | CTR das impressões: ${(a.ctr * (a.ctr <= 1 && a.ctr * a.impressions <= (a.views || Infinity) * 1.5 ? 100 : 1)).toFixed(1).replace(".", ",")}%`);
+  else out.push("   - CTR e impressões: não retornados pela API para este vídeo; use o ritmo de views como sinal indireto.");
+  if (a.avgViewDuration !== undefined) out.push(`   - Duração média assistida: ${Math.floor(a.avgViewDuration / 60)}min${String(Math.round(a.avgViewDuration % 60)).padStart(2, "0")}s | Retenção média: ${a.avgViewPercentage !== undefined ? `${a.avgViewPercentage.toFixed(1).replace(".", ",")}% do vídeo` : "sem dado"}`);
+  if (a.minutesWatched !== undefined) out.push(`   - Tempo de exibição: ${fmt(a.minutesWatched / 60)} horas | Inscritos ganhos: ${fmt(a.subscribersGained || 0)} | Compartilhamentos: ${fmt(a.shares || 0)}`);
+  if (a.trafficSources.length) {
+    const total = a.trafficSources.reduce((sum, t) => sum + t.views, 0) || 1;
+    out.push(`   - Origem do tráfego: ${a.trafficSources.map((t) => `${TRAFFIC_LABELS[t.source] || t.source} ${Math.round((t.views / total) * 100)}%`).join(", ")}`);
+  }
+  return out;
+}
 
 export function sanitizeSelectedVideos(input: unknown): SelectedVideo[] {
   return (Array.isArray(input) ? input : []).slice(0, 5)
@@ -283,6 +330,7 @@ export function sanitizeSelectedVideos(input: unknown): SelectedVideo[] {
       comments: Math.min(1e15, n(video.comments)),
       tags: (Array.isArray(video.tags) ? video.tags : []).filter((t: any) => typeof t === "string").slice(0, 30).map((t: string) => clean(t, 50)).filter(Boolean),
       description: clean(video.description, 400),
+      analytics: sanitizeAnalytics(video.analytics),
     }));
 }
 
@@ -349,6 +397,7 @@ export function describeSelectedVideos(videos: SelectedVideo[], context?: any): 
     } else {
       lines.push("   Sem lista de vídeos do canal para comparar; avalie pelo ritmo de views considerando a idade e pelo engajamento.");
     }
+    lines.push(...describeAnalytics(v.analytics));
     lines.push(`   Tags atuais: ${v.tags.length ? v.tags.join(", ") : "nenhuma ou não informadas"}`);
     if (v.description) lines.push(`   Início da descrição: ${v.description}`);
     return lines.join("\n");

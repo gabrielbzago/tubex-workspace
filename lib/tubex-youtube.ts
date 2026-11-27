@@ -97,7 +97,7 @@ export async function connectYouTube() {
   const user: any = data.session?.user;
   const options = {
     redirectTo: `${window.location.origin}/dashboard`,
-    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl",
+    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly",
     queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
   };
   const hasGoogle = (user?.identities || []).some((i: any) => i.provider === "google");

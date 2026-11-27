@@ -16,7 +16,68 @@ import "./tubex-ai-credits.css";
 type Message = { role: "user" | "assistant"; content: string };
 type ChatSession = { id: string; title: string; updatedAt: number; messages: Message[] };
 type Mode = "fast" | "deep";
-type ChannelVideo = { id: string; title: string; thumbnail: string; publishedAt: string; views: number; likes: number; comments: number; tags?: string[]; description?: string };
+type ChannelVideo = { id: string; title: string; thumbnail: string; publishedAt: string; views: number; likes: number; comments: number; tags?: string[]; description?: string; analytics?: VideoAnalytics };
+/** Métricas privadas do YouTube Analytics (dono do canal). status explica quando não vieram. */
+type VideoAnalytics = {
+  status: "ok" | "no_permission" | "no_data" | "error";
+  views?: number; minutesWatched?: number; avgViewDuration?: number; avgViewPercentage?: number;
+  subscribersGained?: number; shares?: number; impressions?: number; ctr?: number;
+  trafficSources?: { source: string; views: number }[];
+};
+
+const ANALYTICS_TTL = 10 * 60 * 1000;
+// Se a API recusar as métricas de impressões/CTR (400), não tenta de novo nesta sessão.
+let reachMetricsUnsupported = false;
+
+/**
+ * Busca no YouTube Analytics as métricas do vídeo anexado: tempo de exibição, retenção,
+ * inscritos, origem do tráfego e, quando a API liberar, impressões e CTR. Cada consulta
+ * é independente: se uma falhar (métrica indisponível), as outras continuam valendo.
+ */
+async function fetchVideoAnalytics(token: string, video: ChannelVideo): Promise<VideoAnalytics> {
+  const today = new Date().toISOString().slice(0, 10);
+  const published = Date.parse(video.publishedAt);
+  const startDate = Number.isFinite(published) ? new Date(published).toISOString().slice(0, 10) : "2005-04-23";
+  const report = async (params: Record<string, string>) => {
+    const query = new URLSearchParams({ ids: "channel==MINE", startDate, endDate: today, filters: `video==${video.id}`, ...params });
+    const response = await fetch(`https://youtubeanalytics.googleapis.com/v2/reports?${query}`, {
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(new Error(payload?.error?.message || `Analytics ${response.status}`), { status: response.status });
+    return payload as { columnHeaders?: { name: string }[]; rows?: any[][] };
+  };
+  const firstRow = (data: { columnHeaders?: { name: string }[]; rows?: any[][] }) => {
+    const row = data.rows?.[0];
+    if (!row) return null;
+    return Object.fromEntries((data.columnHeaders || []).map((h, i) => [h.name, Number(row[i]) || 0]));
+  };
+  const [core, reach, traffic] = await Promise.allSettled([
+    report({ metrics: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,shares" }),
+    reachMetricsUnsupported ? Promise.reject(new Error("skip")) : report({ metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate" }),
+    report({ metrics: "views", dimensions: "insightTrafficSourceType", sort: "-views", maxResults: "6" }),
+  ]);
+  if (core.status === "rejected") {
+    const status = Number((core.reason as any)?.status || 0);
+    return { status: status === 401 || status === 403 ? "no_permission" : "error" };
+  }
+  const main = firstRow(core.value);
+  if (!main) return { status: "no_data" };
+  const result: VideoAnalytics = {
+    status: "ok",
+    views: main.views, minutesWatched: main.estimatedMinutesWatched, avgViewDuration: main.averageViewDuration,
+    avgViewPercentage: main.averageViewPercentage, subscribersGained: main.subscribersGained, shares: main.shares,
+  };
+  if (reach.status === "rejected" && Number((reach.reason as any)?.status) === 400) reachMetricsUnsupported = true;
+  if (reach.status === "fulfilled") {
+    const r = firstRow(reach.value);
+    if (r) { result.impressions = r.videoThumbnailImpressions; result.ctr = r.videoThumbnailImpressionsClickRate; }
+  }
+  if (traffic.status === "fulfilled") {
+    result.trafficSources = (traffic.value.rows || []).slice(0, 6).map(row => ({ source: String(row[0]), views: Number(row[1]) || 0 }));
+  }
+  return result;
+}
 type AIQuota = { plan: string; planLabel: string; used: number; limit: number; remaining?: number; planRemaining?: number; packBalance?: number; cost?: number };
 type CreditPack = { id: string; name: string; credits: number; amountCents: number; highlight?: string };
 type UpgradeOffer = { plan: string; label: string; credits: number } | null;
@@ -283,6 +344,7 @@ export default function TubeXAIChat() {
   const abortRef = useRef<AbortController | null>(null);
   const stickRef = useRef(true);
   const prefillRef = useRef<string | null>(null);
+  const analyticsCacheRef = useRef(new Map<string, { at: number; data: VideoAnalytics }>());
 
   useEffect(() => {
     try {
@@ -452,11 +514,21 @@ export default function TubeXAIChat() {
     const controller = new AbortController(); abortRef.current = controller;
     try {
       const { data } = await supabase.auth.getSession(); const token = data.session?.access_token;
+      // Métricas privadas do Analytics para os vídeos anexados (cache de 10 min por vídeo).
+      const googleToken = String((data.session as any)?.provider_token || "");
+      const videosWithAnalytics = await Promise.all(selectedVideos.map(async (video) => {
+        const cached = analyticsCacheRef.current.get(video.id);
+        if (cached && Date.now() - cached.at < ANALYTICS_TTL) return { ...video, analytics: cached.data };
+        if (!googleToken) return { ...video, analytics: { status: "no_permission" } as VideoAnalytics };
+        const analytics = await fetchVideoAnalytics(googleToken, video).catch((): VideoAnalytics => ({ status: "error" }));
+        if (analytics.status !== "error") analyticsCacheRef.current.set(video.id, { at: Date.now(), data: analytics });
+        return { ...video, analytics };
+      }));
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ messages: next.slice(-12), channelContext, selectedVideos, mode }),
+        body: JSON.stringify({ messages: next.slice(-12), channelContext, selectedVideos: videosWithAnalytics, mode }),
       });
       const payload = await response.json();
       if (payload.quota) setQuota(payload.quota);

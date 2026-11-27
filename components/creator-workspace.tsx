@@ -290,7 +290,7 @@ export default function CreatorWorkspace({ user, plan: initialPlan = "free" }: {
 
   async function connectGoogle() {
     setConnecting(true); setChannelError("");
-    const options = { redirectTo: `${window.location.origin}/dashboard`, scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl", queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" } };
+    const options = { redirectTo: `${window.location.origin}/dashboard`, scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly", queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" } };
     const { data } = await supabase.auth.getSession();
     const currentUser = data.session?.user;
     const hasGoogleIdentity = (currentUser?.identities || []).some((identity: any) => identity.provider === "google");
