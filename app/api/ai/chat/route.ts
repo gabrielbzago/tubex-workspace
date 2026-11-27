@@ -12,6 +12,7 @@ import {
   INTENT_LABEL, INTENT_TEMPERATURE, buildChannelSummary, describeSelectedVideos, detectIntent,
   extractTopic, fetchYouTubeSuggestions, intentPlaybook, sanitizeSelectedVideos,
 } from "@/lib/tubex-ai-brain";
+import { loadChatAnalytics, wantsChannelAnalytics, wantsRevenue } from "@/lib/tubex-ai-analytics";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -182,7 +183,6 @@ export async function POST(request: Request) {
     const context = body.channelContext && typeof body.channelContext === "object" ? body.channelContext : {};
     const channelSummary = buildChannelSummary(context);
     const selectedVideos = sanitizeSelectedVideos(body.selectedVideos);
-    const selectedVideoContext = describeSelectedVideos(selectedVideos, context);
     const detectedIntent = detectIntent(messages);
     // Com vídeo anexado, perguntas abertas ("como está indo esse vídeo?") são análise.
     const intent = selectedVideos.length && detectedIntent === "general" ? "analysis" : detectedIntent;
@@ -191,14 +191,6 @@ export async function POST(request: Request) {
 
     const planInfo = await getPlanAndUsage(user);
     const lastUserMessage = [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
-    // Modelos menores ignoram dados que ficam só no prompt de sistema. Repete os números
-    // do vídeo anexado junto da pergunta para a resposta usar os dados reais.
-    if (selectedVideos.length) {
-      const lastIndex = messages.map((m) => m.role).lastIndexOf("user");
-      messages = messages.map((m, index) => index === lastIndex
-        ? { ...m, content: `${m.content}\n\n[Dados reais do YouTube dos vídeos anexados, fornecidos pelo TubeX. Use estes números na resposta:]\n${selectedVideoContext}` }
-        : m);
-    }
     const charge = classifyChatCost(lastUserMessage, mode);
     const quotaRow = await reserveCredits(user.id, charge.cost, planInfo.limit);
     if (!quotaRow.allowed) {
@@ -214,6 +206,24 @@ export async function POST(request: Request) {
     reservation = quotaRow;
     creditReserved = true;
     reservedCost = charge.cost;
+
+    // Dados privados do YouTube Analytics: do vídeo anexado e, quando a pergunta é sobre
+    // o canal, desempenho ou público, do canal nos últimos 28 dias (com cache).
+    const includeChannelAnalytics = Boolean(context?.channelName) && wantsChannelAnalytics(lastUserMessage, intent);
+    const analytics = await loadChatAnalytics(request, user.id, {
+      videos: selectedVideos.map((v) => ({ id: v.id, title: v.title, publishedAt: v.publishedAt })),
+      includeChannel: includeChannelAnalytics,
+      includeRevenue: wantsRevenue(lastUserMessage),
+    }).catch(() => ({ channel: "", videos: {} as Record<string, string> }));
+    const selectedVideoContext = describeSelectedVideos(selectedVideos, context, analytics.videos);
+    // Modelos menores ignoram dados que ficam só no prompt de sistema. Repete os números
+    // do vídeo anexado junto da pergunta para a resposta usar os dados reais.
+    if (selectedVideos.length) {
+      const lastIndex = messages.map((m) => m.role).lastIndexOf("user");
+      messages = messages.map((m, index) => index === lastIndex
+        ? { ...m, content: `${m.content}\n\n[Dados reais do YouTube dos vídeos anexados, fornecidos pelo TubeX. Use estes números na resposta:]\n${selectedVideoContext}` }
+        : m);
+    }
 
     // Para tags, títulos, SEO, descrição e ideias, busca o autocompletar real do YouTube
     // sobre o assunto pedido (ou o vídeo anexado). Isso ancora a resposta no tema certo
@@ -240,7 +250,7 @@ COMO PENSAR:
 - Use o contexto do canal como evidência: cite vídeos pelo título e números reais (views, mediana, "x a mediana"). Nunca invente métricas, concorrentes, tendências, volume de busca ou acesso a ferramentas.
 - Diferencie fatos fornecidos, hipóteses e recomendações. Não prometa viralização.
 - Considere a conversa inteira: se o usuário pedir "mais", "outras" ou ajustar algo, construa a partir do que você já respondeu e não repita itens já entregues.
-- Você TEM acesso aos dados públicos do canal e dos vídeos anexados listados abaixo (views, curtidas, comentários, data, comparação com a mediana). Nunca responda que "não tem acesso aos dados" nem mande o usuário conferir views, curtidas ou comentários no YouTube Studio: use os números. Só retenção, CTR, tempo de exibição, origem de tráfego e receita não estão disponíveis; mencione isso no máximo em uma linha, depois da análise.
+- Você TEM acesso aos dados públicos do canal e dos vídeos anexados listados abaixo (views, curtidas, comentários, data, comparação com a mediana). Nunca responda que "não tem acesso aos dados" nem mande o usuário conferir views, curtidas ou comentários no YouTube Studio: use os números. Quando houver blocos de ANALYTICS (canal ou vídeo), você também tem CTR, impressões, retenção, tempo de exibição, origem do tráfego e público reais: use-os. Se eles não vierem, diga em no máximo uma linha o que falta, depois da análise.
 - Se o pedido for ambíguo e a resposta depender disso, faça uma pergunta curta. Se der para ajudar mesmo assim, ajude e pergunte no final.
 
 ${intentPlaybook(intent)}
@@ -256,8 +266,8 @@ ${mode === "deep"
       ? "MODO PROFUNDO: diagnóstico, evidências, hipóteses, prioridades e próximos passos. Até cerca de 900 palavras."
       : "MODO RÁPIDO: direto e orientado à ação, até cerca de 400 palavras (listas de tags, títulos ou roteiros podem passar disso se necessário)."}
 
-CONTEXTO DO CANAL (dados reais do YouTube, já calculados):
-${channelSummary}
+CONTEXTO DO CANAL (dados públicos reais do YouTube, já calculados):
+${channelSummary}${analytics.channel ? `\n\n${analytics.channel}\nUse estes números privados do YouTube Analytics (últimos 28 dias) para responder sobre desempenho, público, retenção, CTR e tráfego. Compare com o período anterior quando houver.` : ""}
 
 VÍDEOS ANEXADOS PELO USUÁRIO (foco principal quando existirem):
 ${selectedVideoContext}${searchContext}

@@ -117,8 +117,8 @@ const PLAYBOOKS: Record<ChatIntent, string> = {
 - Se houver vídeo anexado, a resposta é sobre ELE e segue esta ordem, com um título curto para cada etapa:
   1. Idade: data e hora da publicação e se é recém-lançado. Isso muda toda a leitura; vídeo recente nunca é ruim só por ter menos views totais que vídeos antigos.
   2. Ritmo: views por hora ou por dia e o VEREDITO AJUSTADO PELA IDADE (ex.: "com 30 horas tem 1,9x o que um vídeo típico do canal teria").
-  3. Alcance e CTR: se houver YOUTUBE ANALYTICS com impressões e CTR, use os números reais (CTR entre 2% e 10% é a faixa comum; abaixo de 2% sugere revisar título e thumbnail). Se não houver, diga em uma linha e use o ritmo de views como sinal indireto.
-  4. Retenção e engajamento: duração média e % assistido quando existirem; curtidas, comentários, compartilhamentos e inscritos ganhos em relação às views, comparados ao canal. Cite a origem do tráfego principal e o que ela indica (busca = SEO funcionando; sugeridos/início = algoritmo testando o vídeo).
+  3. Alcance e CTR: se houver ANALYTICS DO VÍDEO com impressões e CTR, use os números reais (CTR entre 2% e 10% é a faixa comum; abaixo de 2% sugere revisar título e thumbnail). Se não houver, diga em uma linha e use o ritmo de views como sinal indireto.
+  4. Retenção e engajamento: duração média, % assistido e a curva de retenção (onde o público sai) quando existirem; buscas que trouxeram views indicam o SEO real; curtidas, comentários, compartilhamentos e inscritos ganhos em relação às views, comparados ao canal. Cite a origem do tráfego principal e o que ela indica (busca = SEO funcionando; sugeridos/início = algoritmo testando o vídeo).
   5. Diagnóstico: junte tudo numa conclusão clara (indo bem, na média ou abaixo, e por quê) e dê 3 ações concretas para este vídeo agora (ex.: fixar comentário, responder comentários, Short derivado, ajuste de título ou thumbnail só se estiver abaixo).
 - Use os números do contexto: mediana, melhores vídeos, ritmo de publicação, Shorts versus longos, desempenho em relação à mediana. Cite os vídeos pelo título.
 - Separe o que é fato (dado fornecido), hipótese (sua leitura) e recomendação. Termine com prioridades numeradas.
@@ -368,7 +368,7 @@ function ageText(days: number) {
  * Um vídeo novo é comparado com o que os vídeos do canal costumam ter nessa mesma
  * idade, não com o total que os antigos acumularam em meses.
  */
-export function describeSelectedVideos(videos: SelectedVideo[], context?: any): string {
+export function describeSelectedVideos(videos: SelectedVideo[], context?: any, analyticsById: Record<string, string> = {}): string {
   if (!videos.length) return "Nenhum vídeo anexado.";
   const sample = (Array.isArray(context?.videos) ? context.videos : [])
     .filter((v: any) => v && Number.isFinite(Number(v.views)))
@@ -397,7 +397,9 @@ export function describeSelectedVideos(videos: SelectedVideo[], context?: any): 
     } else {
       lines.push("   Sem lista de vídeos do canal para comparar; avalie pelo ritmo de views considerando a idade e pelo engajamento.");
     }
-    lines.push(...describeAnalytics(v.analytics));
+    // Resumo do YouTube Analytics feito no servidor (token renovado). Sem ele, usa o que o navegador mandou.
+    if (analyticsById[v.id]) lines.push(...analyticsById[v.id].split("\n").map((line) => `   ${line}`));
+    else lines.push(...describeAnalytics(v.analytics));
     lines.push(`   Tags atuais: ${v.tags.length ? v.tags.join(", ") : "nenhuma ou não informadas"}`);
     if (v.description) lines.push(`   Início da descrição: ${v.description}`);
     return lines.join("\n");
