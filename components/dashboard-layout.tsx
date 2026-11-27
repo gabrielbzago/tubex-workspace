@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { Sparkles,Gauge,Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity,Trophy,Rss,ChevronRight,ChevronUp,TrendingUp,Eye,Video } from "lucide-react";
+import { Sparkles,Gauge,Home,Users,Settings,CreditCard,LifeBuoy,LogOut,ChevronDown,ExternalLink,ShieldCheck,Check,Menu,X,Search,Lightbulb,Download,Puzzle,ArrowRight,MonitorSmartphone,Activity,Trophy,Rss,ChevronRight,ChevronUp,TrendingUp,Eye,Video,BarChart3 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import ThemeToggle from "./theme-toggle";
 import AffiliatePage from "./affiliate-page";
@@ -21,11 +21,12 @@ import ResearchView from "./research-view";
 import AdminHub from "./admin-hub";
 import WelcomeSplash from "./welcome-splash";
 import AIChatSpotlight from "./ai-chat-spotlight";
+import YouTubeAnalyticsView from "./youtube-analytics-view";
 import { translateUiText, type TubeXLang } from "@/lib/ui-i18n";
 import { recordWebProductEvent } from "@/lib/tubex-client-analytics";
 
 type Lang="pt-br"|"pt-pt"|"es"|"en";
-type Tab="home"|"ai"|"research"|"optimize"|"achievements"|"affiliate"|"account"|"support"|"admin";
+type Tab="home"|"analytics"|"ai"|"research"|"optimize"|"achievements"|"affiliate"|"account"|"support"|"admin";
 const languages=[
  ["pt-br","🇧🇷","Português (Brasil)"],["pt-pt","🇵🇹","Português (Portugal)"],["es","🇪🇸","Español"],["en","🇺🇸","English"]
 ] as const;
@@ -167,6 +168,7 @@ export default function DashboardLayout({user}:{user:any}){
  // Navegação enxuta: 4 áreas principais + itens secundários discretos.
  const mainItems:[Tab,any,string,string][]=[
   ["home",Home,"Início","Seu canal em números"],
+  ["analytics",BarChart3,"Analytics","CTR, retenção e público"],
   ["ai",Sparkles,"TubeX AI","Chat com seu copiloto"],
   ["research",Search,"Pesquisar","Palavras-chave e ideias"],
   ["optimize",Gauge,"Otimizar","Seus vídeos e melhorias"],
@@ -178,7 +180,7 @@ export default function DashboardLayout({user}:{user:any}){
  const ownerItems:[string,any,string][]=[["analytics",Activity,"Analytics"],["subscribers",Users,"Assinantes"],["usage",TrendingUp,"Uso (free)"],["cancellations",X,"Cancelamentos"],["affiliates",ShieldCheck,"Afiliados (admin)"]];
  const ownerButton=([sub,Icon,label]:[string,any,string])=><button key={sub} onClick={()=>selectTab(`admin:${sub}`)} aria-current={tab==="admin"&&adminSub===sub?"page":undefined} className={`tx-nav-item is-small ${tab==="admin"&&adminSub===sub?"is-active":""}`}><span className="tx-nav-icon"><Icon size={16}/></span><span className="min-w-0 flex-1 truncate text-left">{label}</span></button>;
  const ownerSection=isOwner?<section className="tx-nav-group tx-nav-owner"><p className="tx-nav-heading">Owner <span className="tx-owner-tag">OWNER</span></p>{ownerItems.map(ownerButton)}</section>:null;
- const titles:Record<Tab,string>={home:"Início",ai:"TubeX AI",research:"Pesquisar",optimize:"Otimizar",achievements:"Conquistas",affiliate:t.affiliate,account:"Conta e assinatura",support:t.support,admin:"Admin"};
+ const titles:Record<Tab,string>={home:"Início",analytics:"Analytics do YouTube",ai:"TubeX AI",research:"Pesquisar",optimize:"Otimizar",achievements:"Conquistas",affiliate:t.affiliate,account:"Conta e assinatura",support:t.support,admin:"Admin"};
  // Links externos (ex.: volta do pagamento de créditos) abrem direto uma aba: /dashboard?tab=ai
  useEffect(()=>{try{const t=new URLSearchParams(window.location.search).get("tab");if(t&&/^[a-z:]+$/.test(t))selectTab(t)}catch{}},[]);// eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{
@@ -189,7 +191,7 @@ export default function DashboardLayout({user}:{user:any}){
  // Aceita nomes antigos (feed, workspace, creator…) para links e eventos existentes.
  function selectTab(raw:string){
   const [base,sub]=String(raw).split(":");
-  const legacy:Record<string,Tab>={dashboard:"home",feed:"home",intelligence:"optimize",workspace:"research",creator:"research",billing:"account",analytics:"admin",behavior:"admin",usage:"admin",cancellations:"admin"};
+  const legacy:Record<string,Tab>={dashboard:"home",feed:"home",intelligence:"optimize",workspace:"research",creator:"research",billing:"account",stats:"analytics",studio:"analytics",behavior:"admin",usage:"admin",cancellations:"admin"};
   const next=(legacy[base]||base) as Tab;
   if(base==="creator"||sub==="ideas")setResearchSub("ideas");else if(base==="workspace"||sub==="keywords")setResearchSub("keywords");
   const adminMap:Record<string,any>={analytics:"analytics",behavior:"subscribers",usage:"usage",cancellations:"cancellations",admin:"affiliates"};
@@ -197,7 +199,7 @@ export default function DashboardLayout({user}:{user:any}){
   if(base==="admin"&&["analytics","subscribers","usage","cancellations","affiliates"].includes(sub))setAdminSub(sub as any);
   setTab(next);setMobileOpen(false);
   try{document.querySelector(".tx-dashboard-content")?.scrollTo({top:0,behavior:"smooth"})}catch{}
-  const moduleByTab:Record<string,string>={home:"dashboard",ai:"ai",research:"seo_explorer",optimize:"intelligence_center",achievements:"achievements",affiliate:"affiliate",account:"account",support:"support"};
+  const moduleByTab:Record<string,string>={home:"dashboard",analytics:"youtube_analytics",ai:"ai",research:"seo_explorer",optimize:"intelligence_center",achievements:"achievements",affiliate:"affiliate",account:"account",support:"support"};
   const module=moduleByTab[next];if(module)void supabase.auth.getSession().then(({data})=>recordWebProductEvent(data.session,"module_opened",module));
  }
  const navButton=(id:Tab,Icon:any,label:string,hint?:string,small=false)=><button key={id} data-tx-ai-target={id==="ai"?"":undefined} onClick={()=>selectTab(id)} aria-current={tab===id?"page":undefined} className={`tx-nav-item ${small?"is-small":""} ${tab===id?"is-active":""}`}><span className="tx-nav-icon"><Icon size={small?15:17}/></span><span className="min-w-0 flex-1 text-left"><span className="block truncate">{label}</span>{hint&&<small className="tx-nav-hint">{hint}</small>}</span>{id==="admin"&&<span className="tx-owner-pill">OWNER</span>}</button>;
@@ -232,6 +234,7 @@ export default function DashboardLayout({user}:{user:any}){
    {mobileOpen&&<><button className="tx-mobile-scrim lg:hidden" aria-label="Fechar menu" onClick={()=>setMobileOpen(false)}/><div className="tx-mobile-menu lg:hidden"><nav className="grid gap-1">{mainItems.map(([id,Icon,label,hint])=>navButton(id,Icon,label,hint))}<p className="tx-nav-heading mt-3">Mais</p><div className="grid grid-cols-2 gap-1">{secondaryItems.map(([id,Icon,label])=>navButton(id,Icon,label,undefined,true))}</div>{ownerSection}<button onClick={logout} className="tx-logout-link tx-logout-strong mt-3"><LogOut size={17}/>Sair da conta</button></nav></div></>}
    <div key={tab} className={`tx-dashboard-content tx-page-enter mx-auto w-full min-w-0 px-3 sm:px-5 lg:px-7 ${tab === "ai" ? "is-ai" : "is-page"}`}>
     {tab==="home"&&<ChannelHome achievementSummary={achievementSummary} displayName={displayName}/>}
+    {tab==="analytics"&&<YouTubeAnalyticsView/>}
     {tab==="ai"&&<div className="tx-ai-home"><TubeXAIChat/></div>}
     {tab==="research"&&<ResearchView user={user} plan={isOwner?"expert":plan} initial={researchSub}/>}
     {tab==="optimize"&&<OptimizeView user={user} plan={isOwner?"expert":plan}/>}

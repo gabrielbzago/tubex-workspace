@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
 
 /** Dados do canal conectado (YouTube Data API com o token OAuth do Google), com cache em memória. */
 export type YTChannel = { id: string; title: string; thumbnail: string; subscribers: number; views: number; videoCount: number; uploads: string };
@@ -27,8 +28,8 @@ async function yt(path: string, token: string) {
 }
 
 async function fetchChannelData(): Promise<ChannelData> {
-  const { data } = await supabase.auth.getSession();
-  const token = String((data.session as any)?.provider_token || "");
+  // Token renovado automaticamente (o provider_token do Supabase vence em ~1h).
+  const token = await getGoogleAccessToken();
   if (!token) throw new NeedsGoogleError("Conecte seu canal do YouTube para ver métricas e vídeos.");
   const mine = await yt("channels?part=snippet,statistics,contentDetails&mine=true&maxResults=50", token);
   const list: YTChannel[] = (mine.items || []).map((c: any) => ({
@@ -92,12 +93,13 @@ export function useChannelData() {
   return { data, loading, error, reload: () => load(true) };
 }
 
-export async function connectYouTube() {
+/** Reconecta o Google. extraScopes: ex. YT_SCOPE.monetary para liberar a receita (opcional). */
+export async function connectYouTube(extraScopes: string[] = []) {
   const { data } = await supabase.auth.getSession();
   const user: any = data.session?.user;
   const options = {
     redirectTo: `${window.location.origin}/dashboard`,
-    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly",
+    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly" + (Array.isArray(extraScopes) && extraScopes.length ? " " + extraScopes.join(" ") : ""),
     queryParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
   };
   const hasGoogle = (user?.identities || []).some((i: any) => i.provider === "google");
@@ -138,8 +140,7 @@ export type CommentState = { status: "ok" | "disabled" | "auth" | "quota" | "err
 export const YT_COMMENT_SCOPE_HINT = "Para ler e responder comentários, o TubeX precisa da permissão \"Gerenciar sua conta do YouTube\". Reconecte e marque essa permissão.";
 
 async function providerToken() {
-  const { data } = await supabase.auth.getSession();
-  return String((data.session as any)?.provider_token || "");
+  return getGoogleAccessToken();
 }
 async function ytCall(path: string, token: string, init?: RequestInit) {
   const r = await fetch(`${API}/${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers || {}) }, cache: "no-store" });
