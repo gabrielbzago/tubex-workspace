@@ -116,6 +116,38 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   );
 }
 
+// Ritmo da digitação: ~190 caracteres/s (parecido com ChatGPT/Claude) e
+// no máximo 9s no total — respostas longas aceleram para não fazer esperar.
+const TYPE_BASE_CPS = 190;
+const TYPE_MAX_MS = 9000;
+
+// Avança o corte até o fim da palavra; em tabelas Markdown revela a linha
+// inteira (e o divisor junto do cabeçalho) para a tabela nunca "quebrar".
+// Durante a digitação, esconde um "**" ainda sem par para não piscar asteriscos.
+function hidePartialMarkdown(text: string): string {
+  const bold = text.split("**").length - 1;
+  return bold % 2 === 1 ? text.slice(0, text.lastIndexOf("**")) + text.slice(text.lastIndexOf("**") + 2) : text;
+}
+
+function snapRevealCut(text: string, pos: number): number {
+  let next = Math.min(text.length, pos);
+  while (next < text.length && !/\s/.test(text[next])) next++;
+  const lineStart = next > 0 ? text.lastIndexOf("\n", next - 1) + 1 : 0;
+  const lineEndIdx = text.indexOf("\n", lineStart);
+  const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
+  const line = text.slice(lineStart, lineEnd).trim();
+  if (line.includes("|")) {
+    const nextLineEndIdx = lineEnd < text.length ? text.indexOf("\n", lineEnd + 1) : -1;
+    const nextLineEnd = nextLineEndIdx === -1 ? text.length : nextLineEndIdx;
+    const nextLine = lineEnd < text.length ? text.slice(lineEnd + 1, nextLineEnd).trim() : "";
+    if (line.startsWith("|") || isMarkdownTableDivider(nextLine)) {
+      next = lineEnd;
+      if (nextLine && isMarkdownTableDivider(nextLine)) next = nextLineEnd;
+    }
+  }
+  return next;
+}
+
 function AssistantMessage({ content }: { content: string }) {
   const lines = content.replace(/\r/g, "").split("\n");
   const blocks: ReactNode[] = [];
@@ -325,19 +357,40 @@ export default function TubeXAIChat() {
     void send(text);
   }, [active?.id, isFresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Revela a resposta palavra por palavra.
+  // Revela a resposta no ritmo do ChatGPT/Claude: palavra por palavra, com
+  // velocidade base confortável e aceleração automática em respostas longas
+  // (o total nunca passa de TYPE_MAX_MS). Linhas de tabela aparecem inteiras.
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const typingKey = typing ? `${typing.sessionId}:${typing.index}` : "";
   useEffect(() => {
     if (!typing) return;
-    const target = sessions.find(s => s.id === typing.sessionId)?.messages[typing.index]?.content || "";
-    if (typing.shown >= target.length) { setTyping(null); return; }
-    const step = Math.max(3, Math.ceil(target.length / 140));
-    const timer = window.setTimeout(() => {
-      let next = Math.min(target.length, typing.shown + step);
-      while (next < target.length && !/\s/.test(target[next])) next++;
-      setTyping(t => t ? { ...t, shown: next } : t);
-    }, 16);
-    return () => window.clearTimeout(timer);
-  }, [typing, sessions]);
+    const { sessionId, index } = typing;
+    const target = sessionsRef.current.find(s => s.id === sessionId)?.messages[index]?.content || "";
+    const reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!target || reduceMotion) { setTyping(null); return; }
+    const cps = Math.max(TYPE_BASE_CPS, target.length / (TYPE_MAX_MS / 1000));
+    let raf = 0; let budget = 0; let last = performance.now(); let lastPaint = 0; let shown = 0;
+    const tick = (now: number) => {
+      budget += Math.min(now - last, 100) * cps / 1000; last = now;
+      let next = shown;
+      while (budget > 0 && next < target.length) {
+        const cut = snapRevealCut(target, next + 1);
+        budget -= cut - next;
+        // Pequena pausa natural no fim de parágrafos.
+        if (target[cut] === "\n" && target[cut + 1] === "\n") budget -= cps * 0.12;
+        next = cut;
+      }
+      if (next !== shown && (now - lastPaint >= 32 || next >= target.length)) {
+        shown = next; lastPaint = now;
+        setTyping(t => (t && t.sessionId === sessionId && t.index === index ? { ...t, shown } : t));
+      }
+      if (shown >= target.length) { setTyping(t => (t && t.sessionId === sessionId && t.index === index ? null : t)); return; }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [typingKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rolagem inteligente: acompanha a resposta só se o usuário estiver no fim da conversa.
   const scrollToBottom = useCallback((smooth = true) => {
@@ -651,7 +704,7 @@ export default function TubeXAIChat() {
 
             {visible.map(({ m, i }) => {
               const isTyping = typing && typing.sessionId === active?.id && typing.index === i;
-              const content = isTyping ? m.content.slice(0, typing!.shown) : m.content;
+              const content = isTyping ? hidePartialMarkdown(m.content.slice(0, typing!.shown)) : m.content;
               return (
                 <div key={`${activeId}-${i}`} className={`tx-ai-message-row ${m.role === "user" ? "user" : "assistant"}`}>
                   {m.role === "assistant" && <span className="tx-ai-avatar"><Sparkles size={14}/></span>}

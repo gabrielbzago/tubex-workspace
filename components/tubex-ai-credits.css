@@ -71,3 +71,15 @@
 @keyframes txCreditUp{from{transform:translateY(100%)}to{transform:none}}
 @keyframes txCreditFade{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.tx-credit-out,.tx-credit-modal-card,.tx-credit-modal-scrim,.tx-credit-notice{animation:none}.tx-credit-pack,.tx-credit-upgrade,.tx-ai-quota-btn{transition:none}}
+
+/* Digitação suave (ritmo ChatGPT/Claude): cursor dourado que pulsa suavemente */
+.tx-saas-shell .tx-ai-message.is-typing .tx-ai-markdown>:last-child::after{
+  width:7px;height:15px;border-radius:3px;
+  background:linear-gradient(180deg,#f5d58a,#d4a843);
+  box-shadow:0 0 10px rgba(212,168,67,.45);
+  animation:tx-ai-caret-soft 1.05s ease-in-out infinite;
+}
+
+.tx-saas-shell .tx-ai-message.is-typing .tx-ai-markdown>div:last-child::after{display:none}
+@keyframes tx-ai-caret-soft{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.tx-saas-shell .tx-ai-message.is-typing .tx-ai-markdown>:last-child::after{animation:none}}
