@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Loader2, Plus, Trash2, Tv, X, AlertCircle, RefreshCw } from "lucide-react";
 import {
-  CHANNEL_EVENT, disconnectChannel, getActiveChannelId, listConnectedChannels, setActiveChannelId,
+  CHANNEL_EVENT, disconnectChannel, getActiveChannelId, getLoginChannelId, listConnectedChannels, setActiveChannelId,
   startChannelConnect, switchChannel, type ConnectedChannel,
 } from "@/lib/tubex-google-token-client";
 import { connectYouTube } from "@/lib/tubex-youtube";
@@ -128,6 +128,7 @@ export default function ChannelSwitcher() {
         <div className="tx-ch-foot">
           <button type="button" className="tx-btn-gold tx-ch-add" onClick={() => void add()} disabled={busy === "add"}>{busy === "add" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}Adicionar outro canal</button>
           {active && !active.hasRefresh && <button type="button" className="tx-ch-ghost" onClick={() => void add()}><RefreshCw size={13} />Reconectar {active.title}</button>}
+          {(() => { const id = getLoginChannelId(); if (!id) return null; const t = channels.find((c) => c.id === id)?.title || (active?.id === id ? active.title : ""); return <p className="tx-ch-diag">Último login do Google: <b>{t || id}</b></p>; })()}
           <p>Na tela do Google, escolha seu e-mail e depois o <b>canal</b> (contas de marca aparecem na lista). Você continua logado na mesma conta TubeX.</p>
         </div>
       </div>

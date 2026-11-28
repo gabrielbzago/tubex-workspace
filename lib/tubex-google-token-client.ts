@@ -105,6 +105,7 @@ async function refreshFromServer(channelId: string): Promise<string> {
 /* ---------- Token do login (provider_token) ---------- */
 
 const PT_CHANNEL_KEY = "tubex-google-pt-channel";
+const APPLIED_KEY = "tubex-google-pt-applied";
 /**
  * Canal que o token do login enxerga (channels.list mine=true, direto no YouTube, sem servidor).
  * O canal escolhido na tela do Google é a FONTE DA VERDADE logo após o login.
@@ -122,6 +123,11 @@ async function providerChannel(provider: string): Promise<string> {
   } catch { return ""; }
 }
 
+/** Canal que o último login do Google enxergou (para o diagnóstico no seletor). */
+export function getLoginChannelId(): string {
+  try { return String(JSON.parse(sessionStorage.getItem(PT_CHANNEL_KEY) || "null")?.id || ""); } catch { return ""; }
+}
+
 /** Token do login ainda válido + canal dele. */
 async function freshProvider(): Promise<{ token: string; chan: string; exp: number; scopes: GoogleScopes } | null> {
   const { session } = await bearer();
@@ -136,9 +142,18 @@ async function freshProvider(): Promise<{ token: string; chan: string; exp: numb
 async function resolve(force: boolean): Promise<string> {
   if (remembering) await remembering.catch(() => {});
   if (!force) { const c = readCache(); if (c) return c.token; }
-  const active = getActiveChannelId();
+  let active = getActiveChannelId();
   // 1) Token do login: vale enquanto não vence (~1h) para o canal escolhido no Google.
   const p = await freshProvider();
+  // Login novo (token ainda não aplicado): o canal escolhido na tela do Google vira o ativo.
+  if (p?.chan) {
+    const tail = p.token.slice(-16);
+    let applied = ""; try { applied = localStorage.getItem(APPLIED_KEY) || ""; } catch {}
+    if (applied !== tail) {
+      try { localStorage.setItem(APPLIED_KEY, tail); } catch {}
+      if (p.chan !== active) { setActiveChannelId(p.chan, Boolean(active)); active = p.chan; }
+    }
+  }
   if (p && (!active || !p.chan || p.chan === active)) {
     if (p.chan && !active) setActiveChannelId(p.chan, false);
     writeCache({ token: p.token, exp: p.exp, chan: getActiveChannelId(), scopes: p.scopes });
@@ -197,18 +212,23 @@ export function rememberGoogleTokens(session: any): Promise<void> {
   let refresh = String(session?.provider_refresh_token || "");
   // O Supabase descarta o provider_refresh_token na 1ª renovação da sessão (~1h). Guardamos uma
   // cópia local até o servidor confirmar que salvou; assim um erro temporário não perde o token.
+  // A cópia pendente só vale quando a sessão já não tem token do login (provider_token). Com um login
+  // novo, nunca misturamos o refresh token antigo (de outro canal) com o token do canal escolhido agora.
   try {
     if (refresh) localStorage.setItem(PENDING_KEY, JSON.stringify({ u: userId, t: refresh }));
-    else { const p = JSON.parse(localStorage.getItem(PENDING_KEY) || "null"); if (p?.u === userId && p?.t) refresh = String(p.t); }
+    else if (!provider) { const p = JSON.parse(localStorage.getItem(PENDING_KEY) || "null"); if (p?.u === userId && p?.t) refresh = String(p.t); }
+    else localStorage.removeItem(PENDING_KEY);
   } catch {}
   if (!auth || (!provider && !refresh)) return Promise.resolve();
-  const mark = `${userId}:${(refresh || provider).slice(-16)}`;
+  // Marca pelo token do LOGIN (único a cada login); o refresh token do Google pode se repetir.
+  const mark = `${userId}:${(provider || refresh).slice(-16)}:${refresh.slice(-8)}`;
   try { if (localStorage.getItem(SEEN_KEY) === mark) { localStorage.removeItem(PENDING_KEY); return Promise.resolve(); } } catch {}
   const job = (async () => {
     try {
       // Canal escolhido na tela do Google: descobre direto no YouTube (não depende do servidor).
       const loginChan = provider ? await providerChannel(provider) : "";
       if (loginChan) {
+        try { localStorage.setItem(APPLIED_KEY, provider.slice(-16)); } catch {}
         setActiveChannelId(loginChan, true);
         const sc = await checkGoogleScopes(provider);
         if (sc.valid && sc.expiresIn > 90) writeCache({ token: provider, exp: Date.now() + sc.expiresIn * 1000, chan: loginChan, scopes: sc });
