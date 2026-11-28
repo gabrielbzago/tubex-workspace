@@ -53,7 +53,7 @@ export async function authedFetch(input: string, init: RequestInit = {}): Promis
 /** Entrar de novo com Google: o MESMO pedido do login do site (escopos que o Google já aprovou). */
 export async function reloginWithGoogle(email = "") {
   try { sessionStorage.setItem("tubex-pending-google-login", "1"); } catch {}
-  const queryParams: Record<string, string> = { access_type: "offline", prompt: "consent", include_granted_scopes: "true" };
+  const queryParams: Record<string, string> = { access_type: "offline", prompt: "select_account consent", include_granted_scopes: "true" };
   if (email && !/@pages\.plusgoogle\.com$/i.test(email)) queryParams.login_hint = email;
   return supabase.auth.signInWithOAuth({
     provider: "google",

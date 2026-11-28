@@ -85,9 +85,11 @@ async function refreshFromServer(channelId: string): Promise<string> {
     lastServerReason = String(e?.reason || r.status);
   }
   if ((!r || !r.ok) && channelId && r?.status === 409) {
-    // Canal salvo neste navegador não pertence a esta conta (ex.: outra pessoa logou): usa o ativo do servidor.
-    setActiveChannelId("", false);
-    return refreshFromServer("");
+    const e = await r.clone().json().catch(() => ({}));
+    lastServerReason = String(e?.reason || "409");
+    // O servidor ainda não tem token deste canal: tenta salvar de novo o token pendente do login.
+    if (await resendPending()) return refreshFromServer(channelId);
+    return "";
   }
   if (!r || !r.ok) return "";
   const d = await r.json().catch(() => ({}));
@@ -100,23 +102,55 @@ async function refreshFromServer(channelId: string): Promise<string> {
   return d.accessToken;
 }
 
+/* ---------- Token do login (provider_token) ---------- */
+
+const PT_CHANNEL_KEY = "tubex-google-pt-channel";
+/**
+ * Canal que o token do login enxerga (channels.list mine=true, direto no YouTube, sem servidor).
+ * O canal escolhido na tela do Google é a FONTE DA VERDADE logo após o login.
+ */
+async function providerChannel(provider: string): Promise<string> {
+  const tail = provider.slice(-16);
+  try { const c = JSON.parse(sessionStorage.getItem(PT_CHANNEL_KEY) || "null"); if (c?.t === tail && c?.id) return String(c.id); } catch {}
+  try {
+    const r = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id&mine=true&maxResults=1", { headers: { Authorization: `Bearer ${provider}` }, cache: "no-store" });
+    if (!r.ok) return "";
+    const d = await r.json().catch(() => ({}));
+    const id = String(d?.items?.[0]?.id || "");
+    if (id) { try { sessionStorage.setItem(PT_CHANNEL_KEY, JSON.stringify({ t: tail, id })); } catch {} }
+    return id;
+  } catch { return ""; }
+}
+
+/** Token do login ainda válido + canal dele. */
+async function freshProvider(): Promise<{ token: string; chan: string; exp: number; scopes: GoogleScopes } | null> {
+  const { session } = await bearer();
+  const provider = String(session?.provider_token || "");
+  if (!provider) return null;
+  const scopes = await checkGoogleScopes(provider);
+  if (!scopes.valid || scopes.expiresIn <= 90) return null;
+  const chan = await providerChannel(provider);
+  return { token: provider, chan, exp: Date.now() + scopes.expiresIn * 1000, scopes };
+}
+
 async function resolve(force: boolean): Promise<string> {
   if (remembering) await remembering.catch(() => {});
   if (!force) { const c = readCache(); if (c) return c.token; }
-  const fresh = await refreshFromServer(getActiveChannelId());
-  if (fresh) return fresh;
-  // Sem refresh no servidor (variáveis não configuradas / migration pendente): usa o token do login.
-  const { session } = await bearer();
-  const provider = String(session?.provider_token || "");
-  if (provider) {
-    const scopes = await checkGoogleScopes(provider);
-    if (scopes.valid && scopes.expiresIn > 90) {
-      writeCache({ token: provider, exp: Date.now() + scopes.expiresIn * 1000, chan: getActiveChannelId(), scopes });
-      return provider;
-    }
+  const active = getActiveChannelId();
+  // 1) Token do login: vale enquanto não vence (~1h) para o canal escolhido no Google.
+  const p = await freshProvider();
+  if (p && (!active || !p.chan || p.chan === active)) {
+    if (p.chan && !active) setActiveChannelId(p.chan, false);
+    writeCache({ token: p.token, exp: p.exp, chan: getActiveChannelId(), scopes: p.scopes });
+    return p.token;
   }
+  // 2) Servidor: renova o canal ativo com o refresh token salvo (sem tela nenhuma).
+  const fresh = await refreshFromServer(active);
+  if (fresh) return fresh;
+  // 3) Último recurso: token do login mesmo que seja de outro canal.
+  if (p) { writeCache({ token: p.token, exp: p.exp, chan: getActiveChannelId(), scopes: p.scopes }); return p.token; }
   writeCache(null);
-  return provider;
+  return "";
 }
 
 /** Access token do Google do canal ativo. force=true ignora o cache (use após um 401). */
@@ -145,6 +179,17 @@ export function activeChannelHeaders(): Record<string, string> {
  * (channels.list mine=true com o token desse consentimento), guarda o refresh token dele e o torna
  * ativo. Assim, entrar escolhendo outro canal carrega o canal certo.
  */
+let resent = false;
+async function resendPending(): Promise<boolean> {
+  if (resent) return false;
+  resent = true;
+  const { session } = await bearer();
+  if (!session) return false;
+  try { localStorage.removeItem(SEEN_KEY); } catch {}
+  await rememberGoogleTokens(session);
+  return true;
+}
+
 export function rememberGoogleTokens(session: any): Promise<void> {
   const provider = String(session?.provider_token || "");
   const auth = String(session?.access_token || "");
@@ -161,12 +206,19 @@ export function rememberGoogleTokens(session: any): Promise<void> {
   try { if (localStorage.getItem(SEEN_KEY) === mark) { localStorage.removeItem(PENDING_KEY); return Promise.resolve(); } } catch {}
   const job = (async () => {
     try {
+      // Canal escolhido na tela do Google: descobre direto no YouTube (não depende do servidor).
+      const loginChan = provider ? await providerChannel(provider) : "";
+      if (loginChan) {
+        setActiveChannelId(loginChan, true);
+        const sc = await checkGoogleScopes(provider);
+        if (sc.valid && sc.expiresIn > 90) writeCache({ token: provider, exp: Date.now() + sc.expiresIn * 1000, chan: loginChan, scopes: sc });
+      }
       const scopes = provider ? (await checkGoogleScopes(provider)).scopes.join(" ") : "";
       const r = await fetch("/api/youtube/token", { method: "POST", headers: { Authorization: `Bearer ${auth}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", refreshToken: refresh, accessToken: provider, scopes }) });
       const d = r.ok ? await r.json().catch(() => ({})) : {};
       const chan = String(d?.channelId || "");
-      if (chan) setActiveChannelId(chan, true);
-      writeCache(provider && chan ? { token: provider, exp: Date.now() + 50 * 60_000, chan } : null);
+      if (chan && !loginChan) { setActiveChannelId(chan, true); writeCache(provider ? { token: provider, exp: Date.now() + 50 * 60_000, chan } : null); }
+      if (chan && loginChan && chan !== loginChan) console.warn("[TubeX] servidor registrou outro canal que o do login", chan, loginChan);
       // Só marca como salvo quando o refresh token ficou guardado no servidor (ou não havia um).
       const done = r.ok && (refresh ? d?.refreshStored === true : Boolean(chan));
       if (done) { try { localStorage.setItem(SEEN_KEY, mark); localStorage.removeItem(PENDING_KEY); } catch {} }

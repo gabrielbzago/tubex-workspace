@@ -39,11 +39,12 @@ export default function ChannelSwitcher() {
   const load = useCallback(async () => {
     const r = await listConnectedChannels();
     setChannels(r.channels);
+    // O canal ativo do navegador (o escolhido no último login) manda. O do servidor só é usado
+    // quando o navegador ainda não tem nenhum: nunca voltamos sozinhos para o canal primário.
     const local = getActiveChannelId();
-    const valid = r.channels.some((c) => c.id === local);
-    const next = valid ? local : r.activeId;
-    if (next && next !== local) setActiveChannelId(next, Boolean(local));
-    setActiveId(next || local);
+    const next = local || r.activeId;
+    if (next && next !== local) setActiveChannelId(next, false);
+    setActiveId(next);
     setLoading(false);
   }, []);
 
@@ -75,7 +76,10 @@ export default function ChannelSwitcher() {
     return () => { window.removeEventListener("resize", place); document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
   }, [open]);
 
-  const active = channels.find((c) => c.id === activeId) || null;
+  // Canal do login ainda não salvo no servidor: mostra os dados que a tela já leu do YouTube.
+  const localCtx = (() => { try { const c = JSON.parse(localStorage.getItem("tubex-ai-channel-context") || "null"); return c?.channelId === activeId ? c : null; } catch { return null; } })();
+  const active: ConnectedChannel | null = channels.find((c) => c.id === activeId)
+    || (localCtx ? { id: activeId, title: String(localCtx.channelName || "Canal"), thumbnail: String(localCtx.channelThumbnail || ""), customUrl: "", googleEmail: "", active: true, hasRefresh: true, lastError: null } : null);
 
   async function pick(id: string) {
     if (id === activeId) { setOpen(false); return; }
@@ -111,7 +115,7 @@ export default function ChannelSwitcher() {
           <button type="button" className="tx-ch-close" onClick={() => setOpen(false)} aria-label="Fechar"><X size={16} /></button>
         </div>
         <ul className="tx-ch-list" role="listbox">
-          {channels.map((c, i) => <li key={c.id} style={{ animationDelay: `${i * 40}ms` }}>
+          {(active && !channels.some((c) => c.id === active.id) ? [active, ...channels] : channels).map((c, i) => <li key={c.id} style={{ animationDelay: `${i * 40}ms` }}>
             <button type="button" role="option" aria-selected={c.id === activeId} className={`tx-ch-item ${c.id === activeId ? "is-active" : ""}`} onClick={() => void pick(c.id)} disabled={Boolean(busy)}>
               <Avatar c={c} size={36} />
               <span className="tx-ch-meta"><b>{c.title}</b><small>{c.customUrl || c.googleEmail || c.id}</small>{!c.hasRefresh && <em><AlertCircle size={11} />Reconecte para manter o acesso</em>}</span>
@@ -119,7 +123,7 @@ export default function ChannelSwitcher() {
             </button>
             {c.id !== activeId && <button type="button" className={`tx-ch-remove ${confirmRemove === c.id ? "is-confirm" : ""}`} onClick={() => void remove(c.id)} disabled={Boolean(busy)} aria-label={`Desconectar ${c.title}`}>{confirmRemove === c.id ? "Remover?" : <Trash2 size={14} />}</button>}
           </li>)}
-          {!loading && !channels.length && <li className="tx-ch-empty"><Tv size={20} /><span>Nenhum canal salvo ainda. Conecte o canal que você quer analisar.</span></li>}
+          {!loading && !channels.length && !active && <li className="tx-ch-empty"><Tv size={20} /><span>Nenhum canal salvo ainda. Conecte o canal que você quer analisar.</span></li>}
         </ul>
         <div className="tx-ch-foot">
           <button type="button" className="tx-btn-gold tx-ch-add" onClick={() => void add()} disabled={busy === "add"}>{busy === "add" ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}Adicionar outro canal</button>
