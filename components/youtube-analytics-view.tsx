@@ -6,10 +6,11 @@ import {
   ShieldAlert, MessageSquare, CheckCircle2, XCircle, AlertTriangle, X, Search, Globe2, MonitorSmartphone, Users, PlayCircle,
   ArrowUpRight, ArrowDownRight, Sparkles, ThumbsUp, Share2,
 } from "lucide-react";
-import { useChannelData, connectYouTube } from "@/lib/tubex-youtube";
-import { getGoogleAccessToken, getGoogleScopes } from "@/lib/tubex-google-token-client";
+import { useChannelData } from "@/lib/tubex-youtube";
+import { getGoogleAccessToken, getGoogleScopes, googleAccessLost } from "@/lib/tubex-google-token-client";
+import { requestSiteRelogin } from "@/lib/tubex-session";
 import {
-  fetchChannelAnalytics, fetchVideoAnalytics, checkCommentsAccess, fmtDuration, YT_SCOPE, AGE_LABELS, GENDER_LABELS,
+  fetchChannelAnalytics, fetchVideoAnalytics, checkCommentsAccess, fmtDuration, AGE_LABELS, GENDER_LABELS,
   summarizeChannelAnalytics, summarizeVideoAnalytics,
   type ChannelAnalytics, type VideoAnalytics, type GoogleScopes, type CommentsCheck, type Section, type Slice, type DailyPoint,
   type TopVideo, type RetentionPoint, type DemographicRow,
@@ -147,13 +148,13 @@ function Card({ title, icon: Icon, children, action, className = "" }: { title: 
 
 function SectionError<T>({ s, what }: { s: Section<T>; what: string }) {
   if (s.ok) return null;
-  const msg = s.error === "scope" ? "Falta permissão do Google." : s.error === "unsupported" ? "O YouTube não libera este dado para o canal." : s.error === "quota" ? "Limite diário da API atingido; tente mais tarde." : s.error === "expired" ? "Conexão expirada; reconecte." : s.message;
+  const msg = s.error === "scope" ? "Falta permissão do Google." : s.error === "unsupported" ? "O YouTube não libera este dado para o canal." : s.error === "quota" ? "Limite diário da API atingido; tente mais tarde." : s.error === "expired" ? "Conexão com o Google indisponível agora; tente atualizar." : s.message;
   return <p className="tx-ya-empty">{what}: {msg}</p>;
 }
 
 /* ------------------------------ diagnóstico ------------------------------ */
 
-function ConnectionStatus({ scopes, comments, onConnect, connecting }: { scopes: GoogleScopes | null; comments: CommentsCheck | null; onConnect: (extra?: string[]) => void; connecting: boolean }) {
+function ConnectionStatus({ scopes, comments }: { scopes: GoogleScopes | null; comments: CommentsCheck | null }) {
   const items: [string, boolean, string][] = [
     ["Dados do canal", !!scopes?.readonly, "Vídeos, views e inscritos"],
     ["YouTube Analytics", !!scopes?.analytics, "CTR, retenção, tráfego e público"],
@@ -164,8 +165,8 @@ function ConnectionStatus({ scopes, comments, onConnect, connecting }: { scopes:
     : comments.status === "ok" ? <span className="tx-ya-ok"><CheckCircle2 size={14} /> Funcionando: {comments.read} comentário(s) lidos{comments.total > comments.read ? ` de ${nf(comments.total)}` : ""}</span>
     : comments.status === "disabled" ? <span className="tx-ya-warn"><AlertTriangle size={14} /> Comentários desativados nos vídeos recentes</span>
     : comments.status === "no_videos" ? <span className="tx-ya-muted">Sem vídeos para testar</span>
-    : comments.status === "scope" ? <span className="tx-ya-bad"><XCircle size={14} /> Sem permissão de comentários (reconecte e marque “Gerenciar sua conta do YouTube”)</span>
-    : comments.status === "expired" ? <span className="tx-ya-bad"><XCircle size={14} /> Conexão expirada, reconecte</span>
+    : comments.status === "scope" ? <span className="tx-ya-bad"><XCircle size={14} /> Sem permissão de comentários neste login</span>
+    : comments.status === "expired" ? <span className="tx-ya-bad"><AlertTriangle size={14} /> Conexão indisponível agora, tente atualizar</span>
     : comments.status === "quota" ? <span className="tx-ya-warn"><AlertTriangle size={14} /> Limite diário da API</span>
     : <span className="tx-ya-bad"><XCircle size={14} /> {comments.message || "Erro ao ler comentários"}</span>;
   return (
@@ -175,10 +176,7 @@ function ConnectionStatus({ scopes, comments, onConnect, connecting }: { scopes:
       ))}</ul>
       <div className="tx-ya-comments"><MessageSquare size={14} /><span>Teste de comentários:</span>{commentLine}</div>
       {comments?.status === "ok" && comments.sample.length > 0 && <div className="tx-ya-sample">{comments.sample.map((c, i) => <p key={i}><b>{c.author}</b> {c.text}</p>)}</div>}
-      <div className="tx-ya-status-actions">
-        {(!scopes?.analytics || !scopes?.forceSsl) && <button className="tx-btn-gold" disabled={connecting} onClick={() => onConnect()}>{connecting ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}Reconectar e liberar acesso</button>}
-        {scopes?.analytics && !scopes?.monetary && <button className="tx-ya-ghost" disabled={connecting} onClick={() => onConnect([YT_SCOPE.monetary])}><Wallet size={14} />Liberar receita (opcional)</button>}
-      </div>
+      {/* Sem botões de reconectar aqui: a conexão é renovada no servidor. Se acabar de verdade, o site pede um novo login. */}
     </Card>
   );
 }
@@ -245,21 +243,21 @@ export default function YouTubeAnalyticsView() {
   const [comments, setComments] = useState<CommentsCheck | null>(null);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState<"" | "connect" | "scope" | "error">("");
-  const [connecting, setConnecting] = useState(false);
   const [open, setOpen] = useState<TopVideo | null>(null);
 
   const load = useCallback(async (range: number, retry = true) => {
     setLoading(true); setFatal("");
     try {
       const token = await getGoogleAccessToken(!retry);
-      if (!token) { setFatal("connect"); setScopes(null); return; }
+      if (!token) { if (retry) return void (await load(range, false)); setFatal(googleAccessLost() ? "connect" : "error"); setScopes(null); return; }
       const sc = await getGoogleScopes(!retry);
       setScopes(sc);
-      if (!sc.valid) { if (retry) return void (await load(range, false)); setFatal("connect"); return; }
+      if (!sc.valid) { if (retry) return void (await load(range, false)); setFatal(googleAccessLost() ? "connect" : "error"); return; }
       if (!sc.analytics) { setFatal("scope"); return; }
       const rep = await fetchChannelAnalytics(token, { days: range, skipRevenue: !sc.monetary });
       if (!rep.core.ok && rep.core.error === "expired" && retry) return void (await load(range, false));
       if (!rep.core.ok && rep.core.error === "scope") { setFatal("scope"); return; }
+      if (!rep.core.ok && rep.core.error === "expired" && googleAccessLost()) { setFatal("connect"); return; }
       setReport(rep);
     } catch { setFatal("error"); }
     finally { setLoading(false); }
@@ -280,7 +278,8 @@ export default function YouTubeAnalyticsView() {
     return () => { alive = false; };
   }, [channel]);
 
-  async function connect(extra?: string[]) { setConnecting(true); try { await connectYouTube(extra || []); } catch { setConnecting(false); } }
+  // Acesso ao Google acabou de verdade (refresh token revogado/inexistente): pede o login do site.
+  const relogin = () => requestSiteRelogin("google");
 
   const c = report?.core.ok ? report.core.data : null;
   const p = report?.previous.ok ? report.previous.data : undefined;
@@ -302,18 +301,18 @@ export default function YouTubeAnalyticsView() {
     </div>
   );
 
-  if (fatal === "connect" || fatal === "scope" || channelError?.needsGoogle) {
+  if (fatal === "connect" || fatal === "scope" || (channelError?.needsGoogle && googleAccessLost())) {
     return (
       <div className="tx-ya">
         {header}
         <section className="tx-ya-card tx-ya-gate">
           <span className="tx-ya-gate-icon"><ShieldCheck size={22} /></span>
-          <h2>{fatal === "scope" ? <>Libere o <span className="tx-gold">YouTube Analytics</span></> : <>Conecte seu <span className="tx-gold">canal</span></>}</h2>
-          <p>{fatal === "scope" ? "Sua conexão atual só permite ver dados públicos. Reconecte e confirme as permissões do YouTube para ver CTR, impressões, retenção, tempo de exibição, origem do tráfego e público." : "Entre com a conta Google do seu canal para o TubeX ler o Analytics completo."}</p>
-          <button className="tx-btn-gold" disabled={connecting} onClick={() => void connect()}>{connecting ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}{fatal === "scope" ? "Reconectar com Analytics" : "Conectar YouTube"}</button>
-          <small>Na tela do Google, deixe todas as caixas do YouTube marcadas.</small>
+          <h2>{fatal === "scope" ? <>Libere o <span className="tx-gold">YouTube Analytics</span></> : <>Entre <span className="tx-gold">novamente</span></>}</h2>
+          <p>{fatal === "scope" ? "Este login só permite ver dados públicos. Entre novamente no TubeX com o Google e deixe as caixas do YouTube marcadas para ver CTR, retenção, tráfego e público." : "O Google encerrou o acesso do TubeX ao seu canal. Entre novamente no site para continuar; depois disso o acesso é renovado sozinho."}</p>
+          <button className="tx-btn-gold" onClick={relogin}><PlayCircle size={15} />Entrar novamente no TubeX</button>
+          <small>É o mesmo login do site. Seus chats e dados continuam salvos.</small>
         </section>
-        <ConnectionStatus scopes={scopes} comments={comments} onConnect={(e) => void connect(e)} connecting={connecting} />
+        <ConnectionStatus scopes={scopes} comments={comments} />
       </div>
     );
   }
@@ -330,7 +329,7 @@ export default function YouTubeAnalyticsView() {
           <Kpi icon={Eye} label="Visualizações" value={c ? nf(c.views) : "—"} change={c && delta(c.views, p?.views)} hint="vs. período anterior" delay={0} />
           <Kpi icon={Clock3} label="Tempo de exibição" value={c ? hours(c.minutesWatched) : "—"} change={c && delta(c.minutesWatched, p?.minutesWatched)} delay={40} />
           <Kpi icon={UserPlus} label="Inscritos (líquido)" value={c ? `${net >= 0 ? "+" : ""}${nf(net)}` : "—"} hint={c ? `+${nf(c.subscribersGained)} / −${nf(c.subscribersLost)}` : ""} delay={80} />
-          <Kpi icon={Wallet} label="Receita estimada" value={report.revenue.ok ? brl(report.revenue.data.estimatedRevenue) : "—"} locked={report.revenue.ok ? undefined : scopes?.monetary ? "canal não monetizado" : "libere em Conexão"} gold delay={120} />
+          <Kpi icon={Wallet} label="Receita estimada" value={report.revenue.ok ? brl(report.revenue.data.estimatedRevenue) : "—"} locked={report.revenue.ok ? undefined : scopes?.monetary ? "canal não monetizado" : "não liberado neste login"} gold delay={120} />
           <Kpi icon={ImageIcon} label="Impressões" value={report.reach.ok ? cf(report.reach.data.impressions) : "—"} locked={report.reach.ok ? undefined : "não liberado pela API"} delay={160} />
           <Kpi icon={MousePointerClick} label="CTR das impressões" value={report.reach.ok ? pf(report.reach.data.ctr) : "—"} locked={report.reach.ok ? undefined : "não liberado pela API"} gold delay={200} />
           <Kpi icon={Timer} label="Duração média" value={c ? fmtDuration(c.avgViewDuration) : "—"} change={c && delta(c.avgViewDuration, p?.avgViewDuration)} delay={240} />
@@ -375,7 +374,7 @@ export default function YouTubeAnalyticsView() {
         </div>
       </>}
 
-      <ConnectionStatus scopes={scopes} comments={comments} onConnect={(e) => void connect(e)} connecting={connecting} />
+      <ConnectionStatus scopes={scopes} comments={comments} />
       {open && <VideoPanel video={open} onClose={() => setOpen(null)} />}
     </div>
   );

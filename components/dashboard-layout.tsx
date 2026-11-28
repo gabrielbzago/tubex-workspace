@@ -166,6 +166,7 @@ export default function DashboardLayout({user}:{user:any}){
    localStorage.removeItem(`tubex-keyword-active-v1:${ownerKey}`);
    for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i)||"";if(key.startsWith("tubex-keyword-cache-v3:"))localStorage.removeItem(key);}
   } catch {}
+  try{sessionStorage.setItem("tubex-logging-out","1")}catch{}
   await supabase.auth.signOut();window.location.href="/";
  }
  const plan=String(isOwner ? "expert" : (userData?.plan||"free")).toLowerCase();

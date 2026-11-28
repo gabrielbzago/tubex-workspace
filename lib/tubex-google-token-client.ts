@@ -1,5 +1,6 @@
 "use client";
 import { supabase } from "@/lib/supabase";
+import { getSiteBearer } from "@/lib/tubex-session";
 import { checkGoogleScopes, type GoogleScopes } from "@/lib/tubex-yt-analytics";
 
 /**
@@ -22,6 +23,16 @@ export const CHANNEL_EVENT = "tubex-channel-changed";
 let mem: Cached | null = null;
 let inflight: Promise<string> | null = null;
 let remembering: Promise<void> | null = null;
+let lastServerReason = "";
+
+/**
+ * true só quando o acesso ao Google acabou de verdade: o servidor não tem refresh token
+ * (ou o Google o revogou) e não há token de login válido. Aí a tela pede o login do site.
+ * Falhas temporárias (rede, Google fora, variáveis ausentes) NÃO contam.
+ */
+export function googleAccessLost() {
+  return lastServerReason === "revoked" || lastServerReason === "no_refresh_token";
+}
 
 /* ---------- Canal ativo ---------- */
 
@@ -59,14 +70,19 @@ function writeCache(c: Cached | null) {
 }
 
 async function bearer() {
+  const token = await getSiteBearer().catch(() => "");
   const { data } = await supabase.auth.getSession();
-  return { token: data.session?.access_token || "", session: data.session as any };
+  return { token: token || data.session?.access_token || "", session: data.session as any };
 }
 
 async function refreshFromServer(channelId: string): Promise<string> {
   const { token } = await bearer();
   if (!token) return "";
   const r = await fetch("/api/youtube/token", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "refresh", channelId }) }).catch(() => null);
+  if (r && !r.ok && !(channelId && r.status === 409)) {
+    const e = await r.clone().json().catch(() => ({}));
+    lastServerReason = String(e?.reason || r.status);
+  }
   if ((!r || !r.ok) && channelId && r?.status === 409) {
     // Canal salvo neste navegador não pertence a esta conta (ex.: outra pessoa logou): usa o ativo do servidor.
     setActiveChannelId("", false);
@@ -75,6 +91,7 @@ async function refreshFromServer(channelId: string): Promise<string> {
   if (!r || !r.ok) return "";
   const d = await r.json().catch(() => ({}));
   if (!d.accessToken) return "";
+  lastServerReason = "";
   const chan = String(d.channelId || channelId || "");
   // Primeira vez neste navegador: adota o canal ativo do servidor sem recarregar a tela.
   if (chan && !getActiveChannelId()) setActiveChannelId(chan, false);

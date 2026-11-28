@@ -4,6 +4,7 @@ import { Fragment, type ReactNode, useCallback, useEffect, useLayoutEffect, useM
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import { getGoogleAccessToken } from "@/lib/tubex-google-token-client";
+import { authedFetch } from "@/lib/tubex-session";
 import {
   ArrowUp, Plus, Sparkles, ImagePlus, LoaderCircle, Download,
   Eye, Users, Video, ChevronDown, PanelRightClose, PanelRightOpen,
@@ -452,14 +453,15 @@ export default function TubeXAIChat() {
     stickRef.current = true;
     const controller = new AbortController(); abortRef.current = controller;
     try {
-      const { data } = await supabase.auth.getSession(); const token = data.session?.access_token;
       // Token do Google renovado: o servidor lê o YouTube Analytics do vídeo anexado e do canal.
+      // Sem token do Google o chat segue normalmente (nunca manda para o login por isso).
       let googleToken = "";
       try { googleToken = await getGoogleAccessToken(); } catch {}
-      const response = await fetch("/api/ai/chat", {
+      // authedFetch renova a sessão do site em silêncio se o token tiver vencido.
+      const response = await authedFetch("/api/ai/chat", {
         method: "POST",
         signal: controller.signal,
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(googleToken ? { "X-Google-Token": googleToken } : {}) },
+        headers: { "Content-Type": "application/json", ...(googleToken ? { "X-Google-Token": googleToken } : {}) },
         body: JSON.stringify({ messages: next.slice(-12), channelContext, selectedVideos, mode }),
       });
       const payload = await response.json();
