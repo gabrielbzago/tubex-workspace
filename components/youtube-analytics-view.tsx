@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useChannelData } from "@/lib/tubex-youtube";
 import { getGoogleAccessToken, getGoogleScopes, googleAccessLost } from "@/lib/tubex-google-token-client";
-import { requestSiteRelogin } from "@/lib/tubex-session";
+import { authedFetch, requestSiteRelogin } from "@/lib/tubex-session";
 import {
   fetchChannelAnalytics, fetchVideoAnalytics, checkCommentsAccess, fmtDuration, AGE_LABELS, GENDER_LABELS,
   summarizeChannelAnalytics, summarizeVideoAnalytics,
@@ -181,6 +181,30 @@ function ConnectionStatus({ scopes, comments }: { scopes: GoogleScopes | null; c
   );
 }
 
+/* Explica em português por que o token do Google não renovou (sem expor nada sensível). */
+function GoogleDiagnosis() {
+  const [d, setD] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const r = await authedFetch("/api/youtube/status", { cache: "no-store" }); const j = await r.json().catch(() => null); if (alive) setD(j); } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
+  if (!d || d.error) return null;
+  const tips: string[] = [];
+  let relogin = false;
+  if (!d.env?.GOOGLE_CLIENT_ID || !d.env?.GOOGLE_CLIENT_SECRET) tips.push("O servidor não está lendo GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Confira no projeto da Vercel que serve este domínio e faça um novo deploy.");
+  if (String(d.channelsTable || "").startsWith("erro") || String(d.legacyTable || "").startsWith("erro")) tips.push("Faltam as tabelas do Google no Supabase. Rode as migrations 20261127_tubex_google_tokens.sql e 20261127_tubex_google_channels.sql.");
+  const refresh = d.refresh || {};
+  if (!refresh.ok && refresh.reason === "client_mismatch") tips.push("O GOOGLE_CLIENT_ID da Vercel não é o mesmo cliente OAuth usado no login Google do Supabase. Use o mesmo Client ID e Secret do Supabase (Authentication > Providers > Google).");
+  if (!refresh.ok && (refresh.reason === "no_refresh_token" || refresh.reason === "revoked")) { tips.push("Nenhuma renovação salva para esta conta ainda. Entre novamente no TubeX com o Google uma vez; depois fica automático."); relogin = true; }
+  if (!refresh.ok && refresh.reason === "error" && refresh.message && !tips.length) tips.push(`Google respondeu: ${refresh.message}`);
+  if (refresh.ok && !tips.length) return <p className="tx-ya-empty">A conexão com o Google está ok agora. Clique em “Tentar de novo”.</p>;
+  if (!tips.length) return null;
+  return <div className="tx-ya-diag"><p><AlertTriangle size={14} /> <b>O que está faltando</b></p><ul>{tips.map((t) => <li key={t}>{t}</li>)}</ul>{relogin && <button className="tx-btn-gold" onClick={() => requestSiteRelogin("google")}><PlayCircle size={15} />Entrar novamente no TubeX</button>}</div>;
+}
+
 /* ------------------------------ painel de vídeo ------------------------------ */
 
 function VideoPanel({ video, onClose }: { video: TopVideo; onClose: () => void }) {
@@ -323,7 +347,7 @@ export default function YouTubeAnalyticsView() {
       {loading && !report ? (
         <div className="tx-ya-kpis">{Array.from({ length: 8 }, (_, i) => <div key={i} className="tx-ya-kpi tx-ya-skel" />)}</div>
       ) : fatal === "error" || !report ? (
-        <section className="tx-ya-card"><p className="tx-ya-empty">Não foi possível carregar o Analytics agora. <button className="tx-ya-link" onClick={() => void load(days)}>Tentar de novo</button></p></section>
+        <section className="tx-ya-card"><p className="tx-ya-empty">Não foi possível carregar o Analytics agora. <button className="tx-ya-link" onClick={() => void load(days)}>Tentar de novo</button></p><GoogleDiagnosis /></section>
       ) : <>
         <div className={`tx-ya-kpis ${loading ? "is-loading" : ""}`}>
           <Kpi icon={Eye} label="Visualizações" value={c ? nf(c.views) : "—"} change={c && delta(c.views, p?.views)} hint="vs. período anterior" delay={0} />

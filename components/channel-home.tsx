@@ -99,7 +99,8 @@ export default function ChannelHome({ achievementSummary, displayName }: { achie
   }, [videos]);
 
   const needsConnect = !channel && !profile && !loading;
-  async function connect() { setConnecting(true); try { await connectYouTube(); } catch { setConnecting(false); } }
+  // Sessão única: abre o aviso de login do site (não há mais "reconectar Google" separado).
+  async function connect() { await connectYouTube(); }
 
   return (
     <div className="tx-home space-y-5">
@@ -120,8 +121,8 @@ export default function ChannelHome({ achievementSummary, displayName }: { achie
           <div className="max-w-xl">
             <p className="tx-kicker">Primeiro passo</p>
             <h2 className="mt-2 text-2xl font-extrabold">Conecte seu canal do <span className="tx-gold">YouTube</span></h2>
-            <p className="mt-2 text-[15px] leading-7 text-[var(--tx-muted)]">Com o canal conectado, o Início mostra suas métricas, o desempenho de cada vídeo e sugestões do que fazer a seguir. O acesso é somente leitura.</p>
-            <button onClick={connect} disabled={connecting} className="tx-btn tx-btn-primary mt-5">{connecting ? <Loader2 size={16} className="animate-spin" /> : <Youtube size={16} />} Conectar com Google</button>
+            <p className="mt-2 text-[15px] leading-7 text-[var(--tx-muted)]">Com o canal conectado, o Início mostra suas métricas, o desempenho de cada vídeo e sugestões do que fazer a seguir. Entre com o Google no TubeX uma vez; depois o acesso é renovado sozinho.</p>
+            <button onClick={connect} disabled={connecting} className="tx-btn tx-btn-primary mt-5">{connecting ? <Loader2 size={16} className="animate-spin" /> : <Youtube size={16} />} Entrar com Google</button>
           </div>
         </section>
       )}
@@ -134,7 +135,7 @@ export default function ChannelHome({ achievementSummary, displayName }: { achie
       )}
 
       {error && !error.needsGoogle && <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-4 text-sm">{error.message} <button onClick={reload} className="ml-2 font-bold text-[var(--tx-blue)]">Tentar de novo</button></div>}
-      {error?.needsGoogle && profile && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-4 text-sm"><span>Para ver seus vídeos e sugestões, reconecte o YouTube (a autorização expira de tempos em tempos).</span><button onClick={connect} className="tx-btn tx-btn-primary">{connecting ? <Loader2 size={14} className="animate-spin" /> : <Youtube size={14} />} Reconectar</button></div>}
+      {error?.needsGoogle && profile && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-4 text-sm"><span>Não conseguimos ler seu canal agora. Se continuar, entre novamente no TubeX.</span><button onClick={connect} className="tx-btn tx-btn-primary">{connecting ? <Loader2 size={14} className="animate-spin" /> : <Youtube size={14} />} Entrar novamente</button></div>}
 
       {loading && !data && !needsConnect && <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]"><div className="tx-skeleton h-56" /><div className="tx-skeleton h-56" /></div>}
 

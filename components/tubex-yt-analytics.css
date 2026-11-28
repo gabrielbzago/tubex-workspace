@@ -169,3 +169,10 @@
 /* Navegação inferior (mobile) com 5 áreas desde a aba Analytics. */
 .tx-saas-shell .tx-bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr))}
 .tx-saas-shell .tx-bottom-nav button span{overflow:hidden;max-width:100%;white-space:nowrap;text-overflow:ellipsis}
+
+/* Diagnóstico da conexão com o Google */
+.tx-ya-diag{display:grid;gap:10px;margin-top:12px;padding:14px 16px;border-radius:14px;border:1px solid rgba(242,201,76,.35);background:linear-gradient(180deg,rgba(242,201,76,.08),transparent);font-size:13.5px;line-height:1.5}
+.tx-ya-diag p{display:flex;align-items:center;gap:6px;color:#f2c94c}
+.tx-ya-diag ul{display:grid;gap:6px;margin:0;padding-left:18px;color:var(--tx-text)}
+.tx-ya-diag .tx-btn-gold{justify-self:start}
+@media (max-width:640px){.tx-ya-diag .tx-btn-gold{justify-self:stretch}}

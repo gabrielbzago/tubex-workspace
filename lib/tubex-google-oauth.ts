@@ -11,13 +11,14 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
  * URIs de redirecionamento autorizados): https://SEU-DOMINIO/api/youtube/oauth/callback
  */
 
+// Mesmos escopos do login do site (o Google já aprova esse pedido; escopos extras como
+// force-ssl/receita fizeram o Google mostrar "Este app está bloqueado" em conta de marca).
 export const YT_BASE_SCOPES = [
-  "openid", "email",
+  "openid", "email", "profile",
   "https://www.googleapis.com/auth/youtube.readonly",
-  "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/yt-analytics.readonly",
 ];
-const ALLOWED_EXTRA = new Set(["https://www.googleapis.com/auth/yt-analytics-monetary.readonly"]);
+const ALLOWED_EXTRA = new Set<string>();
 
 function stateSecret() {
   return `tubex-oauth-state:${process.env.GOOGLE_TOKEN_SECRET || process.env.GOOGLE_CLIENT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || ""}`;

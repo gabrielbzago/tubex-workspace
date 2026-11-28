@@ -160,24 +160,35 @@ export async function saveGoogleRefreshToken(userId: string, refreshToken: strin
 export async function saveGoogleConsent(userId: string, opts: { accessToken?: string; refreshToken?: string; scopes?: string }) {
   let accessToken = String(opts.accessToken || "");
   const refreshToken = String(opts.refreshToken || "");
-  if (refreshToken) await saveGoogleRefreshToken(userId, refreshToken, opts.scopes || "");
+  let refreshStored = false;
+  let error = "";
+  if (refreshToken) {
+    const legacy = await saveGoogleRefreshToken(userId, refreshToken, opts.scopes || "");
+    refreshStored = legacy.ok;
+    if (!legacy.ok) error = String(legacy.error || "");
+  }
   if (!accessToken && refreshToken && googleRefreshConfigured()) {
     const r = await exchangeRefresh(refreshToken);
     if (r.ok) accessToken = r.data.access_token;
   }
-  if (!accessToken) return { saved: Boolean(refreshToken), channelId: "" };
+  if (!accessToken) return { saved: refreshStored, refreshStored, channelId: "", error };
   try {
     const reg = await registerGoogleChannels(userId, accessToken, refreshToken, opts.scopes || "");
-    return { saved: true, channelId: reg.activeId };
+    if (refreshToken && reg.activeId) refreshStored = true;
+    return { saved: true, refreshStored, channelId: reg.activeId, error };
   } catch (e: any) {
     console.warn("[TubeX Google channels] register", e?.message);
-    return { saved: Boolean(refreshToken), channelId: "" };
+    return { saved: refreshStored, refreshStored, channelId: "", error: error || String(e?.message || "") };
   }
 }
 
 export type RefreshResult =
   | { ok: true; accessToken: string; expiresIn: number; scope: string; channelId: string }
-  | { ok: false; reason: "not_configured" | "no_refresh_token" | "revoked" | "error"; message: string; channelId?: string };
+  | { ok: false; reason: "not_configured" | "no_refresh_token" | "revoked" | "client_mismatch" | "error"; message: string; channelId?: string };
+
+/** invalid_client/unauthorized_client: o refresh token foi emitido para OUTRO cliente OAuth. */
+const failReason = (d: any): "revoked" | "client_mismatch" | "error" =>
+  d?.error === "invalid_grant" ? "revoked" : d?.error === "invalid_client" || d?.error === "unauthorized_client" ? "client_mismatch" : "error";
 
 /** Access token válido para o canal pedido (ou o canal ativo). */
 export async function refreshGoogleAccessToken(userId: string, channelId = ""): Promise<RefreshResult> {
@@ -195,7 +206,7 @@ export async function refreshGoogleAccessToken(userId: string, channelId = ""): 
       if (!r.ok) {
         const revoked = r.data?.error === "invalid_grant";
         await supabaseAdmin.from(CHANNELS).update({ last_error: String(r.data?.error || r.status), ...(revoked ? { refresh_token: null } : {}) }).eq("user_id", userId).eq("channel_id", cid);
-        return { ok: false, reason: revoked ? "revoked" : "error", message: String(r.data?.error_description || r.data?.error || `Google ${r.status}`), channelId: cid };
+        return { ok: false, reason: failReason(r.data), message: String(r.data?.error_description || r.data?.error || `Google ${r.status}`), channelId: cid };
       }
       const expiresIn = Number(r.data.expires_in || 3600);
       const scope = String(r.data.scope || "");
@@ -220,7 +231,7 @@ async function refreshLegacy(userId: string): Promise<RefreshResult> {
     const revoked = r.data?.error === "invalid_grant";
     await supabaseAdmin.from(LEGACY).update({ last_error: String(r.data?.error || r.status), updated_at: new Date().toISOString() }).eq("user_id", userId);
     if (revoked) await supabaseAdmin.from(LEGACY).delete().eq("user_id", userId);
-    return { ok: false, reason: revoked ? "revoked" : "error", message: String(r.data?.error_description || r.data?.error || `Google ${r.status}`) };
+    return { ok: false, reason: failReason(r.data), message: String(r.data?.error_description || r.data?.error || `Google ${r.status}`) };
   }
   const expiresIn = Number(r.data.expires_in || 3600);
   let channelId = "";

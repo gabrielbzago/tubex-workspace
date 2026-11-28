@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { CHANNEL_EVENT, getActiveChannelId, getGoogleAccessToken, setActiveChannelId, startChannelConnect } from "@/lib/tubex-google-token-client";
+import { CHANNEL_EVENT, getActiveChannelId, getGoogleAccessToken, setActiveChannelId } from "@/lib/tubex-google-token-client";
+import { requestSiteRelogin, resetReloginRequest } from "@/lib/tubex-session";
 
 /** Dados do canal conectado (YouTube Data API com o token OAuth do Google), com cache em memória. */
 export type YTChannel = { id: string; title: string; thumbnail: string; subscribers: number; views: number; videoCount: number; uploads: string };
@@ -102,22 +103,13 @@ export function useChannelData() {
   return { data, loading, error, reload: () => load(true) };
 }
 
-/** Reconecta o Google. extraScopes: ex. YT_SCOPE.monetary para liberar a receita (opcional). */
-export async function connectYouTube(extraScopes: string[] = []) {
-  // Preferência: fluxo próprio que adiciona o canal escolhido SEM trocar o login TubeX.
-  if (await startChannelConnect(Array.isArray(extraScopes) ? extraScopes : [])) return;
-  const { data } = await supabase.auth.getSession();
-  const user: any = data.session?.user;
-  const options = {
-    redirectTo: `${window.location.origin}/dashboard`,
-    scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly" + (Array.isArray(extraScopes) && extraScopes.length ? " " + extraScopes.join(" ") : ""),
-    queryParams: { access_type: "offline", prompt: "select_account consent", include_granted_scopes: "true" },
-  };
-  const hasGoogle = (user?.identities || []).some((i: any) => i.provider === "google");
-  const result = user && !hasGoogle
-    ? await supabase.auth.linkIdentity({ provider: "google", options })
-    : await supabase.auth.signInWithOAuth({ provider: "google", options });
-  if (result.error) throw result.error;
+/**
+ * Fluxo de sessão única: não abre mais um "reconectar Google" separado. Se o acesso ao Google
+ * acabou de verdade, pede o login do site (o mesmo do começo). O parâmetro fica por compatibilidade.
+ */
+export async function connectYouTube(_extraScopes: string[] = []) {
+  resetReloginRequest();
+  requestSiteRelogin("google");
 }
 
 /** Mediana das views dos vídeos anteriores (base de comparação "x vezes sua média"). */
@@ -148,7 +140,7 @@ export function ago(iso: string) {
 /* ---------- Comentários sem resposta (ler e responder) ---------- */
 export type YTComment = { id: string; videoId: string; author: string; authorImage: string; text: string; publishedAt: string; likes: number };
 export type CommentState = { status: "ok" | "disabled" | "auth" | "quota" | "error"; items: YTComment[]; detail?: string };
-export const YT_COMMENT_SCOPE_HINT = "Para ler e responder comentários, o TubeX precisa da permissão \"Gerenciar sua conta do YouTube\". Reconecte e marque essa permissão.";
+export const YT_COMMENT_SCOPE_HINT = "Para ler e responder comentários, o TubeX precisa da permissão \"Gerenciar sua conta do YouTube\". Essa permissão ainda não está liberada neste login.";
 
 async function providerToken() {
   return getGoogleAccessToken();

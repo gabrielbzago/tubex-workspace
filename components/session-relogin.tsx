@@ -10,7 +10,7 @@ import { reloginWithGoogle } from "@/lib/tubex-session";
  * (refresh token do site ou do Google revogado). A tela de fundo (ex.: o chat) continua visível
  * e nada é apagado: os chats ficam salvos no navegador.
  */
-export default function SessionRelogin({ email, reason, onEmailLogin }: { email: string; reason: "session" | "google"; onEmailLogin: () => void }) {
+export default function SessionRelogin({ email, reason, onEmailLogin, onClose }: { email: string; reason: "session" | "google"; onEmailLogin: () => void; onClose?: () => void }) {
   const [busy, setBusy] = useState<"" | "google" | "email">("");
   const [error, setError] = useState("");
   useEffect(() => { const prev = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = prev; }; }, []);
@@ -33,13 +33,14 @@ export default function SessionRelogin({ email, reason, onEmailLogin }: { email:
       <p className="tx-relogin-kicker">SESSÃO DO TUBEX</p>
       <h2 id="tx-relogin-title">Entre <span className="tx-gold">novamente</span> para continuar</h2>
       <p className="tx-relogin-text">{reason === "google"
-        ? "O Google encerrou o acesso do TubeX ao seu canal (por exemplo, a permissão foi removida na sua conta Google). Entre de novo e o acesso volta a ser renovado sozinho."
+        ? "Para ler os dados do seu canal, entre de novo no TubeX com o Google (o mesmo login do site). Depois disso o acesso é renovado sozinho, sem pedir de novo."
         : "Sua sessão no TubeX terminou neste navegador. Entre de novo para continuar de onde parou."}</p>
       <p className="tx-relogin-note">Seus chats, pesquisas e canais continuam salvos.</p>
       <div className="tx-relogin-actions">
         <button type="button" className="tx-btn-gold" onClick={() => void google()} disabled={Boolean(busy)}>{busy === "google" ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}Entrar com Google</button>
         <button type="button" className="tx-relogin-ghost" onClick={() => void withEmail()} disabled={Boolean(busy)}>{busy === "email" ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}Entrar com e-mail e senha</button>
       </div>
+      {reason === "google" && onClose && <button type="button" className="tx-relogin-later" onClick={onClose} disabled={Boolean(busy)}>Agora não</button>}
       {email && <p className="tx-relogin-email">Conta: <b>{email}</b></p>}
       {error && <p className="tx-relogin-error" role="alert">{error}</p>}
     </div>

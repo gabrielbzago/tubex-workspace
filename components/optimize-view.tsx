@@ -177,7 +177,7 @@ export default function OptimizeView({ user, plan }: { user: any; plan: string }
       {tab === "report" && <FeedDashboard />}
 
       {(tab === "videos" || tab === "shorts") && <>
-        {error?.needsGoogle && <section className="tx-surface rounded-2xl p-6"><h2 className="text-xl font-bold">Conecte o YouTube para ver seus vídeos</h2><p className="mt-1 text-sm text-[var(--tx-muted)]">Acesso somente leitura. A autorização expira de tempos em tempos.</p><button onClick={async () => { setConnecting(true); try { await connectYouTube(); } catch { setConnecting(false); } }} className="tx-btn tx-btn-primary mt-4">{connecting ? <Loader2 size={15} className="animate-spin" /> : <Youtube size={15} />} Conectar com Google</button></section>}
+        {error?.needsGoogle && <section className="tx-surface rounded-2xl p-6"><h2 className="text-xl font-bold">Não conseguimos ler seus vídeos agora</h2><p className="mt-1 text-sm text-[var(--tx-muted)]">O acesso ao YouTube é renovado sozinho. Se continuar assim, entre novamente no TubeX com o Google.</p><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => void reload()} className="tx-btn tx-btn-secondary"><Loader2 size={15} className={loading ? "animate-spin" : "hidden"} />Tentar de novo</button><button onClick={() => void connectYouTube()} className="tx-btn tx-btn-primary"><Youtube size={15} /> Entrar novamente</button></div></section>}
         {error && !error.needsGoogle && <div className="rounded-xl border border-[var(--tx-border)] bg-[var(--tx-surface-2)] p-4 text-sm">{error.message}</div>}
         {loading && !data && <div className="tx-vgrid">{Array.from({ length: 8 }, (_, i) => <div key={i} className="tx-skeleton h-[260px]" />)}</div>}
         {data && <>

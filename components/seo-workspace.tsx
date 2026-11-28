@@ -265,7 +265,7 @@ export default function SeoWorkspace({ user, plan: initialPlan = "free" }: { use
   async function connectGoogle() {
     setConnecting(true); setChannelError("");
     // Adiciona/reconecta o canal escolhido na tela do Google sem trocar o login TubeX.
-    try { await connectYouTube(); return; } catch {}
+    try { await connectYouTube(); setConnecting(false); return; } catch {}
     const options = {
       redirectTo: `${window.location.origin}/dashboard`,
       scopes: "openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/yt-analytics.readonly",

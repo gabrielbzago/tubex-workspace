@@ -40,6 +40,6 @@ export default function AuthProvider(){
   if(!user) return <LoginPage/>;
   return <>
     <DashboardLayout user={user}/>
-    {relogin&&<SessionRelogin email={String(user?.email||"")} reason={relogin} onEmailLogin={()=>{hadSession.current=false;setRelogin(null);setLastUser(null);setSession(null)}}/>}
+    {relogin&&<SessionRelogin email={String(user?.email||"")} reason={relogin} onEmailLogin={()=>{hadSession.current=false;setRelogin(null);setLastUser(null);setSession(null)}} onClose={session?.user?()=>{setRelogin(null);resetReloginRequest()}:undefined}/>}
   </>;
 }

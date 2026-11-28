@@ -18,6 +18,7 @@ type Cached = { token: string; exp: number; chan: string; scopes?: GoogleScopes 
 const KEY = "tubex-google-at-v2";
 const ACTIVE_KEY = "tubex-active-channel";
 const SEEN_KEY = "tubex-google-pt-seen";
+const PENDING_KEY = "tubex-google-rt-pending";
 export const CHANNEL_EVENT = "tubex-channel-changed";
 
 let mem: Cached | null = null;
@@ -146,11 +147,18 @@ export function activeChannelHeaders(): Record<string, string> {
  */
 export function rememberGoogleTokens(session: any): Promise<void> {
   const provider = String(session?.provider_token || "");
-  const refresh = String(session?.provider_refresh_token || "");
   const auth = String(session?.access_token || "");
+  const userId = String(session?.user?.id || "");
+  let refresh = String(session?.provider_refresh_token || "");
+  // O Supabase descarta o provider_refresh_token na 1ª renovação da sessão (~1h). Guardamos uma
+  // cópia local até o servidor confirmar que salvou; assim um erro temporário não perde o token.
+  try {
+    if (refresh) localStorage.setItem(PENDING_KEY, JSON.stringify({ u: userId, t: refresh }));
+    else { const p = JSON.parse(localStorage.getItem(PENDING_KEY) || "null"); if (p?.u === userId && p?.t) refresh = String(p.t); }
+  } catch {}
   if (!auth || (!provider && !refresh)) return Promise.resolve();
-  const mark = `${String(session?.user?.id || "")}:${(provider || refresh).slice(-16)}`;
-  try { if (localStorage.getItem(SEEN_KEY) === mark) return Promise.resolve(); } catch {}
+  const mark = `${userId}:${(refresh || provider).slice(-16)}`;
+  try { if (localStorage.getItem(SEEN_KEY) === mark) { localStorage.removeItem(PENDING_KEY); return Promise.resolve(); } } catch {}
   const job = (async () => {
     try {
       const scopes = provider ? (await checkGoogleScopes(provider)).scopes.join(" ") : "";
@@ -159,7 +167,10 @@ export function rememberGoogleTokens(session: any): Promise<void> {
       const chan = String(d?.channelId || "");
       if (chan) setActiveChannelId(chan, true);
       writeCache(provider && chan ? { token: provider, exp: Date.now() + 50 * 60_000, chan } : null);
-      if (r.ok && (d?.saved || chan)) { try { localStorage.setItem(SEEN_KEY, mark); } catch {} }
+      // Só marca como salvo quando o refresh token ficou guardado no servidor (ou não havia um).
+      const done = r.ok && (refresh ? d?.refreshStored === true : Boolean(chan));
+      if (done) { try { localStorage.setItem(SEEN_KEY, mark); localStorage.removeItem(PENDING_KEY); } catch {} }
+      else if (d?.error) console.warn("[TubeX] Google token não salvo:", d.error);
     } catch {}
   })();
   remembering = job.finally(() => { remembering = null; });
